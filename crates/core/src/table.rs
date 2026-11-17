@@ -246,6 +246,8 @@ pub struct TableWords {
     pub select_all: String,
     pub clear: String,
     pub loaded: String,
+    pub page: String,
+    pub load_more: String,
 }
 
 impl Default for TableWords {
@@ -262,6 +264,8 @@ impl Default for TableWords {
             select_all: "Select all rows".into(),
             clear: "Clear".into(),
             loaded: "{count} loaded".into(),
+            page: "Page {page} of {pages}".into(),
+            load_more: "Load more".into(),
         }
     }
 }
@@ -294,6 +298,10 @@ pub enum TableEvent {
     /// A row's actions were asked for (its menu button pressed): its index among the rows. The
     /// app opens its menu at [`Table::actions_area`].
     Actions(usize),
+    /// The pager asked for this page (counted from 1): the app loads it and gives its rows.
+    Page(usize),
+    /// Load more was pressed: the app gives the rows after these.
+    LoadMore,
 }
 
 /// One line of the table's body: a group's head (its name and count), or a row by its place.
@@ -535,6 +543,11 @@ pub struct Table<'a> {
     variant: TableVariant,
     framed: bool,
     row_actions: bool,
+    /// The pager: this page and how many there are (counted from 1).
+    paging: Option<(usize, usize)>,
+    load_more: bool,
+    /// How many rows come before these in the whole (a page's start), for the range.
+    before: usize,
     bar: Option<TableBar>,
 }
 
@@ -554,6 +567,9 @@ impl<'a> Table<'a> {
             variant: TableVariant::Table,
             framed: true,
             row_actions: false,
+            paging: None,
+            load_more: false,
+            before: 0,
             bar: None,
         }
     }
@@ -609,6 +625,53 @@ impl<'a> Table<'a> {
     pub fn row_actions(mut self, on: bool) -> Self {
         self.row_actions = on;
         self
+    }
+
+    /// A pager at the foot (`paging`): `page` of `pages`, counted from 1, its arrows asking for the
+    /// page before and after ([`TableEvent::Page`]).
+    pub fn paging(mut self, page: usize, pages: usize) -> Self {
+        self.paging = Some((page.max(1), pages.max(1)));
+        self
+    }
+
+    /// How many rows come before these in the whole (a page's start): the range counts from it,
+    /// "41–80 of 1,200" on the second page of forty.
+    pub fn starting_at(mut self, before: usize) -> Self {
+        self.before = before;
+        self
+    }
+
+    /// A Load more button at the foot (`loadMore: button`), asking for the rows after these
+    /// ([`TableEvent::LoadMore`]).
+    pub fn load_more(mut self, on: bool) -> Self {
+        self.load_more = on;
+        self
+    }
+
+    /// The foot's controls on the frame's bottom line, at its start: the pager's arrows and its
+    /// words, or Load more.
+    fn foot_controls(&self, area: Rect) -> (Option<Rect>, Option<Rect>, Option<Rect>, String) {
+        if !self.framed || area.height < 3 {
+            return (None, None, None, String::new());
+        }
+        let y = area.bottom() - 1;
+        let x = area.x + 2;
+        if let Some((page, pages)) = self.paging {
+            let words = self
+                .words
+                .page
+                .replace("{page}", &count(page))
+                .replace("{pages}", &count(pages));
+            let w = text::width(&words) as u16;
+            let prev = Rect::new(x, y, 3, 1);
+            let next = Rect::new(x + 3 + w + 2, y, 3, 1);
+            return (Some(prev), Some(next), None, words);
+        }
+        if self.load_more {
+            let w = text::width(&self.words.load_more) as u16 + 2;
+            return (None, None, Some(Rect::new(x, y, w, 1)), String::new());
+        }
+        (None, None, None, String::new())
     }
 
     /// The columns the row actions' button takes at a row's end, and the gap before it.
@@ -699,8 +762,8 @@ impl<'a> Table<'a> {
         let total = self.total.unwrap_or(n);
         self.words
             .range
-            .replace("{from}", &count(if n == 0 { 0 } else { 1 }))
-            .replace("{to}", &count(n))
+            .replace("{from}", &count(if n == 0 { 0 } else { self.before + 1 }))
+            .replace("{to}", &count(self.before + n))
             .replace("{total}", &count(total))
     }
 
@@ -846,6 +909,10 @@ pub enum TableHit {
     Clear,
     /// A row's menu button, by its place.
     Actions(usize),
+    /// The pager's previous and next arrows, and Load more, in the foot.
+    PagePrev,
+    PageNext,
+    LoadMore,
 }
 
 impl TableState {
@@ -878,6 +945,17 @@ impl Table<'_> {
                 return Some(TableHit::SelectBox(place));
             }
             return Some(TableHit::Card(place));
+        }
+        let (prev, next, more, _) = self.foot_controls(area);
+        let on = |r: Option<Rect>| r.is_some_and(|r| r.contains(at));
+        if on(prev) {
+            return Some(TableHit::PagePrev);
+        }
+        if on(next) {
+            return Some(TableHit::PageNext);
+        }
+        if on(more) {
+            return Some(TableHit::LoadMore);
         }
         let g = self.geom(area);
         let inner = g.inner;
@@ -988,6 +1066,15 @@ impl Table<'_> {
                     None => TableEvent::Ignored,
                 }
             }
+            TableHit::PagePrev => match self.paging {
+                Some((page, _)) if page > 1 => TableEvent::Page(page - 1),
+                _ => TableEvent::Ignored,
+            },
+            TableHit::PageNext => match self.paging {
+                Some((page, pages)) if page < pages => TableEvent::Page(page + 1),
+                _ => TableEvent::Ignored,
+            },
+            TableHit::LoadMore => TableEvent::LoadMore,
             TableHit::Head(_) | TableHit::Search => TableEvent::Ignored,
             TableHit::Clear => {
                 state.selected.clear();
@@ -1290,6 +1377,43 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
             &range,
             TextRole::Help.style(look).fg(t(ink)).bg(t(page)),
         );
+    }
+    // The pager or Load more, at the foot's start.
+    let (prev, next, more, words) = table.foot_controls(area);
+    let quiet = look.color("muted-foreground");
+    let page = look.color("background");
+    if let (Some(p), Some(n), Some((at, pages))) = (prev, next, table.paging) {
+        let ink = |on: bool| {
+            if on {
+                look.color("foreground")
+            } else {
+                look.color("faint")
+            }
+        };
+        buf.set_string(
+            p.x,
+            p.y,
+            format!(" {} ", glyphs.back),
+            Style::new().fg(t(ink(at > 1))).bg(t(page)),
+        );
+        buf.set_string(
+            p.right(),
+            p.y,
+            format!(" {words} "),
+            TextRole::Help.style(look).fg(t(quiet)).bg(t(page)),
+        );
+        buf.set_string(
+            n.x,
+            n.y,
+            format!(" {} ", glyphs.chevron),
+            Style::new().fg(t(ink(at < pages))).bg(t(page)),
+        );
+    }
+    if let Some(m) = more {
+        Button::new(look, table.words.load_more.clone())
+            .variant(ButtonVariant::Ghost)
+            .size(crate::button::ButtonSize::Sm)
+            .render(m, buf);
     }
 }
 

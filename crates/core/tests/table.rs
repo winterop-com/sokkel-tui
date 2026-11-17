@@ -357,3 +357,31 @@ fn a_rows_menu_button_asks_for_its_actions() {
     );
     assert_eq!(s.active, 1);
 }
+
+#[test]
+fn the_pager_asks_for_the_pages_beside_this_one() {
+    use ratatui::layout::Position;
+    use sokkel_tui::{TableEvent, TableHit};
+    let look = look();
+    let (c, r) = (columns(), rows());
+    let table = Table::new(&look, &c, &r)
+        .paging(2, 3)
+        .starting_at(r.len())
+        .total(3 * r.len());
+    let mut s = TableState::default();
+    let (_, lines) = draw(&table, 80, 10, &mut s);
+    let foot = lines.last().unwrap();
+    assert!(foot.contains("Page 2 of 3"), "{foot}");
+    let n = r.len();
+    assert!(foot.contains(&format!("{}–{} of {}", n + 1, 2 * n, 3 * n)), "{foot}");
+    let area = Rect::new(0, 0, 80, 10);
+    let x = |g: char| foot.chars().position(|c| c == g).unwrap() as u16;
+    let prev = table.hit(area, Position::new(x('‹'), 9), &s);
+    assert_eq!(prev, Some(TableHit::PagePrev));
+    assert_eq!(table.press(&mut s, prev.unwrap()), TableEvent::Page(1));
+    let next = table.hit(area, Position::new(x('›'), 9), &s).unwrap();
+    assert_eq!(table.press(&mut s, next), TableEvent::Page(3));
+    // On the last page the next arrow asks for nothing.
+    let last = Table::new(&look, &c, &r).paging(3, 3);
+    assert_eq!(last.press(&mut s, TableHit::PageNext), TableEvent::Ignored);
+}

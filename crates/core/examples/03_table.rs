@@ -7,7 +7,7 @@
 //! head row, where Left and Right choose a head and Enter turns its order; Enter on a row picks it.
 //! `/` searches the jobs in the bar (Enter or Escape leaves the search); `l` switches between the
 //! table and the list variant. The mouse: a press on a row, a box, a head, the search or Clear; the
-//! wheel. Ctrl+Q quits.
+//! wheel; the pager's arrows at the foot. Ctrl+Q quits.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -40,8 +40,10 @@ fn columns() -> Vec<Column> {
     ]
 }
 
-fn rows() -> Vec<Row> {
-    (0..40)
+/// A page of forty runs, counted from 1: each page the runs before the last.
+fn rows(page: usize) -> Vec<Row> {
+    let base = (page - 1) * 40;
+    (base..base + 40)
         .map(|i| {
             let state = STATES[(i * 7) % STATES.len()];
             let mins = (i * 13 + 5) % 60;
@@ -59,7 +61,7 @@ fn rows() -> Vec<Row> {
                 Cell::status(state),
                 Cell::maybe(PEOPLE[(i * 3) % 5]),
                 Cell::text(PROJECTS[i % 3]),
-                Cell::text(format!("{:02}:{:02}", 12 - (i / 4), mins)),
+                Cell::text(format!("{:02}:{:02}", (23 - (i / 4) % 24), mins)),
                 took.unwrap_or_else(Cell::missing),
             ])
             .tone(tone)
@@ -79,6 +81,8 @@ struct App {
     searching: bool,
     list: bool,
     all: Vec<Row>,
+    /// The page shown, counted from 1, of the 1,200 runs forty a page.
+    page: usize,
 }
 
 impl App {
@@ -87,6 +91,8 @@ impl App {
             .selectable(true)
             .focused(!self.searching)
             .bar(self.query.clone(), "Search the jobs", self.searching)
+            .paging(self.page, 30)
+            .starting_at(if self.query.is_empty() { (self.page - 1) * 40 } else { 0 })
             .variant(if self.list {
                 TableVariant::List
             } else {
@@ -111,8 +117,16 @@ impl App {
     }
 
     fn picked(&mut self, event: TableEvent) {
-        if let TableEvent::Opened(r) = event {
-            self.picked = Some(format!("Picked run {} ({})", r + 1, JOBS[r % 5]));
+        match event {
+            TableEvent::Opened(r) => self.picked = Some(format!("Picked run {} ({})", r + 1, JOBS[r % 5])),
+            // The pager asks for a page: its forty runs, the search kept.
+            TableEvent::Page(p) => {
+                self.page = p;
+                self.all = rows(p);
+                self.narrow();
+                self.picked = Some(format!("Page {p}"));
+            }
+            _ => {}
         }
     }
 }
@@ -249,8 +263,9 @@ fn main() -> std::io::Result<()> {
     let mut app = App {
         look: app::look_from_args("tidevann"),
         columns: columns(),
-        rows: rows(),
-        all: rows(),
+        rows: rows(1),
+        all: rows(1),
+        page: 1,
         query: String::new(),
         searching: false,
         list: false,

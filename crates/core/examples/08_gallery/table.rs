@@ -114,6 +114,20 @@ pub fn draw(f: &mut Frame, look: &Look) {
         &mut y,
     );
 
+    // A pager at the foot: the second page of three, the range counted from it.
+    let table = Table::new(look, &columns, &rows)
+        .paging(2, 3)
+        .starting_at(rows.len())
+        .total(3 * rows.len());
+    place(
+        f,
+        "paged: the second page of three",
+        10,
+        &table,
+        &mut TableState::default(),
+        &mut y,
+    );
+
     let empty: Vec<Row> = Vec::new();
     let table = Table::new(look, &columns, &empty).loading(true);
     place(f, "loading", 6, &table, &mut TableState::default(), &mut y);
