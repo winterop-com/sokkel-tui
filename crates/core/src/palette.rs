@@ -466,6 +466,74 @@ impl<'a> CommandPalette<'a> {
     }
 }
 
+/// What a pointer hits in the palette.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaletteHit {
+    /// A command, by its place among the rows that match.
+    Command(usize),
+    StopWaiting,
+}
+
+impl CommandPalette<'_> {
+    /// What a pointer at `at` hits in the palette drawn in `area` with `state`.
+    pub fn hit(&self, area: Rect, at: Position, state: &PaletteState) -> Option<PaletteHit> {
+        let inner = Rect::new(
+            area.x + 1,
+            area.y + 1,
+            area.width.saturating_sub(2),
+            area.height.saturating_sub(2),
+        );
+        let refusal = if state.refusal.is_some() { 2 } else { 0 };
+        let list = Rect {
+            y: inner.y + 2,
+            height: inner.height.saturating_sub(2 + refusal),
+            ..inner
+        };
+        if !list.contains(at) {
+            return None;
+        }
+        let k = state.scroll + (at.y - list.y) as usize;
+        let rows = self.rows(&state.query);
+        match self.lines(state).get(k)? {
+            Line::StopWaiting => Some(PaletteHit::StopWaiting),
+            Line::Command(g, c) => rows.iter().position(|r| *r == (*g, *c)).map(PaletteHit::Command),
+            _ => None,
+        }
+    }
+
+    /// A press on what [`CommandPalette::hit`] found: a command runs (not a disabled one, nor any
+    /// while another runs); Stop waiting lets the running one go.
+    pub fn press(&self, state: &mut PaletteState, hit: PaletteHit) -> PaletteEvent {
+        match hit {
+            PaletteHit::StopWaiting => PaletteEvent::StopWaiting,
+            PaletteHit::Command(_) if state.running.is_some() => PaletteEvent::Ignored,
+            PaletteHit::Command(place) => {
+                let rows = self.rows(&state.query);
+                match rows.get(place).map(|&r| self.command(r)) {
+                    Some(cmd) if cmd.disabled.is_none() => {
+                        state.active = place;
+                        state.refusal = None;
+                        PaletteEvent::Run(cmd.id.clone())
+                    }
+                    _ => PaletteEvent::Ignored,
+                }
+            }
+        }
+    }
+
+    /// The pointer over a command: it becomes the active row.
+    pub fn hover(&self, state: &mut PaletteState, hit: PaletteHit) {
+        if let PaletteHit::Command(place) = hit
+            && state.running.is_none()
+        {
+            let rows = self.rows(&state.query);
+            if rows.get(place).is_some_and(|&r| self.command(r).disabled.is_none()) {
+                state.active = place;
+            }
+        }
+    }
+}
+
 impl CommandPalette<'_> {
     /// Draw it in `area` (from [`CommandPalette::area`]), keeping the active row in view.
     pub fn render(&self, area: Rect, buf: &mut Buffer, state: &mut PaletteState) {

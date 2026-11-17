@@ -20,7 +20,7 @@ use crate::look::{Look, Rgba};
 use crate::page_state::PageState;
 use crate::text::{self, Plural, TextRole};
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::style::Style;
 use ratatui::widgets::{Block, Borders, Widget};
 use std::cmp::Ordering;
@@ -581,6 +581,147 @@ impl<'a> Table<'a> {
                 ]
             }
         }
+    }
+}
+
+/// What a pointer at a position hits in a drawn table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableHit {
+    /// A row, by its place in the drawn order.
+    Row(usize),
+    /// A row's select box, by its place.
+    SelectBox(usize),
+    /// The head's box: select every row, or none.
+    HeadBox,
+    /// A column's head, by its index.
+    Head(usize),
+    /// A stacked card, by its place.
+    Card(usize),
+}
+
+impl TableState {
+    /// The row at a place in the drawn order, by its index among the rows.
+    pub fn row_at(&self, rows: &[Row], place: usize) -> Option<usize> {
+        self.order(rows).get(place).copied()
+    }
+}
+
+impl Table<'_> {
+    /// What a pointer at `at` hits in the table drawn in `area` with `state`.
+    pub fn hit(&self, area: Rect, at: Position, state: &TableState) -> Option<TableHit> {
+        if !area.contains(at) || self.rows.is_empty() || self.loading || self.failed.is_some() {
+            return None;
+        }
+        let n = self.rows.len();
+        if Table::stacks(area.width) {
+            let look = self.look;
+            let pad_y = by_density(look, 1, 0);
+            let gap = by_density(look, 1, 0);
+            let card_h = 2 + 2 * pad_y + self.columns.len().max(1) as u16;
+            let k = ((at.y - area.y) / (card_h + gap)) as usize;
+            let within = (at.y - area.y) % (card_h + gap);
+            let place = state.offset + k;
+            if within >= card_h || place >= n {
+                return None;
+            }
+            let box_row = within == 1 + pad_y;
+            if self.selectable && box_row && (area.x + 2..area.x + 6).contains(&at.x) {
+                return Some(TableHit::SelectBox(place));
+            }
+            return Some(TableHit::Card(place));
+        }
+        let inner = Rect::new(
+            area.x + 1,
+            area.y + 1,
+            area.width.saturating_sub(2),
+            area.height.saturating_sub(2),
+        );
+        if !inner.contains(at) {
+            return None;
+        }
+        let in_box = self.selectable && (inner.x + 1..inner.x + 5).contains(&at.x);
+        if at.y == inner.y {
+            if in_box {
+                return Some(TableHit::HeadBox);
+            }
+            let widths = self.widths(inner.width);
+            let mut x = inner.x + 1 + self.select_w();
+            for (i, w) in widths.iter().enumerate() {
+                if (x..x + w).contains(&at.x) {
+                    return Some(TableHit::Head(i));
+                }
+                x += w + 2;
+            }
+            return None;
+        }
+        let body_y = inner.y + 2;
+        if at.y < body_y {
+            return None;
+        }
+        let place = state.offset + (at.y - body_y) as usize;
+        if place >= n {
+            return None;
+        }
+        Some(if in_box {
+            TableHit::SelectBox(place)
+        } else {
+            TableHit::Row(place)
+        })
+    }
+
+    /// A press on what [`Table::hit`] found: a row becomes active (and is picked where the table
+    /// does not select), a box turns its row's selection over, the head's box selects every row or
+    /// none, a sortable head turns its order.
+    pub fn press(&self, state: &mut TableState, hit: TableHit) -> TableEvent {
+        state.head = None;
+        match hit {
+            TableHit::Row(p) | TableHit::Card(p) => {
+                state.active = p;
+                match (self.selectable, state.row_at(self.rows, p)) {
+                    (false, Some(r)) => {
+                        state.opened = Some(r);
+                        TableEvent::Opened(r)
+                    }
+                    _ => TableEvent::Moved,
+                }
+            }
+            TableHit::SelectBox(p) => {
+                state.active = p;
+                if let Some(r) = state.row_at(self.rows, p)
+                    && !state.selected.remove(&r)
+                {
+                    state.selected.insert(r);
+                }
+                TableEvent::Selected
+            }
+            TableHit::HeadBox => {
+                if state.selected.len() >= self.rows.len() {
+                    state.selected.clear();
+                } else {
+                    state.selected = (0..self.rows.len()).collect();
+                }
+                TableEvent::Selected
+            }
+            TableHit::Head(c) if self.columns.get(c).is_some_and(|c| c.sortable) => {
+                state.sort = match state.sort {
+                    Some((s, SortDir::Ascending)) if s == c => Some((c, SortDir::Descending)),
+                    Some((s, SortDir::Descending)) if s == c => None,
+                    _ => Some((c, SortDir::Ascending)),
+                };
+                TableEvent::Sorted
+            }
+            TableHit::Head(_) => TableEvent::Ignored,
+        }
+    }
+
+    /// The wheel: the active row moves `by` rows, the view with it.
+    pub fn scroll(&self, state: &mut TableState, by: isize) -> TableEvent {
+        if self.rows.is_empty() {
+            return TableEvent::Ignored;
+        }
+        let last = self.rows.len() as isize - 1;
+        state.active = (state.active as isize + by).clamp(0, last) as usize;
+        TableEvent::Moved
     }
 }
 

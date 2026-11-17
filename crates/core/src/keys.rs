@@ -103,3 +103,42 @@ impl KeyPress {
         })
     }
 }
+
+/// What the pointer did, where the terminal reports it. A terminal sends pointer events only to a
+/// program that asks for them (mouse capture); the keyboard is the main input, and every part works
+/// without them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointerKind {
+    /// The main button went down.
+    Press,
+    /// The pointer moved, with no button down: hover.
+    Move,
+    ScrollUp,
+    ScrollDown,
+}
+
+/// A pointer event at a cell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pointer {
+    pub kind: PointerKind,
+    pub at: ratatui::layout::Position,
+}
+
+impl Pointer {
+    /// A crossterm mouse event as the parts read it; `None` for what no part answers (a release,
+    /// a drag, the other buttons).
+    pub fn from_crossterm(ev: &ratatui::crossterm::event::MouseEvent) -> Option<Pointer> {
+        use ratatui::crossterm::event::{MouseButton, MouseEventKind};
+        let kind = match ev.kind {
+            MouseEventKind::Down(MouseButton::Left) => PointerKind::Press,
+            MouseEventKind::Moved => PointerKind::Move,
+            MouseEventKind::ScrollUp => PointerKind::ScrollUp,
+            MouseEventKind::ScrollDown => PointerKind::ScrollDown,
+            _ => return None,
+        };
+        Some(Pointer {
+            kind,
+            at: ratatui::layout::Position::new(ev.column, ev.row),
+        })
+    }
+}

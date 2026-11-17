@@ -257,3 +257,59 @@ fn a_dialog_with_nothing_to_confirm_closes_from_its_corner() {
         DialogEvent::Action(0)
     );
 }
+
+#[test]
+fn a_pointer_picks_menu_rows_and_select_options() {
+    use ratatui::layout::Position;
+    let look = look();
+    let m = menu(&look);
+    let window = Rect::new(0, 0, 60, 20);
+    let anchor = Rect::new(1, 0, 9, 1);
+    let mut s = MenuState {
+        open: true,
+        highlight: 1,
+        sub: None,
+    };
+    let (area, _) = m.areas(window, anchor, &s);
+    // The popup's border, then its rows: a label, items, a disabled one, a separator.
+    assert_eq!(
+        m.hit(window, anchor, Position::new(area.x + 3, area.y + 1), &s),
+        None,
+        "a label"
+    );
+    assert_eq!(
+        m.hit(window, anchor, Position::new(area.x + 3, area.y + 2), &s),
+        Some((1, None))
+    );
+    assert_eq!(
+        m.hit(window, anchor, Position::new(area.x + 3, area.y + 4), &s),
+        None,
+        "a disabled row"
+    );
+    assert_eq!(m.press(&mut s, (1, None)), MenuEvent::Action(1, None));
+    assert!(!s.open);
+    let mut s = MenuState {
+        open: true,
+        highlight: 1,
+        sub: None,
+    };
+    m.press(&mut s, (2, None));
+    assert_eq!(s.sub, Some((2, 0)), "a submenu's row opens it");
+
+    let sel = Select::new(&look, options()).value(Some(0));
+    let anchor = Rect::new(0, 0, 20, 1);
+    let mut st = SelectState::default();
+    assert_eq!(sel.press(&mut st, None), SelectEvent::Opened);
+    let list = sel.list_area(window, anchor);
+    assert_eq!(
+        sel.option_at(window, anchor, Position::new(list.x + 2, list.y + 2), &st),
+        Some(1)
+    );
+    assert_eq!(
+        sel.option_at(window, anchor, Position::new(list.x + 2, list.y + 3), &st),
+        None,
+        "disabled"
+    );
+    assert_eq!(sel.press(&mut st, Some(1)), SelectEvent::Chose(1));
+    assert!(!st.open);
+}

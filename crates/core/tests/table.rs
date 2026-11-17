@@ -187,3 +187,40 @@ fn the_terminal_theme_sets_its_heads_upper_case() {
     assert!(lines[1].starts_with("│ JOB"), "{lines:?}");
     assert!(lines[0].starts_with('┌'), "square corners: its surface radius is 0");
 }
+
+#[test]
+fn a_pointer_hits_rows_boxes_and_heads() {
+    use ratatui::layout::Position;
+    use sokkel_tui::TableHit;
+    let look = look();
+    let (c, r) = (columns(), rows());
+    let table = Table::new(&look, &c, &r).selectable(true);
+    let area = Rect::new(0, 0, 80, 8);
+    let mut s = TableState::default();
+    draw(&table, 80, 8, &mut s);
+    // The frame's border, the head at row 1, the rule at 2, rows from 3.
+    assert_eq!(table.hit(area, Position::new(20, 3), &s), Some(TableHit::Row(0)));
+    assert_eq!(table.hit(area, Position::new(2, 4), &s), Some(TableHit::SelectBox(1)));
+    assert_eq!(table.hit(area, Position::new(2, 1), &s), Some(TableHit::HeadBox));
+    assert_eq!(table.hit(area, Position::new(6, 1), &s), Some(TableHit::Head(0)));
+    assert_eq!(table.hit(area, Position::new(20, 2), &s), None, "the rule");
+    assert_eq!(table.hit(area, Position::new(20, 6), &s), None, "past the last row");
+
+    assert_eq!(table.press(&mut s, TableHit::Row(2)), TableEvent::Moved);
+    assert_eq!(s.active, 2);
+    table.press(&mut s, TableHit::SelectBox(1));
+    assert!(s.selected.contains(&1));
+    table.press(&mut s, TableHit::HeadBox);
+    assert_eq!(s.selected.len(), 3, "every row");
+    table.press(&mut s, TableHit::HeadBox);
+    assert!(s.selected.is_empty(), "then none");
+    table.press(&mut s, TableHit::Head(0));
+    assert_eq!(s.sort, Some((0, SortDir::Ascending)));
+    table.scroll(&mut s, 5);
+    assert_eq!(s.active, 2, "the wheel stops at the last row");
+
+    // A table that does not select picks the row pressed.
+    let plain = Table::new(&look, &c, &r);
+    let mut s = TableState::default();
+    assert_eq!(plain.press(&mut s, TableHit::Row(1)), TableEvent::Opened(1));
+}

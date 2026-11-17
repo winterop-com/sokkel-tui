@@ -79,6 +79,10 @@ the contract say so that it does?
   where the layout puts it, Reset to defaults asking first, below md a list then a section with
   Back). Not yet: the palette's app search and two-line rows and foot, radio groups, a dialog's
   header bar and status, the nested shade, and what lies under a layer (T2).
+- The pointer, where the terminal reports it (`keys::Pointer`): the table says what a position
+  hits (a row, its box, the head's box, a head, a card) and acts on a press; the menu, the select's
+  list and the palette say which row is under it; every part already reports where its controls
+  landed. The wheel moves the active row; hover highlights. A press focuses without the ring.
 - `crates/core/examples/07_runs.rs` (step 7, `cargo run --example 07_runs`): Tidevann's runs in a real
   terminal: the shell, the runs and jobs pages, the table sorting and selecting by keys, a filter
   menu, a New run dialog whose confirm stays busy a moment, the palette (Ctrl+K), the shortcuts

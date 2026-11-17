@@ -11,7 +11,7 @@ use crate::keys::{Key, KeyPress};
 use crate::look::Look;
 use crate::popup::{Popup, PopupEvent, PopupKind, PopupRow, handle, stops};
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::widgets::Widget;
 
 /// A menu: its rows, and the rows of each submenu by the index of the row that opens it.
@@ -145,22 +145,13 @@ impl<'a> DropdownMenu<'a> {
         event
     }
 
-    /// Draw the open menu for a trigger at `anchor`, in `window`.
-    pub fn render(&self, window: Rect, anchor: Rect, buf: &mut Buffer, state: &MenuState) {
-        if !state.open {
-            return;
-        }
-        let mut popup = Popup::new(self.look, PopupKind::Menu, &self.rows).highlight(Some(state.highlight));
-        popup.sub_open = state.sub.map(|s| s.0);
-        if state.sub.is_some() {
-            popup.highlight = None;
-        }
+    /// Where the open menu and its open submenu stand, for a trigger at `anchor` in `window`.
+    pub fn areas(&self, window: Rect, anchor: Rect, state: &MenuState) -> (Rect, Option<Rect>) {
+        let popup = Popup::new(self.look, PopupKind::Menu, &self.rows);
         let area = popup.place(anchor, window, crate::cells::cols(128.0));
-        (&popup).render(area, buf);
-        if let Some((row, at)) = state.sub
-            && let Some(rows) = self.sub_rows(row)
-        {
-            let sub = Popup::new(self.look, PopupKind::Menu, rows).highlight(Some(at));
+        let sub = state.sub.and_then(|(row, _)| {
+            let rows = self.sub_rows(row)?;
+            let sub = Popup::new(self.look, PopupKind::Menu, rows);
             let w = sub.width().max(crate::cells::cols(96.0)).min(window.width);
             let h = sub.height();
             // At its row's end, its first row level with it; to the start when there is no room.
@@ -172,7 +163,86 @@ impl<'a> DropdownMenu<'a> {
             } else {
                 area.x.saturating_sub(w)
             };
-            (&sub).render(Rect::new(x, y, w, h), buf);
+            Some(Rect::new(x, y, w, h))
+        });
+        (area, sub)
+    }
+
+    /// The row a pointer at `at` is on: its index, and its index in the open submenu. Only rows a
+    /// press can choose: not a label, a separator or a disabled row.
+    pub fn hit(&self, window: Rect, anchor: Rect, at: Position, state: &MenuState) -> Option<(usize, Option<usize>)> {
+        if !state.open {
+            return None;
+        }
+        let (area, sub) = self.areas(window, anchor, state);
+        let row_in = |area: Rect, rows: &[PopupRow]| -> Option<usize> {
+            let inner = Rect::new(
+                area.x + 1,
+                area.y + 1,
+                area.width.saturating_sub(2),
+                area.height.saturating_sub(2),
+            );
+            if !inner.contains(at) {
+                return None;
+            }
+            let k = (at.y - inner.y) as usize;
+            stops(rows).contains(&k).then_some(k)
+        };
+        if let (Some(sa), Some((row, _))) = (sub, state.sub)
+            && let Some(k) = row_in(sa, self.sub_rows(row).unwrap_or(&[]))
+        {
+            return Some((row, Some(k)));
+        }
+        row_in(area, &self.rows).map(|k| (k, None))
+    }
+
+    /// A press on what [`DropdownMenu::hit`] found: a submenu's row opens it, any other row acts.
+    pub fn press(&self, state: &mut MenuState, hit: (usize, Option<usize>)) -> MenuEvent {
+        match hit {
+            (row, None) if self.sub_rows(row).is_some() => self.open_sub(state, row),
+            (row, None) => {
+                state.highlight = row;
+                state.sub = None;
+                self.chosen(state, &self.rows, row, None)
+            }
+            (row, Some(k)) => {
+                let rows = self.sub_rows(row).unwrap_or(&[]);
+                state.sub = Some((row, k));
+                self.chosen(state, rows, row, Some(k))
+            }
+        }
+    }
+
+    /// The pointer over a row: the highlight follows it.
+    pub fn hover(&self, state: &mut MenuState, hit: (usize, Option<usize>)) {
+        match hit {
+            (row, None) => {
+                state.highlight = row;
+                if state.sub.is_some_and(|(r, _)| r != row) {
+                    state.sub = None;
+                }
+            }
+            (row, Some(k)) => state.sub = Some((row, k)),
+        }
+    }
+
+    /// Draw the open menu for a trigger at `anchor`, in `window`.
+    pub fn render(&self, window: Rect, anchor: Rect, buf: &mut Buffer, state: &MenuState) {
+        if !state.open {
+            return;
+        }
+        let mut popup = Popup::new(self.look, PopupKind::Menu, &self.rows).highlight(Some(state.highlight));
+        popup.sub_open = state.sub.map(|s| s.0);
+        if state.sub.is_some() {
+            popup.highlight = None;
+        }
+        let (area, sub_area) = self.areas(window, anchor, state);
+        (&popup).render(area, buf);
+        if let (Some((row, at)), Some(sa)) = (state.sub, sub_area)
+            && let Some(rows) = self.sub_rows(row)
+        {
+            let sub = Popup::new(self.look, PopupKind::Menu, rows).highlight(Some(at));
+            (&sub).render(sa, buf);
         }
     }
 }

@@ -53,12 +53,14 @@ pub use button::{Button, ButtonSize, ButtonVariant, IconPlace, Tip};
 pub use dialog::{Confirm, Dialog, DialogEvent, DialogFocus, DialogLayout, DialogWidth, DialogWords};
 pub use focus::{Focus, FocusId, InputKind};
 pub use glyphs::Charset;
-pub use keys::{Key, KeyPress};
+pub use keys::{Key, KeyPress, Pointer, PointerKind};
 pub use look::{Depth, Look, Rgba};
 pub use menu::{DropdownMenu, MenuEvent, MenuState};
 pub use page_header::{HeaderLayout, PageHeader, PageHeaderWords};
 pub use page_state::{Outcome, PageState, PageStateWords, StateTone};
-pub use palette::{Command, CommandGroup, CommandPalette, CommandTone, PaletteEvent, PaletteState, PaletteWords};
+pub use palette::{
+    Command, CommandGroup, CommandPalette, CommandTone, PaletteEvent, PaletteHit, PaletteState, PaletteWords,
+};
 pub use popup::{Item, PopupRow};
 pub use rail::{Rail, RailEntry, RailFoot, RailGroup, RailLayout, RailWords};
 pub use section::{Section, SectionTone, SectionVariant};
@@ -70,7 +72,9 @@ pub use settings::{
 pub use shell::ShellLayout;
 pub use shortcuts::{Binding, KeyContext, Keys, ShortcutWords, Shortcuts};
 pub use status_line::{Fact, NoteTone, StatusLine};
-pub use table::{Align, Cell, Column, ColumnWidth, Row, RowTone, SortDir, Table, TableEvent, TableState, TableWords};
+pub use table::{
+    Align, Cell, Column, ColumnWidth, Row, RowTone, SortDir, Table, TableEvent, TableHit, TableState, TableWords,
+};
 pub use text::{Plural, TextRole};
 pub use text_field::{FieldEvent, FieldFocus, FieldState, FieldWords, Issue, RequiredMark, TextField, Tone};
 pub use tokens::{Density, Scheme};

@@ -132,6 +132,9 @@ until then this crate reads the resolved JSON directly.
 
 1. **Hover.** Mouse motion is reported only when asked for, and many readers never move a mouse in a
    terminal. Hover paints are kept but nothing may rely on them.
+   sokkel-tui asks for it (mouse capture) in its apps, with a way to turn it off: while it is on,
+   the terminal's own selection needs a modifier held. A spec could say whether a terminal app
+   captures the mouse by default.
 2. **Keyboard-only focus.** Kept as the spec has it: the ring shows on keyboard focus, and a press
    of the pointer (where the terminal reports one) focuses without it. The keyboard is the main
    input, so the ring shows almost always.

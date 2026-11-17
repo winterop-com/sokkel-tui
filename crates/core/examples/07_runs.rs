@@ -4,6 +4,11 @@
 //!
 //! Usage: cargo run --example 07_runs [-- light] [-- --frame <cols> <rows> <out> [keys...]]
 //!
+//! The mouse works too, where the terminal reports it: a press on a row, a box, a head, a button,
+//! a rail entry or a palette row acts on it, the wheel scrolls, hover highlights; a press outside an
+//! open layer closes it. The palette's "Turn the mouse off" gives the terminal its own selection
+//! back.
+//!
 //! Keys: Tab and Shift+Tab move focus; Ctrl+K the palette; ? the shortcuts; / the search; G then R
 //! and G then J go to a page; in the table Up, Down, Home, End, PageUp, PageDown, Space selects,
 //! Up from the first row sorts by the heads. Ctrl+Q or Ctrl+C quits.
@@ -13,18 +18,19 @@
 
 use ratatui::Frame;
 use ratatui::backend::TestBackend;
-use ratatui::crossterm::event::{self, Event};
-use ratatui::layout::Rect;
+use ratatui::crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event};
+use ratatui::crossterm::execute;
+use ratatui::layout::{Position, Rect};
 use ratatui::style::Style;
 use ratatui::widgets::Widget;
 use sokkel_tui::{
     Align, Binding, Button, ButtonVariant, Cell, Charset, Column, ColumnWidth, Command, CommandGroup, CommandPalette,
-    Confirm, Density, Depth, Dialog, DialogEvent, DialogFocus, DialogWidth, DropdownMenu, Fact, Focus, FocusId, Item,
-    Key, KeyContext, KeyPress, Keys, Look, MenuEvent, MenuState, NoteTone, PageHeader, PaletteEvent, PaletteState,
-    PopupRow, Rail, RailEntry, RailFoot, RailGroup, Row, RowTone, Scheme, Select, SelectEvent, SelectOption,
-    SelectState, Setting, SettingsDialog, SettingsEvent, SettingsFocus, SettingsGroup, SettingsSection, SettingsState,
-    ShellLayout, ShortcutWords, Shortcuts, SortDir, StatusLine, Table, TableEvent, TableState, TextRole, Tip, TopBar,
-    TopBarFocus, snapshot,
+    Confirm, Density, Depth, Dialog, DialogEvent, DialogFocus, DialogLayout, DialogWidth, DropdownMenu, Fact, Focus,
+    FocusId, Item, Key, KeyContext, KeyPress, Keys, Look, MenuEvent, MenuState, NoteTone, PageHeader, PaletteEvent,
+    PaletteState, Pointer, PointerKind, PopupRow, Rail, RailEntry, RailFoot, RailGroup, Row, RowTone, Scheme, Select,
+    SelectEvent, SelectOption, SelectState, Setting, SettingsDialog, SettingsEvent, SettingsFocus, SettingsGroup,
+    SettingsLayout, SettingsSection, SettingsState, ShellLayout, ShortcutWords, Shortcuts, SortDir, StatusLine, Table,
+    TableEvent, TableHit, TableState, TableWords, TextRole, Tip, TopBar, TopBarFocus, snapshot,
 };
 use std::time::{Duration, Instant};
 
@@ -178,6 +184,31 @@ struct App {
     theme_select: SelectState,
     now: u64,
     quit: bool,
+    /// Mouse capture on, and where the pointer is.
+    mouse: bool,
+    mouse_changed: bool,
+    hover: Option<Position>,
+    /// Where the last frame put what a press can hit.
+    geo: Geo,
+}
+
+/// Where the last frame drew what a pointer can hit.
+#[derive(Default)]
+struct Geo {
+    window: Rect,
+    rail: Vec<((usize, usize), Rect)>,
+    search: Option<Rect>,
+    palette_button: Option<Rect>,
+    filter: Option<Rect>,
+    new: Option<Rect>,
+    table: Rect,
+    layer: Option<Rect>,
+    dialog: Option<DialogLayout>,
+    settings: Option<SettingsLayout>,
+}
+
+fn inside(r: Option<Rect>, at: Position) -> bool {
+    r.is_some_and(|r| r.contains(at))
 }
 
 impl App {
@@ -212,6 +243,206 @@ impl App {
             theme_select: SelectState::default(),
             now: 0,
             quit: false,
+            mouse: true,
+            mouse_changed: false,
+            hover: None,
+            geo: Geo::default(),
+        }
+    }
+
+    /// The filter changes which rows there are: a selection by row would point at others.
+    fn toggle_failed(&mut self) {
+        self.failed_only = !self.failed_only;
+        self.table.selected.clear();
+        self.table.active = 0;
+    }
+
+    fn hovering(&self, r: Option<Rect>) -> bool {
+        self.hover.is_some_and(|at| inside(r, at))
+    }
+
+    /// One pointer event: a press acts on what it hits, the wheel scrolls, a move hovers.
+    fn pointer(&mut self, p: Pointer) {
+        let at = p.at;
+        match p.kind {
+            PointerKind::Move => {
+                self.hover = Some(at);
+                if self.layer == Layer::Palette {
+                    let pal = CommandPalette::new(&self.look, self.groups());
+                    if let Some(area) = self.geo.layer
+                        && let Some(hit) = pal.hit(area, at, &self.palette)
+                    {
+                        pal.hover(&mut self.palette, hit);
+                    }
+                } else if self.menu.open
+                    && let Some(anchor) = self.geo.filter
+                {
+                    let mut st = self.menu;
+                    let menu = self.filter_menu();
+                    if let Some(hit) = menu.hit(self.geo.window, anchor, at, &st) {
+                        menu.hover(&mut st, hit);
+                    }
+                    self.menu = st;
+                }
+            }
+            PointerKind::ScrollUp | PointerKind::ScrollDown => {
+                let by: isize = if p.kind == PointerKind::ScrollUp { -3 } else { 3 };
+                let key = if by < 0 { Key::Up } else { Key::Down };
+                match self.layer {
+                    Layer::Palette => {
+                        for _ in 0..3 {
+                            self.key(KeyPress::new(key));
+                        }
+                    }
+                    Layer::None if self.page == Page::Runs => {
+                        let (c, r) = (columns(), self.rows());
+                        Table::new(&self.look, &c, &r).scroll(&mut self.table, by);
+                    }
+                    Layer::None => {
+                        let (c, r) = jobs();
+                        Table::new(&self.look, &c, &r).scroll(&mut self.jobs, by);
+                    }
+                    _ => {}
+                }
+            }
+            PointerKind::Press => self.press(at),
+        }
+    }
+
+    fn press(&mut self, at: Position) {
+        // An open layer takes the press; one outside it closes the layer.
+        match self.layer {
+            Layer::Palette => {
+                let pal = CommandPalette::new(&self.look, self.groups());
+                match self.geo.layer.and_then(|area| pal.hit(area, at, &self.palette)) {
+                    Some(hit) => match pal.press(&mut self.palette, hit) {
+                        PaletteEvent::Run(id) => self.run_command(&id),
+                        PaletteEvent::StopWaiting => self.close(),
+                        _ => {}
+                    },
+                    None if !inside(self.geo.layer, at) => self.close(),
+                    None => {}
+                }
+                return;
+            }
+            Layer::NewRun => {
+                let d = self.geo.dialog.clone().unwrap_or_default();
+                if inside(d.confirm, at) {
+                    self.dialog_focus = DialogFocus::Confirm;
+                    self.key(KeyPress::new(Key::Enter));
+                } else if inside(d.cancel, at) {
+                    self.dialog_focus = DialogFocus::Cancel;
+                    self.key(KeyPress::new(Key::Enter));
+                } else if !inside(self.geo.layer, at) && self.busy_since.is_none() {
+                    self.close();
+                }
+                return;
+            }
+            Layer::Shortcuts => {
+                self.close();
+                return;
+            }
+            Layer::Settings => {
+                self.settings_press(at);
+                return;
+            }
+            Layer::None => {}
+        }
+        // An open menu takes the press; one outside it closes it.
+        if self.menu.open
+            && let Some(anchor) = self.geo.filter
+        {
+            let mut st = self.menu;
+            let menu = self.filter_menu();
+            let hit = menu.hit(self.geo.window, anchor, at, &st);
+            let event = hit.map(|h| menu.press(&mut st, h));
+            self.menu = st;
+            match event {
+                Some(MenuEvent::Action(1, None)) => self.toggle_failed(),
+                Some(_) => {}
+                None => {
+                    self.menu = MenuState::default();
+                    if inside(self.geo.filter, at) {
+                        return;
+                    }
+                }
+            }
+            if hit.is_some() {
+                return;
+            }
+        }
+        self.focus.press(at);
+        let id = |n: &str| FocusId::new(n);
+        if let Some(&((_, e), _)) = self.geo.rail.iter().find(|(_, r)| r.contains(at)) {
+            match e {
+                0 => self.page = Page::Runs,
+                1 => self.page = Page::Jobs,
+                _ => {}
+            }
+        } else if inside(self.geo.palette_button, at) {
+            self.act(Act::Palette);
+        } else if inside(self.geo.search, at) {
+            self.focus.set(id(SEARCH));
+        } else if inside(self.geo.filter, at) {
+            self.focus.set(id(FILTER));
+            self.menu.open = true;
+            self.menu.highlight = 1;
+        } else if inside(self.geo.new, at) {
+            self.run_command("new");
+        } else if self.geo.table.contains(at) {
+            self.focus.set(id(TABLE));
+            if self.page == Page::Runs {
+                let (c, r) = (columns(), self.rows());
+                let t = Table::new(&self.look, &c, &r).selectable(true);
+                if let Some(hit) = t.hit(self.geo.table, at, &self.table) {
+                    t.press(&mut self.table, hit);
+                }
+            } else {
+                let (c, r) = jobs();
+                let t = Table::new(&self.look, &c, &r);
+                if let Some(hit) = t.hit(self.geo.table, at, &self.jobs) {
+                    t.press(&mut self.jobs, hit);
+                }
+            }
+        }
+    }
+
+    fn settings_press(&mut self, at: Position) {
+        let l = self.geo.settings.clone().unwrap_or_default();
+        let scheme_at = l.controls.iter().find(|(k, _)| *k == 0).map(|(_, r)| *r);
+        if self.theme_select.open
+            && let Some(anchor) = scheme_at
+        {
+            let mut st = self.theme_select;
+            let sel = self.scheme_select();
+            let option = sel.option_at(self.geo.window, anchor, at, &st);
+            let event = sel.press(&mut st, option);
+            self.theme_select = st;
+            match event {
+                SelectEvent::Chose(0) => self.rest_look(Scheme::Light, self.look.density()),
+                SelectEvent::Chose(_) => self.rest_look(Scheme::Dark, self.look.density()),
+                _ => {}
+            }
+            return;
+        }
+        if inside(l.close, at) || inside(l.done, at) || !inside(self.geo.layer, at) {
+            self.close();
+        } else if inside(scheme_at, at) {
+            self.settings.focus = SettingsFocus::Control(0);
+            let mut st = self.theme_select;
+            self.scheme_select().press(&mut st, None);
+            self.theme_select = st;
+        } else if let Some((_, r)) = l.controls.iter().find(|(k, _)| *k == 1)
+            && r.contains(at)
+        {
+            self.settings.focus = SettingsFocus::Control(1);
+            self.run_command("density");
+            self.open(Layer::Settings);
+        } else if inside(l.search, at) {
+            self.settings.focus = SettingsFocus::Search;
+        } else if let Some(&((g, e), _)) = l.entries.iter().find(|(_, r)| r.contains(at)) {
+            self.settings.focus = SettingsFocus::Entry(g, e);
+            self.settings.shown = (g, e);
         }
     }
 
@@ -258,6 +489,20 @@ impl App {
                 "Look",
                 [
                     Command::new("scheme", "Switch light and dark").icon("◐"),
+                    Command::new(
+                        "mouse",
+                        if self.mouse {
+                            "Turn the mouse off"
+                        } else {
+                            "Turn the mouse on"
+                        },
+                    )
+                    .icon("↖")
+                    .hint(if self.mouse {
+                        "the terminal selects text again"
+                    } else {
+                        "clicks, the wheel, hover"
+                    }),
                     Command::new("density", "Switch density")
                         .icon("≡")
                         .hint(match self.look.density() {
@@ -300,6 +545,10 @@ impl App {
         match id {
             "go-runs" => self.page = Page::Runs,
             "go-jobs" => self.page = Page::Jobs,
+            "mouse" => {
+                self.mouse = !self.mouse;
+                self.mouse_changed = true;
+            }
             "settings" => {
                 self.settings = SettingsState::default();
                 self.open(Layer::Settings);
@@ -406,7 +655,7 @@ impl App {
             let event = self.filter_menu().handle(&mut state, key);
             self.menu = state;
             if event == MenuEvent::Action(1, None) {
-                self.failed_only = !self.failed_only;
+                self.toggle_failed();
             }
         } else if self.focus.is(at(NEW)) && key.is_press() {
             self.run_command("new");
@@ -568,8 +817,13 @@ impl App {
                 name: "ada".into(),
             });
         let shell = ShellLayout::new(look, window, rail.width());
+        self.geo = Geo {
+            window,
+            ..Geo::default()
+        };
         if let Some(r) = shell.rail {
             f.render_widget(&rail, r);
+            self.geo.rail = rail.layout(r, 0).entries;
         }
         let title = match self.page {
             Page::Runs => "Runs",
@@ -580,6 +834,8 @@ impl App {
             .window(shell.width)
             .search(self.query.clone());
         let top_layout = top.layout(shell.top);
+        self.geo.search = top_layout.search;
+        self.geo.palette_button = top_layout.palette;
         if let Some(r) = top_layout.search {
             self.focus.text_stop(at(SEARCH), r);
         }
@@ -600,13 +856,21 @@ impl App {
         let shown = self.shown_runs().len();
         let header = match self.page {
             Page::Runs => PageHeader::new(look, "Runs")
-                .count(format!("{} runs", count(shown)))
+                .count(
+                    TableWords::default()
+                        .rows
+                        .say(shown)
+                        .replace(&shown.to_string(), &count(shown)),
+                )
                 .actions([
                     Button::new(look, "Filter")
                         .variant(ButtonVariant::Secondary)
+                        .hovered(self.hovering(self.geo.filter) && self.layer == Layer::None)
                         .opens_menu(self.menu.open)
                         .focused(self.focus.ring(at(FILTER))),
-                    Button::new(look, "New").focused(self.focus.ring(at(NEW))),
+                    Button::new(look, "New")
+                        .focused(self.focus.ring(at(NEW)))
+                        .hovered(self.hovering(self.geo.new) && self.layer == Layer::None),
                 ]),
             Page::Jobs => PageHeader::new(look, "Jobs").count("5 jobs"),
         };
@@ -618,9 +882,11 @@ impl App {
             if let Some((_, r)) = layout.actions.first() {
                 self.focus.stop(at(FILTER), *r);
                 filter_at = Some(*r);
+                self.geo.filter = Some(*r);
             }
             if let Some((_, r)) = layout.actions.get(1) {
                 self.focus.stop(at(NEW), *r);
+                self.geo.new = Some(*r);
             }
         }
         f.render_widget(&header, hr);
@@ -632,6 +898,8 @@ impl App {
         };
         let table_focus = self.focus.is(at(TABLE)) && self.layer == Layer::None;
         self.focus.stop(at(TABLE), table_area);
+        self.geo.table = table_area;
+        let pointer = self.hover.filter(|_| self.layer == Layer::None && !self.menu.open);
         match self.page {
             Page::Runs => {
                 // One set of columns at every width: the sort's index means one column, and the
@@ -642,11 +910,25 @@ impl App {
                     .selectable(true)
                     .focused(table_focus)
                     .total(rows.len());
+                let hovered = pointer
+                    .and_then(|at| table.hit(table_area, at, &self.table))
+                    .and_then(|h| match h {
+                        TableHit::Row(p) | TableHit::SelectBox(p) | TableHit::Card(p) => self.table.row_at(&rows, p),
+                        _ => None,
+                    });
+                let table = table.hovered(hovered);
                 f.render_stateful_widget(&table, table_area, &mut self.table);
             }
             Page::Jobs => {
                 let (jc, jr) = jobs();
                 let table = Table::new(look, &jc, &jr).focused(table_focus);
+                let hovered = pointer
+                    .and_then(|at| table.hit(table_area, at, &self.jobs))
+                    .and_then(|h| match h {
+                        TableHit::Row(p) | TableHit::Card(p) => self.jobs.row_at(&jr, p),
+                        _ => None,
+                    });
+                let table = table.hovered(hovered);
                 f.render_stateful_widget(&table, table_area, &mut self.jobs);
             }
         }
@@ -686,6 +968,7 @@ impl App {
             Layer::Palette => {
                 let p = CommandPalette::new(look, self.groups()).window(shell.width);
                 let area = p.area(window, &self.palette);
+                self.geo.layer = Some(area);
                 p.render(area, f.buffer_mut(), &mut self.palette);
                 if let Some(pos) = self.palette.cursor_position() {
                     f.set_cursor_position(pos);
@@ -697,6 +980,7 @@ impl App {
                 let lines = sokkel_tui::text::wrap(words, 40);
                 let area = d.area(window, lines.len() as u16);
                 (&d).render(area, f.buffer_mut());
+                let dialog_layout = d.layout(area);
                 let body = d.layout(area).body;
                 let style = TextRole::Body.style(look).fg(look.token("popover-foreground"));
                 for (k, line) in sokkel_tui::text::wrap(words, body.width as usize)
@@ -706,6 +990,8 @@ impl App {
                     f.buffer_mut()
                         .set_stringn(body.x, body.y + k as u16, line, body.width as usize, style);
                 }
+                self.geo.layer = Some(area);
+                self.geo.dialog = Some(dialog_layout);
             }
             Layer::Shortcuts => {
                 let d = Dialog::new(look, "Keyboard shortcuts")
@@ -747,8 +1033,10 @@ impl App {
             Layer::Settings => {
                 let d = settings_dialog(look).window(shell.width);
                 let area = d.area(window);
+                self.geo.layer = Some(area);
                 d.render(area, f.buffer_mut(), &mut self.settings);
                 let layout = d.layout(area, &self.settings);
+                self.geo.settings = Some(layout.clone());
                 for (k, r) in &layout.controls {
                     match k {
                         0 => {
@@ -914,6 +1202,7 @@ fn main() -> std::io::Result<()> {
     }
 
     let mut terminal = ratatui::init();
+    execute!(std::io::stdout(), EnableMouseCapture)?;
     let start = Instant::now();
     let mut app = App::new(look);
     let result = (|| -> std::io::Result<()> {
@@ -921,15 +1210,34 @@ fn main() -> std::io::Result<()> {
             app.tick(start.elapsed().as_millis() as u64);
             terminal.draw(|f| app.draw(f))?;
             // One frame each motion-fast, so spinners turn.
-            if event::poll(Duration::from_millis(app.look.duration_ms("motion-fast")))?
-                && let Event::Key(k) = event::read()?
-                && let Some(key) = KeyPress::from_crossterm(&k)
-            {
-                app.key(key);
+            if event::poll(Duration::from_millis(app.look.duration_ms("motion-fast")))? {
+                match event::read()? {
+                    Event::Key(k) => {
+                        if let Some(key) = KeyPress::from_crossterm(&k) {
+                            app.key(key);
+                        }
+                    }
+                    Event::Mouse(m) if app.mouse => {
+                        if let Some(p) = Pointer::from_crossterm(&m) {
+                            app.pointer(p);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if app.mouse_changed {
+                app.mouse_changed = false;
+                if app.mouse {
+                    execute!(std::io::stdout(), EnableMouseCapture)?;
+                } else {
+                    app.hover = None;
+                    execute!(std::io::stdout(), DisableMouseCapture)?;
+                }
             }
         }
         Ok(())
     })();
+    execute!(std::io::stdout(), DisableMouseCapture)?;
     ratatui::restore();
     result
 }

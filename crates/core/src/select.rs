@@ -14,7 +14,7 @@ use crate::look::{Look, Rgba};
 use crate::popup::{Item, Popup, PopupEvent, PopupKind, PopupRow, handle};
 use crate::text::{self, TextRole};
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::style::Style;
 use ratatui::widgets::Widget;
 
@@ -295,6 +295,57 @@ impl<'a> Select<'a> {
             }
             if row.right() < buf.area.right() {
                 buf[(row.right(), row.y)].set_symbol(glyphs.ring_end).set_fg(t(ring));
+            }
+        }
+    }
+
+    /// Where the open list stands for the trigger at `anchor` in `window`.
+    pub fn list_area(&self, window: Rect, anchor: Rect) -> Rect {
+        let rows = self.rows();
+        Popup::new(self.look, PopupKind::Select, &rows).place(anchor, window, crate::cells::cols(144.0))
+    }
+
+    /// The option a pointer at `at` is on in the open list; not a disabled one.
+    pub fn option_at(&self, window: Rect, anchor: Rect, at: Position, state: &SelectState) -> Option<usize> {
+        if !state.open {
+            return None;
+        }
+        let area = self.list_area(window, anchor);
+        let inner = Rect::new(
+            area.x + 1,
+            area.y + 1,
+            area.width.saturating_sub(2),
+            area.height.saturating_sub(2),
+        );
+        if !inner.contains(at) {
+            return None;
+        }
+        let k = (at.y - inner.y) as usize;
+        self.options.get(k).filter(|o| !o.disabled).map(|_| k)
+    }
+
+    /// A press on the trigger opens or closes the list; on an option chooses it.
+    pub fn press(&self, state: &mut SelectState, option: Option<usize>) -> SelectEvent {
+        if self.disabled {
+            return SelectEvent::Ignored;
+        }
+        match option {
+            Some(k) => {
+                state.open = false;
+                if self.read_only {
+                    SelectEvent::Closed
+                } else {
+                    SelectEvent::Chose(k)
+                }
+            }
+            None if state.open => {
+                state.open = false;
+                SelectEvent::Closed
+            }
+            None => {
+                state.open = true;
+                state.highlight = self.value.unwrap_or(0);
+                SelectEvent::Opened
             }
         }
     }
