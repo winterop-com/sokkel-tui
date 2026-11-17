@@ -188,3 +188,48 @@ fn the_look_is_kept_under_the_webs_keys_and_read_back() {
     assert!(read_look(&dir.join("missing.json"), &look()).is_none());
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// A small app on the runtime: one refused command.
+struct Refuses;
+
+impl sokkel_tui::app::ShellApp for Refuses {
+    fn chrome<'a>(&'a self, look: &'a Look) -> sokkel_tui::app::Chrome<'a> {
+        sokkel_tui::app::Chrome {
+            rail: Rail::new(look, "T", "Tidevann").groups([RailGroup::new(None, [RailEntry::new("Runs")])]),
+            top: TopBar::new(look).trail(["Tidevann", "Runs"]),
+            foot: StatusLine::new(look),
+        }
+    }
+
+    fn page(&mut self, _f: &mut ratatui::Frame, _area: Rect, _cx: &mut sokkel_tui::app::Cx) {}
+
+    fn commands(&self) -> Vec<sokkel_tui::CommandGroup> {
+        vec![sokkel_tui::CommandGroup::new(
+            "Runs",
+            [sokkel_tui::Command::new("retry", "Retry sync-inventory")],
+        )]
+    }
+
+    fn command(&mut self, _id: &str) -> sokkel_tui::app::Ran {
+        sokkel_tui::app::Ran::Refused(Some("sync-inventory is already running".into()))
+    }
+}
+
+#[test]
+fn the_runtime_opens_the_palette_and_keeps_it_open_with_a_refusal() {
+    let keys: Vec<KeyPress> = ["ctrl-k", "r", "e", "t", "r", "y", "enter"]
+        .iter()
+        .filter_map(|k| KeyPress::named(k))
+        .collect();
+    let buf = sokkel_tui::app::shot(Refuses, look(), (120, 30), |_| {}, &keys);
+    let text = sokkel_tui::snapshot::text(&buf);
+    assert!(text.contains("⌕ retry"), "the query kept: {text}");
+    assert!(text.contains("sync-inventory is already running"));
+    // A second Ctrl+K closes it; Escape with nothing open leaves the app running.
+    let keys: Vec<KeyPress> = ["ctrl-k", "ctrl-k", "esc"]
+        .iter()
+        .filter_map(|k| KeyPress::named(k))
+        .collect();
+    let text = sokkel_tui::snapshot::text(&sokkel_tui::app::shot(Refuses, look(), (120, 30), |_| {}, &keys));
+    assert!(!text.contains("Search or run a command"));
+}

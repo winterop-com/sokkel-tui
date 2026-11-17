@@ -16,7 +16,7 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::widgets::Widget;
-use sokkel_tui::app::{self, Chrome, Cx, Flow, ShellApp};
+use sokkel_tui::app::{self, Chrome, Cx, Flow, Ran, ShellApp};
 use sokkel_tui::{
     Align, Binding, Button, ButtonVariant, Cell, Column, ColumnWidth, Command, CommandGroup, Confirm, Density, Dialog,
     DialogEvent, DialogFocus, DialogWidth, DropdownMenu, Fact, FocusId, Item, Key, KeyPress, Keys, Look, MenuEvent,
@@ -406,7 +406,7 @@ impl ShellApp for Runs {
         ]
     }
 
-    fn command(&mut self, id: &str) {
+    fn command(&mut self, id: &str) -> Ran {
         match id {
             "go-runs" => self.go(Page::Runs),
             "go-jobs" => self.go(Page::Jobs),
@@ -417,6 +417,7 @@ impl ShellApp for Runs {
             "failed" => self.menu_event(MenuEvent::Action(1, None)),
             _ => {}
         }
+        Ran::Done
     }
 
     fn entry(&mut self, group: usize, entry: usize) {
@@ -550,7 +551,9 @@ impl ShellApp for Runs {
         let inside = |r: Option<Rect>| r.is_some_and(|r| r.contains(p.at));
         match p.kind {
             PointerKind::Press if inside(self.filter_at) => self.open_menu(),
-            PointerKind::Press if inside(self.new_at) => self.command("new"),
+            PointerKind::Press if inside(self.new_at) => {
+                self.command("new");
+            }
             PointerKind::Press | PointerKind::ScrollUp | PointerKind::ScrollDown if self.table_at.contains(p.at) => {
                 let by: isize = if p.kind == PointerKind::ScrollUp { -3 } else { 3 };
                 if self.page == Page::Runs {

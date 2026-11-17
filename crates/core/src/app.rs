@@ -170,6 +170,18 @@ pub struct Cx<'a> {
     pub now: u64,
 }
 
+/// What running one of the app's commands did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Ran {
+    /// Done: the palette closes.
+    Done,
+    /// Refused, with why: the palette stays open and says so.
+    Refused(Option<String>),
+    /// Still going: the palette shows it running (Stop waiting after `busy-release`) until
+    /// [`ShellApp::finished`] says it is done.
+    Running,
+}
+
 /// What an app's key did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Flow {
@@ -202,8 +214,16 @@ pub trait ShellApp {
     fn commands(&self) -> Vec<CommandGroup> {
         Vec::new()
     }
-    /// A command of the app's was run.
-    fn command(&mut self, _id: &str) {}
+    /// A command of the app's was run (from the palette, a shortcut or an account row).
+    fn command(&mut self, _id: &str) -> Ran {
+        Ran::Done
+    }
+    /// Whether a command that answered [`Ran::Running`] is done.
+    fn finished(&self, _id: &str) -> bool {
+        true
+    }
+    /// The reader stopped waiting for a running command: the app lets it go on, or stops it.
+    fn stop_waiting(&mut self, _id: &str) {}
     /// The app's settings sections, after the runtime's Look and Frame.
     fn settings(&self, _look: &Look) -> Vec<SettingsSection> {
         Vec::new()
@@ -314,6 +334,8 @@ struct Host<A> {
     window: Rect,
     keys: Shortcuts<Act>,
     now: u64,
+    /// The app's command still running, and since when.
+    running: Option<(String, u64)>,
     /// Where the look is kept, and the look last kept there.
     kept: Option<std::path::PathBuf>,
     worn: (String, Scheme, Density),
@@ -375,6 +397,7 @@ impl<A: ShellApp> Host<A> {
             window: Rect::default(),
             keys: Shortcuts::new(),
             now: 0,
+            running: None,
             focus: Focus::new(),
             hover: None,
         };
@@ -529,7 +552,9 @@ impl<A: ShellApp> Host<A> {
                     self.open(Layer::Palette);
                 }
             }
-            Act::App(id) => self.app.command(&id),
+            Act::App(id) => {
+                self.app.command(&id);
+            }
         }
     }
 
@@ -699,7 +724,9 @@ impl<A: ShellApp> Host<A> {
                         self.relook(s, density, &theme);
                         self.layer = Layer::Account;
                     }
-                    AccountAct::App(id) => self.app.command(&id),
+                    AccountAct::App(id) => {
+                        self.app.command(&id);
+                    }
                     AccountAct::None => {}
                 }
             }
@@ -759,7 +786,18 @@ impl<A: ShellApp> Host<A> {
             RAIL => self.shell.collapsed = !self.shell.collapsed,
             MOUSE => self.mouse = !self.mouse,
             t if t.starts_with(THEME) => self.relook(scheme, density, &t[THEME.len()..]),
-            _ => self.app.command(id),
+            _ => match self.app.command(id) {
+                Ran::Done => self.palette.done(),
+                Ran::Refused(why) => {
+                    self.layer = Layer::Palette;
+                    self.palette.refused(why, &crate::palette::PaletteWords::default());
+                }
+                Ran::Running => {
+                    self.layer = Layer::Palette;
+                    self.palette.running(id, 0);
+                    self.running = Some((id.to_string(), self.now));
+                }
+            },
         }
     }
 
@@ -787,11 +825,15 @@ impl<A: ShellApp> Host<A> {
 
     fn palette_event(&mut self, event: PaletteEvent) {
         match event {
-            PaletteEvent::Run(id) => {
+            PaletteEvent::Run(id) => self.command(&id),
+            PaletteEvent::StopWaiting => {
+                if let Some((id, _)) = self.running.take() {
+                    self.app.stop_waiting(&id);
+                }
                 self.palette.done();
-                self.command(&id);
+                self.layer = Layer::None;
             }
-            PaletteEvent::Close | PaletteEvent::StopWaiting => self.layer = Layer::None,
+            PaletteEvent::Close if self.running.is_none() => self.layer = Layer::None,
             _ => {}
         }
     }
@@ -809,6 +851,15 @@ impl<A: ShellApp> Program for Host<A> {
     fn tick(&mut self, now: u64) {
         self.now = now;
         self.app.tick(now);
+        if let Some((id, since)) = self.running.clone() {
+            if self.app.finished(&id) {
+                self.running = None;
+                self.palette.done();
+                self.layer = Layer::None;
+            } else {
+                self.palette.running(id, now.saturating_sub(since));
+            }
+        }
     }
 
     fn key(&mut self, key: KeyPress) -> bool {
