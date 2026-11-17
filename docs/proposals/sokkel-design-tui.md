@@ -93,6 +93,24 @@ From building Button, TextField, PageState, PageHeader and Section on it:
    rule beside `rule`.
 6. **A graph's dot.** The section's dot grid has no glyph in glyphs.json; sokkel-tui draws `·`.
 
+## (c3) The overlays in cells
+
+dialog, dropdown-menu and select carry no `cells` note at 0cd3072. How sokkel-tui reads them, for
+the notes they could take:
+
+- **A popup** (a menu, a select's list) is a box whose border is its edge; its 4 px padding is no
+  cell and its rows' 6 px a column. Every row is one row. While it holds a check row, a gutter of
+  two columns holds the check. A separator is a row of the rule glyph; a group's label a row in the
+  help role. It opens under its trigger, over it when there is no room under; a submenu at its
+  row's end, its first row level with the row.
+- **A dialog** is centered: `sm` 46 columns, `md` 61, `lg` 80, `xl` 107, `full` the window less 4,
+  at most the window less 4 across and 2 down. Its 16 px padding is two columns across and a row
+  down at regular; its pieces a blank row apart at regular. The footer is a rule row and a row of
+  verbs on the footer's ground. Below md it is a sheet filling the window, no edge.
+- **What lies under them** is drawn as it is, waiting on T2.
+- **A select's focus.** The field variant shows focus by its focus edge, as a text field does; the
+  quiet one, which draws no edge, by the bars beside it (T4).
+
 ## (d) Where it lives
 
 The proposals land in sokkel-design, as egui's did. sokkel-tui embeds the resolved file at a pinned

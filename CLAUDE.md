@@ -12,7 +12,7 @@ contract.
   of their own; the core never depends on an add-on. No empty placeholder crates.
 - `crates/core/examples/spike.rs` (`cargo run --example spike`) draws the shell and the runs page from the core's parts, to SVG and text: the
   frame (rail, top bar, status line), the page header and the table, collapsed and as a drawer.
-- `crates/core/examples/parts/` (`cargo run --example parts`, one file per sheet) draws the parts sheets (`controls`, `page`, `table`, one per group of parts): every part
+- `crates/core/examples/parts/` (`cargo run --example parts`, one file per sheet) draws the parts sheets (`controls`, `page`, `table`, `overlays`, one module per sheet): every part
   the core holds, in its variants and states. A new part or state goes on a sheet.
 - An example uses only the library's public parts; a part it lacks goes into the library.
 

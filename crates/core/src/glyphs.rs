@@ -83,6 +83,8 @@ pub struct Glyphs {
     /// The rail's collapse control (`panel-left-close`) and expand control (`panel-left-open`).
     pub collapse: &'static str,
     pub expand: &'static str,
+    /// A dialog's corner close (`x`).
+    pub close: &'static str,
     pub sort_ascending: &'static str,
     pub sort_descending: &'static str,
     pub sortable: &'static str,
@@ -178,6 +180,7 @@ impl Glyphs {
             search: icon("search"),
             collapse: icon("panel-left-close"),
             expand: icon("panel-left-open"),
+            close: icon("x"),
             sort_ascending: glyph("sort-ascending"),
             sort_descending: glyph("sort-descending"),
             sortable: glyph("sortable"),

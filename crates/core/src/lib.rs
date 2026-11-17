@@ -20,17 +20,22 @@
 //! - [`section`]: [`Section`], a titled part of a page.
 //! - [`table`]: [`Table`], the one table.
 //! - [`rail`], [`top_bar`], [`status_line`]: the frame's parts, and [`shell`] where they go.
+//! - [`dialog`], [`menu`], [`select`]: the overlays, over the popup [`popup`] they share.
 
 pub mod button;
 pub mod cells;
+pub mod dialog;
 pub mod focus;
 pub mod glyphs;
 pub mod keys;
 pub mod look;
+pub mod menu;
 pub mod page_header;
 pub mod page_state;
+pub mod popup;
 pub mod rail;
 pub mod section;
+pub mod select;
 pub mod shell;
 pub mod shortcuts;
 pub mod snapshot;
@@ -42,14 +47,18 @@ pub mod tokens;
 pub mod top_bar;
 
 pub use button::{Button, ButtonSize, ButtonVariant, IconPlace, Tip};
+pub use dialog::{Confirm, Dialog, DialogEvent, DialogFocus, DialogLayout, DialogWidth, DialogWords};
 pub use focus::{Focus, FocusId, InputKind};
 pub use glyphs::Charset;
 pub use keys::{Key, KeyPress};
 pub use look::{Depth, Look, Rgba};
+pub use menu::{DropdownMenu, MenuEvent, MenuState};
 pub use page_header::{HeaderLayout, PageHeader, PageHeaderWords};
 pub use page_state::{Outcome, PageState, PageStateWords, StateTone};
+pub use popup::{Item, PopupRow};
 pub use rail::{Rail, RailEntry, RailFoot, RailGroup, RailLayout, RailWords};
 pub use section::{Section, SectionTone, SectionVariant};
+pub use select::{Select, SelectEvent, SelectOption, SelectState, SelectVariant};
 pub use shell::ShellLayout;
 pub use shortcuts::{Binding, KeyContext, Keys, ShortcutWords, Shortcuts};
 pub use status_line::{Fact, NoteTone, StatusLine};

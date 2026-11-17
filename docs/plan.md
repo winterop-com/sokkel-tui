@@ -65,9 +65,17 @@ the contract say so that it does?
   and a focused control's tip in the note's place (principle 23); `ShellLayout` placing them, the
   drawer below md. Not yet: the rail's parents and flyouts, descriptions, strip, body, resizing and
   reordering; the panel; what lies under the drawer (T2).
+- `dialog`, `menu`, `select`, `popup` (step 6, first half): the dialog (header, body, the footer's
+  verbs with the confirm last, a shut confirm's reason as its tip, `busy-release` and Stop
+  waiting, the corner close, Escape held while busy, a sheet below md); the dropdown menu (items
+  with icon and keys, labels, separators, check rows in a gutter, destructive and disabled rows,
+  one level of submenu, typeahead); the select (field and quiet triggers, its list with details
+  and the chosen row's check, typeahead while closed, read only, disabled). Not yet: the command
+  palette, the settings dialog, radio groups, a dialog's header bar and status, the nested shade,
+  and what lies under a layer (T2).
 - `crates/core/examples/spike.rs`: the shell and the runs page, every part from the core, in every theme and
   scheme, below and above the md line, collapsed and as a drawer.
-- `crates/core/examples/parts/`: the parts sheets (`controls`, `page`, `table`), every part in its variants and states, in
+- `crates/core/examples/parts/`: the parts sheets (`controls`, `page`, `table`, `overlays`), every part in its variants and states, in
   color, in ASCII and without color.
 
 ## What comes next, in order
@@ -82,7 +90,7 @@ then drawn by the spike in place of its hand-drawn copy.
 | 3 | PageState, PageHeader, Section (built) | Loading, failed (headed by what the server answered), empty, the content |
 | 4 | Table (built, the table variant) | The one table: head, sort by keys, selection, tones, the quiet dash, the foot's range, drawing only the visible rows, cards below its own stack width |
 | 5 | Shell: Rail, TopBar, StatusLine (built) | The drawer below about 90 columns, the trail in the top bar only, the account level with the foot |
-| 6 | Overlays: Dialog, CommandPalette, Select, DropdownMenu, SettingsDialog | A back stack for settings; focus returned on close; the palette on Ctrl+K, busy release after `busy-release` |
+| 6 | Overlays: Dialog, CommandPalette, Select, DropdownMenu, SettingsDialog (Dialog, Select, DropdownMenu built) | A back stack for settings; focus returned on close; the palette on Ctrl+K, busy release after `busy-release` |
 | 7 | An interactive example | Tidevann's runs on the shell, run in a real terminal |
 
 Tooltip has no floating box here: its words are said in the status line (proposal, point 7).
