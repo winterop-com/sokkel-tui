@@ -9,7 +9,7 @@
 //! end (open-questions T4, as decided). The list is [`crate::popup`]'s, under the trigger, at
 //! least 144 px (17 columns) wide, the chosen row checked at its end.
 
-use crate::keys::{Key, KeyPress};
+use crate::keys::{Key, KeyPress, Pointer, PointerKind};
 use crate::look::{Look, Rgba};
 use crate::popup::{Item, Popup, PopupEvent, PopupKind, PopupRow, handle};
 use crate::text::{self, TextRole};
@@ -347,6 +347,32 @@ impl<'a> Select<'a> {
                 state.highlight = self.value.unwrap_or(0);
                 SelectEvent::Opened
             }
+        }
+    }
+
+    /// A pointer event on the select with its trigger at `anchor`. A press on the trigger opens or
+    /// closes the list; open, the highlight follows the pointer, a press on an option chooses it,
+    /// and a press outside the list closes it.
+    pub fn pointer(&self, state: &mut SelectState, window: Rect, anchor: Rect, p: Pointer) -> SelectEvent {
+        let option = if state.open {
+            self.option_at(window, anchor, p.at, state)
+        } else {
+            None
+        };
+        match p.kind {
+            PointerKind::Move => match option {
+                Some(k) if k != state.highlight => {
+                    state.highlight = k;
+                    SelectEvent::Moved
+                }
+                _ => SelectEvent::Ignored,
+            },
+            PointerKind::Press if !state.open && !anchor.contains(p.at) => SelectEvent::Ignored,
+            PointerKind::Press if state.open && option.is_none() && self.list_area(window, anchor).contains(p.at) => {
+                SelectEvent::Ignored
+            }
+            PointerKind::Press => self.press(state, option),
+            _ => SelectEvent::Ignored,
         }
     }
 

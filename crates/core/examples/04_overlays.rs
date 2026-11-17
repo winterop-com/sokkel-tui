@@ -8,7 +8,7 @@
 //! every row and verb, and a press outside closes. Ctrl+Q quits.
 
 use ratatui::Frame;
-use ratatui::layout::{Position, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::widgets::Widget;
 use sokkel_tui::app;
@@ -199,71 +199,38 @@ impl app::Program for App {
     }
 
     fn pointer(&mut self, p: Pointer) {
-        let at: Position = p.at;
-        match p.kind {
-            PointerKind::Move if self.menu.open => {
-                let mut st = self.menu;
-                let menu = self.menu();
-                if let Some(hit) = menu.hit(self.win, self.at[0], at, &st) {
-                    menu.hover(&mut st, hit);
-                }
-                self.menu = st;
+        // An open dialog takes every press; a press outside closes it unless it is busy.
+        if self.dialog {
+            if let Some((area, _)) = &self.dialog_at {
+                let event = self.dialog().press(*area, p.at);
+                self.dialog_event(event);
             }
-            PointerKind::Press if self.dialog => {
-                if let Some((area, l)) = self.dialog_at.clone() {
-                    if l.confirm.is_some_and(|r| r.contains(at)) {
-                        self.dialog_focus = DialogFocus::Confirm;
-                        let e = self.dialog().handle(KeyPress::new(Key::Enter));
-                        self.dialog_event(e);
-                    } else if l.cancel.is_some_and(|r| r.contains(at)) {
-                        self.dialog_focus = DialogFocus::Cancel;
-                        let e = self.dialog().handle(KeyPress::new(Key::Enter));
-                        self.dialog_event(e);
-                    } else if !area.contains(at) && self.busy_since.is_none() {
-                        self.dialog = false;
-                    }
-                }
-            }
-            PointerKind::Press if self.menu.open => {
-                let mut st = self.menu;
-                let menu = self.menu();
-                match menu.hit(self.win, self.at[0], at, &st) {
-                    Some(hit) => {
-                        let e = menu.press(&mut st, hit);
-                        self.menu = st;
-                        self.menu_event(e);
-                    }
-                    None => self.menu = MenuState::default(),
-                }
-            }
-            PointerKind::Press if self.select.open => {
-                let mut st = self.select;
-                let option = self.select().option_at(self.win, self.at[1], at, &st);
-                if let SelectEvent::Chose(k) = self.select().press(&mut st, option) {
-                    self.project = k;
-                }
-                self.select = st;
-            }
-            PointerKind::Press => {
-                if self.at[0].contains(at) {
-                    self.focus = Stop::Filter;
-                    self.menu = MenuState {
-                        open: true,
-                        highlight: 1,
-                        sub: None,
-                    };
-                } else if self.at[1].contains(at) {
-                    self.focus = Stop::Project;
-                    let mut st = self.select;
-                    self.select().press(&mut st, None);
-                    self.select = st;
-                } else if self.at[2].contains(at) {
-                    self.focus = Stop::Delete;
-                    self.dialog = true;
-                    self.dialog_focus = DialogFocus::Confirm;
-                }
-            }
-            _ => {}
+            return;
+        }
+        // The menu and the select answer what lands on them or their triggers.
+        let mut st = self.menu;
+        let event = self.menu().pointer(&mut st, self.win, self.at[0], p);
+        self.menu = st;
+        if event != MenuEvent::Ignored {
+            self.focus = Stop::Filter;
+            self.menu_event(event);
+            return;
+        }
+        let mut st = self.select;
+        let event = self.select().pointer(&mut st, self.win, self.at[1], p);
+        self.select = st;
+        match event {
+            SelectEvent::Ignored => {}
+            SelectEvent::Chose(k) => self.project = k,
+            _ => self.focus = Stop::Project,
+        }
+        if event != SelectEvent::Ignored {
+            return;
+        }
+        if p.kind == PointerKind::Press && self.at[2].contains(p.at) {
+            self.focus = Stop::Delete;
+            self.dialog = true;
+            self.dialog_focus = DialogFocus::Confirm;
         }
     }
 

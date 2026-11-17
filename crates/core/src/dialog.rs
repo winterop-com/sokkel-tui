@@ -18,7 +18,7 @@ use crate::keys::{Key, KeyPress};
 use crate::look::{Look, Rgba};
 use crate::text::{self, TextRole};
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::style::Style;
 use ratatui::widgets::{Block, Borders, Clear, Widget};
 
@@ -250,6 +250,31 @@ impl<'a> Dialog<'a> {
     }
 
     /// Answer a key while the dialog is open.
+    /// A press of the pointer at `at` on the dialog drawn at `area`: a verb acts as Enter on it
+    /// would (a busy confirm keeps it, Cancel says Stop waiting once released), and a press
+    /// outside closes it as Escape would.
+    pub fn press(&self, area: Rect, at: Position) -> DialogEvent {
+        let l = self.layout(area);
+        let on = |r: Option<Rect>| r.is_some_and(|r| r.contains(at));
+        let enter = KeyPress::new(Key::Enter);
+        let focus = |f: DialogFocus| self.clone().focus(f).handle(enter);
+        if on(l.confirm) {
+            focus(DialogFocus::Confirm)
+        } else if on(l.cancel) {
+            focus(DialogFocus::Cancel)
+        } else if on(l.close) {
+            focus(DialogFocus::Close)
+        } else if on(l.back) {
+            focus(DialogFocus::Back)
+        } else if let Some(i) = l.actions.iter().position(|r| r.contains(at)) {
+            focus(DialogFocus::Action(i))
+        } else if !area.contains(at) {
+            self.handle(KeyPress::new(Key::Escape))
+        } else {
+            DialogEvent::Ignored
+        }
+    }
+
     pub fn handle(&self, key: KeyPress) -> DialogEvent {
         if key.alt || key.ctrl {
             return DialogEvent::Ignored;

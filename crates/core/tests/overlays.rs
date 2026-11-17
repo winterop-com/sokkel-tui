@@ -313,3 +313,28 @@ fn a_pointer_picks_menu_rows_and_select_options() {
     assert_eq!(sel.press(&mut st, Some(1)), SelectEvent::Chose(1));
     assert!(!st.open);
 }
+
+#[test]
+fn a_menu_opens_acts_and_closes_by_the_pointer() {
+    use ratatui::layout::Position;
+    use sokkel_tui::{MenuEvent, MenuState, Pointer, PointerKind};
+    let look = look();
+    let m = menu(&look);
+    let window = Rect::new(0, 0, 80, 24);
+    let anchor = Rect::new(10, 2, 8, 1);
+    let press = |x, y| Pointer {
+        kind: PointerKind::Press,
+        at: Position::new(x, y),
+    };
+    let mut st = MenuState::default();
+    assert_eq!(m.pointer(&mut st, window, anchor, press(12, 2)), MenuEvent::Opened);
+    assert!(st.open);
+    let (area, _) = m.areas(window, anchor, &st);
+    assert_eq!(
+        m.pointer(&mut st, window, anchor, press(area.x + 2, area.y)),
+        MenuEvent::Ignored,
+        "the box's edge"
+    );
+    assert_eq!(m.pointer(&mut st, window, anchor, press(70, 20)), MenuEvent::Closed);
+    assert!(!st.open);
+}

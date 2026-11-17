@@ -7,7 +7,7 @@
 //! In cells the popup is [`crate::popup`]'s. A submenu opens at its row's end, its first row level
 //! with it. What lies under the open menu is drawn as it is (open-questions T2).
 
-use crate::keys::{Key, KeyPress};
+use crate::keys::{Key, KeyPress, Pointer, PointerKind};
 use crate::look::Look;
 use crate::popup::{Popup, PopupEvent, PopupKind, PopupRow, handle, stops};
 use ratatui::buffer::Buffer;
@@ -210,6 +210,38 @@ impl<'a> DropdownMenu<'a> {
                 state.sub = Some((row, k));
                 self.chosen(state, rows, row, Some(k))
             }
+        }
+    }
+
+    /// A pointer event on the menu and its trigger at `anchor`. Closed, a press on the trigger
+    /// opens it; open, the highlight follows the pointer, a press on a row acts (as
+    /// [`DropdownMenu::press`]), and a press anywhere else, the trigger too, closes it.
+    pub fn pointer(&self, state: &mut MenuState, window: Rect, anchor: Rect, p: Pointer) -> MenuEvent {
+        if !state.open {
+            if p.kind == PointerKind::Press && anchor.contains(p.at) {
+                state.open = true;
+                state.highlight = stops(&self.rows).first().copied().unwrap_or(0);
+                state.sub = None;
+                return MenuEvent::Opened;
+            }
+            return MenuEvent::Ignored;
+        }
+        match (p.kind, self.hit(window, anchor, p.at, state)) {
+            (PointerKind::Move, Some(hit)) => {
+                self.hover(state, hit);
+                MenuEvent::Moved
+            }
+            (PointerKind::Press, Some(hit)) => self.press(state, hit),
+            (PointerKind::Press, None) => {
+                let (area, sub) = self.areas(window, anchor, state);
+                if area.contains(p.at) || sub.is_some_and(|s| s.contains(p.at)) {
+                    MenuEvent::Ignored
+                } else {
+                    *state = MenuState::default();
+                    MenuEvent::Closed
+                }
+            }
+            _ => MenuEvent::Ignored,
         }
     }
 

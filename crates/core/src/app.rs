@@ -999,26 +999,8 @@ impl<A: ShellApp> Program for Host<A> {
             Layer::Account => {
                 let Some(anchor) = self.shell.account() else { return };
                 let (rows, acts) = self.account_menu();
-                let menu = DropdownMenu::new(&self.look, rows);
                 let mut st = self.account;
-                let window = self.window;
-                let event = match (p.kind, menu.hit(window, anchor, p.at, &st)) {
-                    (PointerKind::Move, Some(h)) => {
-                        menu.hover(&mut st, h);
-                        MenuEvent::Ignored
-                    }
-                    (PointerKind::Press, Some(h)) => menu.press(&mut st, h),
-                    (PointerKind::Press, None) => {
-                        let (area, _) = menu.areas(window, anchor, &st);
-                        if area.contains(p.at) {
-                            MenuEvent::Ignored
-                        } else {
-                            MenuEvent::Closed
-                        }
-                    }
-                    _ => MenuEvent::Ignored,
-                };
-                drop(menu);
+                let event = DropdownMenu::new(&self.look, rows).pointer(&mut st, self.window, anchor, p);
                 self.account = st;
                 self.account_event(event, &acts);
             }

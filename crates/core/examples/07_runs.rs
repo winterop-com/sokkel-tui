@@ -249,14 +249,6 @@ impl Runs {
         self.page = page;
         self.menu = MenuState::default();
     }
-
-    fn open_menu(&mut self) {
-        self.menu = MenuState {
-            open: true,
-            highlight: 1,
-            sub: None,
-        };
-    }
 }
 
 impl ShellApp for Runs {
@@ -511,46 +503,25 @@ impl ShellApp for Runs {
     fn pointer(&mut self, p: Pointer, cx: &mut Cx) {
         let look = cx.look;
         if self.dialog.is_some() {
-            if p.kind != PointerKind::Press {
-                return;
+            if let Some((area, _)) = self.dialog_at.clone() {
+                let event = self
+                    .new_run(look, cx.now, sokkel_tui::cells::Width::of(cx.window))
+                    .press(area, p.at);
+                self.dialog_event(event, cx.now);
             }
-            let Some((area, l)) = self.dialog_at.clone() else {
-                return;
-            };
-            let d = self.new_run(look, cx.now, sokkel_tui::cells::Width::of(cx.window));
-            let event = if l.confirm.is_some_and(|r| r.contains(p.at)) {
-                self.dialog = Some(DialogFocus::Confirm);
-                d.focus(DialogFocus::Confirm).handle(KeyPress::new(Key::Enter))
-            } else if l.cancel.is_some_and(|r| r.contains(p.at)) || (!area.contains(p.at) && self.busy_since.is_none())
-            {
-                DialogEvent::Close
-            } else {
-                DialogEvent::Ignored
-            };
-            self.dialog_event(event, cx.now);
             return;
         }
-        if self.menu.open {
-            let Some(anchor) = self.filter_at else { return };
-            let menu = self.filter_menu(look);
+        if let Some(anchor) = self.filter_at {
             let mut st = self.menu;
-            match (p.kind, menu.hit(cx.window, anchor, p.at, &st)) {
-                (PointerKind::Move, Some(h)) => menu.hover(&mut st, h),
-                (PointerKind::Press, Some(h)) => {
-                    let event = menu.press(&mut st, h);
-                    self.menu = st;
-                    self.menu_event(event);
-                    return;
-                }
-                (PointerKind::Press, None) => st = MenuState::default(),
-                _ => {}
-            }
+            let event = self.filter_menu(look).pointer(&mut st, cx.window, anchor, p);
             self.menu = st;
-            return;
+            if event != MenuEvent::Ignored || self.menu.open {
+                self.menu_event(event);
+                return;
+            }
         }
         let inside = |r: Option<Rect>| r.is_some_and(|r| r.contains(p.at));
         match p.kind {
-            PointerKind::Press if inside(self.filter_at) => self.open_menu(),
             PointerKind::Press if inside(self.new_at) => {
                 self.command("new");
             }
