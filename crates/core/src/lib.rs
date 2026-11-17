@@ -57,7 +57,8 @@ pub mod top_bar;
 
 pub use button::{Button, ButtonGroup, ButtonSize, ButtonVariant, IconPlace, Tip};
 pub use dashboard::{
-    ColorMode, DashboardPanel, PanelLayout, PanelRead, PanelTool, PanelWords, Span, StatPanel, Threshold,
+    ColorMode, DashboardPanel, Fill, Legend, PanelLayout, PanelRead, PanelTool, PanelWords, Series, Span, StatPanel,
+    Threshold, TimeSeriesPanel,
 };
 pub use dialog::{Confirm, Dialog, DialogEvent, DialogFocus, DialogLayout, DialogWidth, DialogWords};
 pub use focus::{Focus, FocusId, InputKind};

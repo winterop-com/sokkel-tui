@@ -142,7 +142,14 @@ notes yet. sokkel-tui draws this reading of it, and asks for it, or a better one
    what it holds, not 112 px.
 4. **Glyphs asked for.** A sparkline's eight levels (`▁▂▃▄▅▆▇█`, ASCII `_.-=+*#@`) and the stale mark
    (`◷`, ASCII `!`), drawn as sokkel-tui's own until glyphs.json holds them.
-5. **The trend's faintness.** The web draws the spark area at low alpha; a cell draws the levels in
+5. **The time series.** Lines in braille, two by four dots a cell (`*` a cell in ASCII), each
+   value's dot joined to the next; a dashed reference every other pair of dots. One series with an
+   area draws it as block columns in eighths of a cell; several series draw their lines alone,
+   since overlapping areas cannot share a cell. The value labels at the plot's start (the middle
+   one only with a row of its own), grid lines across in `grid-dot`, the axis line under the plot
+   and the category labels under it, as many as fit. The legend a row of swatches (`■`) and names,
+   or a table of min, max, avg and current. Stacked and stepped series are not drawn yet.
+6. **The trend's faintness.** The web draws the spark area at low alpha; a cell draws the levels in
    the reading's color (or `muted-foreground` with no reading), opaque.
 
 ## (d) Where it lives

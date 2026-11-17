@@ -857,3 +857,445 @@ impl Widget for &StatPanel<'_> {
         }
     }
 }
+
+/// A series of a time series panel: its name, its values (`None` where one is missing), a color
+/// token (else the theme's order), and whether it is a dashed reference.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Series {
+    pub name: String,
+    pub values: Vec<Option<f64>>,
+    pub color: Option<String>,
+    pub dashed: bool,
+}
+
+impl Series {
+    pub fn new(name: impl Into<String>, values: impl IntoIterator<Item = f64>) -> Series {
+        Series {
+            name: name.into(),
+            values: values.into_iter().map(Some).collect(),
+            color: None,
+            dashed: false,
+        }
+    }
+
+    pub fn color(mut self, token: impl Into<String>) -> Self {
+        self.color = Some(token.into());
+        self
+    }
+
+    /// A reference: a dashed line, no area.
+    pub fn dashed(mut self) -> Self {
+        self.dashed = true;
+        self
+    }
+}
+
+/// The area under a time series' lines.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Fill {
+    None,
+    #[default]
+    Gradient,
+    Solid,
+}
+
+/// The legend under a time series.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Legend {
+    #[default]
+    List,
+    /// Each series' min, max, mean and current value.
+    Table,
+    None,
+}
+
+/// The theme's order for series without a color of their own (parts/chart).
+pub const SERIES_ORDER: [&str; 8] = [
+    "chart-2",
+    "chart-3",
+    "chart-4",
+    "kind-teal",
+    "kind-pink",
+    "kind-green",
+    "kind-blue",
+    "chart-5",
+];
+
+/// Values over time in the dashboard panel's frame, from `parts/time-series-panel`, as proposal c4
+/// reads it in cells: lines in braille (two by four dots a cell; `*` points in ASCII), a single
+/// series' area as block columns (overlapping areas cannot share a cell, so several series draw
+/// their lines), the value labels at the plot's start, the category labels under its axis line,
+/// grid lines at the value steps and a scale's steps dashed across in their colors, then the legend.
+#[derive(Debug, Clone)]
+pub struct TimeSeriesPanel<'a> {
+    frame: DashboardPanel<'a>,
+    x: Vec<String>,
+    series: Vec<Series>,
+    fill: Fill,
+    thresholds: Vec<Threshold>,
+    unit: Option<String>,
+    decimals: usize,
+    min: Option<f64>,
+    max: Option<f64>,
+    legend: Legend,
+}
+
+impl<'a> TimeSeriesPanel<'a> {
+    /// A time series in `frame`, over the categories `x`.
+    pub fn new(frame: DashboardPanel<'a>, x: impl IntoIterator<Item = impl Into<String>>) -> TimeSeriesPanel<'a> {
+        TimeSeriesPanel {
+            frame,
+            x: x.into_iter().map(Into::into).collect(),
+            series: Vec::new(),
+            fill: Fill::Gradient,
+            thresholds: Vec::new(),
+            unit: None,
+            decimals: 0,
+            min: None,
+            max: None,
+            legend: Legend::List,
+        }
+    }
+
+    pub fn series(mut self, series: impl IntoIterator<Item = Series>) -> Self {
+        self.series = series.into_iter().collect();
+        self
+    }
+
+    pub fn fill(mut self, fill: Fill) -> Self {
+        self.fill = fill;
+        self
+    }
+
+    /// A scale whose steps after the first are drawn dashed across.
+    pub fn thresholds(mut self, scale: impl IntoIterator<Item = Threshold>) -> Self {
+        self.thresholds = scale.into_iter().collect();
+        self
+    }
+
+    pub fn unit(mut self, unit: impl Into<String>) -> Self {
+        self.unit = Some(unit.into());
+        self
+    }
+
+    pub fn decimals(mut self, decimals: usize) -> Self {
+        self.decimals = decimals;
+        self
+    }
+
+    /// The value axis' ends, else from the values (and the scale's steps), from zero.
+    pub fn range(mut self, min: Option<f64>, max: Option<f64>) -> Self {
+        (self.min, self.max) = (min, max);
+        self
+    }
+
+    pub fn legend(mut self, legend: Legend) -> Self {
+        self.legend = legend;
+        self
+    }
+
+    /// The frame, for its layout and its tools.
+    pub fn frame(&self) -> &DashboardPanel<'a> {
+        &self.frame
+    }
+
+    fn color_of(&self, look: &Look, k: usize) -> Rgba {
+        let token = self.series[k]
+            .color
+            .clone()
+            .unwrap_or_else(|| SERIES_ORDER[k % SERIES_ORDER.len()].to_string());
+        if look.has_color(&token) {
+            look.color(&token)
+        } else {
+            look.color("foreground")
+        }
+    }
+
+    fn bounds(&self) -> (f64, f64) {
+        let values = self.series.iter().flat_map(|s| s.values.iter().flatten().copied());
+        let steps = self.thresholds.iter().filter_map(|t| t.value);
+        let (lo, hi) = values
+            .chain(steps)
+            .fold((0.0f64, f64::MIN), |(a, b), v| (a.min(v), b.max(v)));
+        let lo = self.min.unwrap_or(lo);
+        let hi = self.max.unwrap_or(if hi <= lo { lo + 1.0 } else { hi });
+        (lo, hi)
+    }
+
+    fn figure(&self, v: f64) -> String {
+        format_value(v, self.decimals)
+    }
+
+    /// The legend's rows: one for a list, a head and one per series for a table.
+    fn legend_rows(&self) -> u16 {
+        match self.legend {
+            Legend::None => 0,
+            Legend::List => 1,
+            Legend::Table => 1 + self.series.len() as u16,
+        }
+    }
+}
+
+impl Widget for &TimeSeriesPanel<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        (&self.frame).render(area, buf);
+        if self.frame.read != PanelRead::Content {
+            return;
+        }
+        let look = self.frame.look;
+        let glyphs = look.glyphs();
+        let t = |c: Rgba| look.terminal(c);
+        let body = self.frame.layout(area).body.intersection(buf.area);
+        let legend = self.legend_rows();
+        if body.width < 12 || body.height < legend + 3 {
+            return;
+        }
+        let quiet = look.color("muted-foreground");
+        let border = look.color("border");
+        let ground = self
+            .frame
+            .paint("rest.panel", "ground")
+            .unwrap_or_else(|| look.color("card"));
+        let (lo, hi) = self.bounds();
+        // The value labels at the plot's start, as wide as the widest.
+        let labels = [hi, (lo + hi) / 2.0, lo].map(|v| self.figure(v));
+        let label_w = labels.iter().map(|l| text::width(l)).max().unwrap_or(0) as u16;
+        let plot = Rect::new(
+            body.x + label_w + 1,
+            body.y,
+            body.width.saturating_sub(label_w + 1),
+            body.height.saturating_sub(legend + 2),
+        );
+        if plot.width < 4 || plot.height < 1 {
+            return;
+        }
+        let help = TextRole::Help.style(look).bg(t(ground));
+        let row_of = |v: f64| -> u16 {
+            let f = ((hi - v) / (hi - lo).max(f64::EPSILON)).clamp(0.0, 1.0);
+            plot.y + (f * (plot.height - 1) as f64).round() as u16
+        };
+        // The value labels and the grid lines across at them.
+        for (k, l) in labels.iter().enumerate() {
+            let v = [hi, (lo + hi) / 2.0, lo][k];
+            let y = row_of(v);
+            // The middle label only with a row of its own between the ends.
+            if k == 1 && (y <= row_of(hi) + 1 || y + 1 >= row_of(lo)) {
+                continue;
+            }
+            let lw = text::width(l) as u16;
+            buf.set_string(body.x + label_w - lw, y, l, help.fg(t(quiet)));
+            if k < 2 {
+                for x in plot.x..plot.right() {
+                    buf[(x, y)].set_symbol(glyphs.dot).set_fg(t(border));
+                }
+            }
+        }
+        // The scale's steps after the first, dashed across in their colors, the figure at the end.
+        for step in self.thresholds.iter().skip(1) {
+            let Some(v) = step.value else { continue };
+            let y = row_of(v);
+            let c = if look.has_color(&step.color) {
+                look.color(&step.color)
+            } else {
+                quiet
+            };
+            for x in (plot.x..plot.right()).step_by(2) {
+                buf[(x, y)].set_symbol(glyphs.rule).set_fg(t(c));
+            }
+            let f = self.figure(v);
+            let fw = text::width(&f) as u16;
+            buf.set_string(plot.right().saturating_sub(fw), y, f, help.fg(t(c)));
+        }
+        // The axis line under the plot, and the category labels under it.
+        let axis_y = plot.bottom();
+        for x in plot.x..plot.right() {
+            buf[(x, axis_y)].set_symbol(glyphs.rule).set_fg(t(border));
+        }
+        let n = self.x.len().max(1);
+        let widest = self.x.iter().map(|l| text::width(l)).max().unwrap_or(1) as u16 + 2;
+        let fit = (plot.width / widest).max(1) as usize;
+        let every = n.div_ceil(fit).max(1);
+        for (i, l) in self.x.iter().enumerate().step_by(every) {
+            let x = plot.x + ((i as f64 / (n.max(2) - 1) as f64) * (plot.width - 1) as f64).round() as u16;
+            let lw = text::width(l) as u16;
+            let x = x
+                .saturating_sub(lw / 2)
+                .max(plot.x)
+                .min(plot.right().saturating_sub(lw));
+            buf.set_string(x, axis_y + 1, l, help.fg(t(quiet)));
+        }
+
+        // The series: one with an area as block columns; lines in braille (points in ASCII).
+        let unicode = glyphs.spark[7] == "█";
+        let area_series = self.fill != Fill::None && self.series.iter().filter(|s| !s.dashed).count() == 1;
+        let (pw, ph) = if unicode {
+            (2 * plot.width as usize, 4 * plot.height as usize)
+        } else {
+            (plot.width as usize, plot.height as usize)
+        };
+        let mut dots: Vec<Vec<(u8, Option<Rgba>)>> = vec![vec![(0, None); plot.width as usize]; plot.height as usize];
+        let px_y = |v: f64| -> usize {
+            let f = ((hi - v) / (hi - lo).max(f64::EPSILON)).clamp(0.0, 1.0);
+            (f * (ph - 1) as f64).round() as usize
+        };
+        for (k, s) in self.series.iter().enumerate() {
+            let color = self.color_of(look, k);
+            let m = s.values.len();
+            if m == 0 {
+                continue;
+            }
+            let px_x = |i: usize| if m < 2 { 0 } else { i * (pw - 1) / (m - 1) };
+            if area_series && !s.dashed {
+                // Block columns: each cell column the mean of its values, in eighths of a cell.
+                for cx in 0..plot.width as usize {
+                    let a = cx * m / plot.width as usize;
+                    let b = ((cx + 1) * m / plot.width as usize).max(a + 1).min(m);
+                    let vals: Vec<f64> = s.values[a..b].iter().flatten().copied().collect();
+                    if vals.is_empty() {
+                        continue;
+                    }
+                    let v = vals.iter().sum::<f64>() / vals.len() as f64;
+                    let eighths = (((v - lo) / (hi - lo).max(f64::EPSILON)).clamp(0.0, 1.0) * plot.height as f64 * 8.0)
+                        .round() as u16;
+                    for r in 0..plot.height {
+                        let filled = eighths.saturating_sub(r * 8).min(8);
+                        if filled == 0 {
+                            break;
+                        }
+                        let y = plot.bottom() - 1 - r;
+                        let g = glyphs.spark[(filled - 1) as usize];
+                        buf[(plot.x + cx as u16, y)]
+                            .set_symbol(g)
+                            .set_fg(t(color))
+                            .set_bg(t(ground));
+                    }
+                }
+                continue;
+            }
+            // A line: each value's dot, joined down or up to the next.
+            let mut last: Option<(usize, usize)> = None;
+            for (i, v) in s.values.iter().enumerate() {
+                let Some(v) = v else {
+                    last = None;
+                    continue;
+                };
+                let (x, y) = (px_x(i), px_y(*v));
+                let (x0, y0) = last.unwrap_or((x, y));
+                for xx in x0..=x {
+                    if s.dashed && (xx / 2) % 2 == 1 {
+                        continue;
+                    }
+                    let f = if x == x0 {
+                        1.0
+                    } else {
+                        (xx - x0) as f64 / (x - x0) as f64
+                    };
+                    let yy = (y0 as f64 + (y as f64 - y0 as f64) * f).round() as usize;
+                    let prev = if xx == x0 {
+                        y0
+                    } else {
+                        (y0 as f64 + (y as f64 - y0 as f64) * ((xx - 1 - x0) as f64 / (x - x0).max(1) as f64)).round()
+                            as usize
+                    };
+                    for py in prev.min(yy)..=prev.max(yy) {
+                        let (cx, cy) = if unicode { (xx / 2, py / 4) } else { (xx, py) };
+                        if cy >= dots.len() || cx >= dots[0].len() {
+                            continue;
+                        }
+                        let bit = if unicode {
+                            match (xx % 2, py % 4) {
+                                (0, 3) => 0x40,
+                                (1, 3) => 0x80,
+                                (0, r) => 1 << r,
+                                (_, r) => 8 << r,
+                            }
+                        } else {
+                            1
+                        };
+                        dots[cy][cx].0 |= bit;
+                        dots[cy][cx].1 = Some(color);
+                    }
+                }
+                last = Some((x, y));
+            }
+        }
+        for (cy, row) in dots.iter().enumerate() {
+            for (cx, (bits, color)) in row.iter().enumerate() {
+                if *bits == 0 {
+                    continue;
+                }
+                let g = if unicode {
+                    char::from_u32(0x2800 + *bits as u32).unwrap_or(' ').to_string()
+                } else {
+                    "*".to_string()
+                };
+                let cell = &mut buf[(plot.x + cx as u16, plot.y + cy as u16)];
+                cell.set_symbol(&g).set_bg(t(ground));
+                if let Some(c) = color {
+                    cell.set_fg(t(*c));
+                }
+            }
+        }
+
+        // The legend: a row of swatches and names, or a table of each series' figures.
+        let ly = axis_y + 2;
+        let swatch = "■";
+        match self.legend {
+            Legend::None => {}
+            Legend::List => {
+                let mut x = body.x;
+                for (k, s) in self.series.iter().enumerate() {
+                    let w = text::width(&s.name) as u16 + 3;
+                    if x + w > body.right() {
+                        break;
+                    }
+                    buf.set_string(x, ly, swatch, Style::new().fg(t(self.color_of(look, k))).bg(t(ground)));
+                    buf.set_string(x + 2, ly, &s.name, help.fg(t(quiet)));
+                    x += w + 1;
+                }
+            }
+            Legend::Table => {
+                let unit = self.unit.as_deref().map(|u| format!(" {u}")).unwrap_or_default();
+                let heads = ["min", "max", "avg", "current"];
+                let cw = 10u16;
+                let name_w = body.width.saturating_sub(cw * 4);
+                for (i, h) in heads.iter().enumerate() {
+                    let hx = body.x + name_w + cw * i as u16 + cw - text::width(h) as u16;
+                    buf.set_string(hx, ly, h, help.fg(t(quiet)));
+                }
+                for (k, s) in self.series.iter().enumerate() {
+                    let y = ly + 1 + k as u16;
+                    if y >= body.bottom() {
+                        break;
+                    }
+                    buf.set_string(
+                        body.x,
+                        y,
+                        swatch,
+                        Style::new().fg(t(self.color_of(look, k))).bg(t(ground)),
+                    );
+                    let name = text::truncate(&s.name, name_w.saturating_sub(3) as usize, glyphs.ellipsis);
+                    buf.set_string(body.x + 2, y, name, help.fg(t(look.color("foreground"))));
+                    let vals: Vec<f64> = s.values.iter().flatten().copied().collect();
+                    let stat = |f: &dyn Fn(&[f64]) -> f64| {
+                        if vals.is_empty() {
+                            glyphs.missing.to_string()
+                        } else {
+                            format!("{}{unit}", self.figure(f(&vals)))
+                        }
+                    };
+                    let figures = [
+                        stat(&|v| v.iter().copied().fold(f64::MAX, f64::min)),
+                        stat(&|v| v.iter().copied().fold(f64::MIN, f64::max)),
+                        stat(&|v| v.iter().sum::<f64>() / v.len() as f64),
+                        stat(&|v| *v.last().unwrap_or(&0.0)),
+                    ];
+                    for (i, f) in figures.iter().enumerate() {
+                        let fx = body.x + name_w + cw * i as u16 + cw - text::width(f) as u16;
+                        buf.set_string(fx, y, f, help.fg(t(look.color("foreground"))));
+                    }
+                }
+            }
+        }
+    }
+}

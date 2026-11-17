@@ -14,9 +14,10 @@ use ratatui::widgets::Widget;
 use sokkel_tui::app::{self, Chrome, Cx, Flow, Ran, ShellApp};
 use sokkel_tui::dashboard::grid;
 use sokkel_tui::{
-    Cell, ColorMode, Column, ColumnWidth, Command, CommandGroup, DashboardPanel, Fact, Key, KeyPress, Look, NoteTone,
-    PageHeader, PanelRead, PanelTool, Pointer, PointerKind, Rail, RailEntry, RailFoot, RailGroup, Row, RowTone, Scheme,
-    Span, StatPanel, StatusLine, Table, TableState, Threshold, TopBar, snapshot,
+    Cell, ColorMode, Column, ColumnWidth, Command, CommandGroup, DashboardPanel, Fact, Fill, Key, KeyPress, Legend,
+    Look, NoteTone, PageHeader, PanelRead, PanelTool, Pointer, PointerKind, Rail, RailEntry, RailFoot, RailGroup, Row,
+    RowTone, Scheme, Series, Span, StatPanel, StatusLine, Table, TableState, Threshold, TimeSeriesPanel, TopBar,
+    snapshot,
 };
 
 /// The success rate's scale: critical below 95, warning below 99, good from 99.
@@ -78,8 +79,10 @@ impl Overview {
         let th = tiles.iter().map(StatPanel::height).max().unwrap_or(6);
         let mut spans: Vec<(Span, u16)> = tiles.iter().map(|_| (Span::Sixth, th)).collect();
         spans.extend([
-            (Span::TwoThirds, 10),
-            (Span::Third, 10),
+            (Span::TwoThirds, 12),
+            (Span::Third, 12),
+            (Span::Full, 16),
+            (Span::Third, 8),
             (Span::Third, 8),
             (Span::Third, 8),
             (Span::Third, 8),
@@ -180,6 +183,48 @@ impl ShellApp for Overview {
             ];
             let table = Table::new(look, &columns, &rows).framed(false);
             f.render_stateful_widget(&table, body.intersection(area), &mut self.hosts);
+        }
+        // Latency over the day, its area under the scale's steps; runs per hour, two series.
+        let hours: Vec<String> = (0..24).map(|h| format!("{h:02}")).collect();
+        let latency: Vec<f64> = (0..24)
+            .map(|h| self.wave(380.0 + 8.0 * h as f64, 40.0, h as f64 / 2.0))
+            .collect();
+        let series = TimeSeriesPanel::new(
+            DashboardPanel::new(look, "p95 latency").subtitle("today"),
+            hours.clone(),
+        )
+        .series([Series::new("p95", latency)])
+        .thresholds([
+            Threshold::new(None, "good"),
+            Threshold::new(Some(450.0), "warning"),
+            Threshold::new(Some(550.0), "critical"),
+        ])
+        .unit("ms")
+        .legend(Legend::None);
+        if let Some(r) = it.next() {
+            (&series).render(r.intersection(area), f.buffer_mut());
+        }
+        let ok: Vec<f64> = (0..24)
+            .map(|h| self.wave(50.0 + 2.0 * h as f64, 12.0, h as f64 / 3.0).round())
+            .collect();
+        let bad: Vec<f64> = (0..24)
+            .map(|h| (self.wave(4.0, 3.0, h as f64).max(0.0)).round())
+            .collect();
+        let runs = TimeSeriesPanel::new(
+            DashboardPanel::new(look, "Runs per hour")
+                .subtitle("today")
+                .expandable(true),
+            hours,
+        )
+        .series([
+            Series::new("succeeded", ok).color("good"),
+            Series::new("failed", bad).color("critical"),
+            Series::new("yesterday", (0..24).map(|h| 48.0 + 2.0 * h as f64)).dashed(),
+        ])
+        .fill(Fill::None)
+        .legend(Legend::Table);
+        if let Some(r) = it.next() {
+            (&runs).render(r.intersection(area), f.buffer_mut());
         }
         let failed = match self.retrying {
             Some(t) if cx.now.saturating_sub(t) < 2500 => PanelRead::Loading(cx.now.saturating_sub(t)),

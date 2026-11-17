@@ -104,3 +104,28 @@ fn a_panel_keeps_its_states_apart() {
     let stale = draw(50, 9, &DashboardPanel::new(&look, "Schedules").stale("since 11:58"));
     assert!(stale.contains("◷ since 11:58"));
 }
+
+#[test]
+fn a_time_series_draws_its_lines_axis_labels_and_legend() {
+    use sokkel_tui::{Legend, Series, TimeSeriesPanel};
+    let look = look();
+    let hours: Vec<String> = (0..12).map(|h| format!("{h:02}")).collect();
+    let p = TimeSeriesPanel::new(DashboardPanel::new(&look, "Runs per hour"), hours)
+        .series([
+            Series::new("succeeded", (0..12).map(|h| 50.0 + h as f64)),
+            Series::new("yesterday", (0..12).map(|h| 48.0 + h as f64)).dashed(),
+        ])
+        .legend(Legend::Table);
+    let text = draw(70, 16, &p);
+    assert!(
+        text.chars().any(|c| ('\u{2801}'..='\u{28ff}').contains(&c)),
+        "lines in braille: {text}"
+    );
+    assert!(text.contains("00") && text.contains("min") && text.contains("current"));
+    assert!(text.contains("succeeded") && text.contains("61"), "the current figure");
+    // One series with an area: block columns.
+    let area = TimeSeriesPanel::new(DashboardPanel::new(&look, "p95"), ["a", "b", "c"])
+        .series([Series::new("p95", [1.0, 2.0, 3.0])])
+        .legend(Legend::None);
+    assert!(draw(40, 12, &area).contains('█'));
+}

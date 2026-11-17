@@ -41,8 +41,10 @@ the contract say so that it does?
 - `dashboard`: the grid (spans of twelve by its own width), `DashboardPanel` (head with subtitle,
   stale mark and tools, the body padded or flush, the foot; loading, empty, failed with Retry and
   stale kept apart) and `StatPanel` (value and unit, thresholds inking or filling, the change, a
-  sparkline, a meter toward a target, no data), as proposal c4 reads them. Not yet: the time series
-  panel and the chart, the expanded dialog, the panel menu's own menu.
+  sparkline, a meter toward a target, no data) and `TimeSeriesPanel` (lines in braille, one
+  series' area in blocks, dashed references, the scale's steps, value and category labels, a legend
+  row or table), as proposal c4 reads them. Not yet: stacked and stepped series, the chart's other
+  kinds, the expanded dialog, the panel menu's own menu.
 - `app` scrolls a page taller than its view (`ShellApp::page_rows`): the wheel, PageUp and PageDown,
   keyboard focus kept in view, a scroller at its end.
 - `button` (step 1): every variant in rest, hover, focus, busy, reason, disabled, invalid and open;
