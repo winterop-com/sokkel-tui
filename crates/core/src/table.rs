@@ -25,7 +25,7 @@ use ratatui::layout::{Position, Rect};
 use ratatui::style::Style;
 use ratatui::widgets::{Block, Borders, Widget};
 use std::cmp::Ordering;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// How a column takes its width.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -54,6 +54,8 @@ pub struct Column {
     pub sortable: bool,
     /// Its cells edit as text in a table with [`Table::editing`] (`edit`).
     pub editable: bool,
+    /// Its head's end edge resizes it (`resizable`).
+    pub resizable: bool,
 }
 
 impl Column {
@@ -64,6 +66,7 @@ impl Column {
             align: Align::Start,
             sortable: false,
             editable: false,
+            resizable: false,
         }
     }
 
@@ -79,6 +82,13 @@ impl Column {
 
     pub fn sortable(mut self) -> Self {
         self.sortable = true;
+        self
+    }
+
+    /// Its head's end edge resizes it: dragged, or with `<` and `>` while its head is chosen in
+    /// the head row (`=` puts its width back).
+    pub fn resizable(mut self) -> Self {
+        self.resizable = true;
         self
     }
 
@@ -406,6 +416,10 @@ pub struct TableState {
     pub cell: usize,
     /// The cell being edited, while it is: its text and cursor.
     pub edit: Option<crate::text_field::FieldState>,
+    /// Columns a resize left at a width of their own, in columns, by the column.
+    pub sizes: BTreeMap<usize, u16>,
+    /// The column whose edge a press took, while it is dragged.
+    pub resizing: Option<usize>,
     /// The value the last [`TableEvent::Edited`] saved.
     pub saved: Option<String>,
     /// Where the terminal's cursor goes while a cell is edited.
@@ -417,6 +431,8 @@ pub struct TableState {
     view: usize,
     /// Whether the last frame stacked the rows as cards.
     stacked: bool,
+    /// The last frame's room for the columns.
+    room: u16,
 }
 
 impl TableState {
@@ -628,6 +644,21 @@ impl TableState {
                 Key::Down => {
                     self.head = None;
                     self.active = 0;
+                    TableEvent::Moved
+                }
+                // The chosen head's edge: < and > move it 2 columns (16 px), = puts it back.
+                Key::Char(k @ ('<' | '>' | '=')) if table.columns[h].resizable => {
+                    if k == '=' {
+                        self.sizes.remove(&h);
+                    } else {
+                        let now =
+                            self.sizes.get(&h).copied().unwrap_or_else(|| {
+                                table.widths_sized(self.room, &self.sizes).get(h).copied().unwrap_or(8)
+                            });
+                        let min = (text::width(&table.columns[h].header) as u16 + 2).max(4);
+                        let to = if k == '<' { now.saturating_sub(2) } else { now + 2 };
+                        self.sizes.insert(h, to.clamp(min, cols(320.0).max(min)));
+                    }
                     TableEvent::Moved
                 }
                 _ => TableEvent::Ignored,
@@ -1021,6 +1052,11 @@ impl<'a> Table<'a> {
 
     /// Each column's width in columns, across `room`.
     pub fn widths(&self, room: u16) -> Vec<u16> {
+        self.widths_sized(room, &BTreeMap::new())
+    }
+
+    /// Each column's width across `room`, the columns in `sizes` at the width a resize left them.
+    pub fn widths_sized(&self, room: u16, sizes: &BTreeMap<usize, u16>) -> Vec<u16> {
         let look = self.look;
         let gap = 2u16;
         let n = self.columns.len() as u16;
@@ -1045,6 +1081,11 @@ impl<'a> Table<'a> {
                 ColumnWidth::Fill(_) => head_w(c),
             })
             .collect();
+        for (&i, &size) in sizes {
+            if let Some(x) = w.get_mut(i) {
+                *x = size;
+            }
+        }
         let used: u16 = w.iter().sum();
         if used <= room {
             // The room left goes to the fill columns by weight, else to the last column.
@@ -1052,7 +1093,11 @@ impl<'a> Table<'a> {
             let weights: Vec<u16> = self
                 .columns
                 .iter()
-                .map(|c| if let ColumnWidth::Fill(k) = c.width { k } else { 0 })
+                .enumerate()
+                .map(|(i, c)| match c.width {
+                    ColumnWidth::Fill(k) if !sizes.contains_key(&i) => k,
+                    _ => 0,
+                })
                 .collect();
             let total: u16 = weights.iter().sum();
             if total > 0 {
@@ -1071,7 +1116,7 @@ impl<'a> Table<'a> {
             let mut over = used - room;
             while over > 0 {
                 let Some(i) = (0..w.len())
-                    .filter(|&i| w[i] > head_w(&self.columns[i]).max(4))
+                    .filter(|&i| !sizes.contains_key(&i) && w[i] > head_w(&self.columns[i]).max(4))
                     .max_by_key(|&i| w[i])
                 else {
                     break;
@@ -1159,6 +1204,8 @@ pub enum TableHit {
     Actions(usize),
     /// A cell, by its row's place and its column, in a table with [`Table::editing`].
     Cell(usize, usize),
+    /// A resizable column's edge in the head row, by the column.
+    Edge(usize),
     /// The pager's previous and next arrows, and Load more, in the foot.
     PagePrev,
     PageNext,
@@ -1225,11 +1272,15 @@ impl Table<'_> {
             if in_box {
                 return Some(TableHit::HeadBox);
             }
-            let widths = self.widths(inner.width);
+            let widths = self.widths_sized(inner.width, &state.sizes);
             let mut x = inner.x + g.pad + self.select_w();
             for (i, w) in widths.iter().enumerate() {
                 if (x..x + w).contains(&at.x) {
                     return Some(TableHit::Head(i));
+                }
+                // The gap after a resizable head is its edge.
+                if self.columns[i].resizable && (x + w..x + w + 2).contains(&at.x) {
+                    return Some(TableHit::Edge(i));
                 }
                 x += w + 2;
             }
@@ -1251,7 +1302,7 @@ impl Table<'_> {
         }
         // In a table that edits, a press lands on a cell.
         if self.editing && !in_box {
-            let widths = self.widths(inner.width);
+            let widths = self.widths_sized(inner.width, &state.sizes);
             let mut x = inner.x + g.pad + self.select_w();
             for (c, w) in widths.iter().enumerate() {
                 if (x..x + w + 2).contains(&at.x) {
@@ -1265,6 +1316,31 @@ impl Table<'_> {
         } else {
             TableHit::Row(place)
         })
+    }
+
+    /// A drag or release after a press took a column's edge ([`TableHit::Edge`]): the column
+    /// follows the pointer, between its head's width and 320 px, and lets go on release.
+    pub fn drag(&self, area: Rect, state: &mut TableState, p: crate::keys::Pointer) -> TableEvent {
+        use crate::keys::PointerKind;
+        let Some(c) = state.resizing else {
+            return TableEvent::Ignored;
+        };
+        match p.kind {
+            PointerKind::Drag => {
+                let g = self.geom(area);
+                let widths = self.widths_sized(g.inner.width, &state.sizes);
+                let x0 = g.inner.x + g.pad + self.select_w() + widths[..c].iter().map(|w| w + 2).sum::<u16>();
+                let min = (text::width(&self.columns[c].header) as u16 + 2).max(4);
+                let to = p.at.x.saturating_sub(x0).clamp(min, cols(320.0).max(min));
+                state.sizes.insert(c, to);
+                TableEvent::Moved
+            }
+            PointerKind::Release => {
+                state.resizing = None;
+                TableEvent::Moved
+            }
+            _ => TableEvent::Ignored,
+        }
     }
 
     /// Where a row's menu button stands, for a row at `place` drawn in `area` (its menu opens
@@ -1358,6 +1434,10 @@ impl Table<'_> {
                 }
                 TableEvent::Moved
             }
+            TableHit::Edge(c) => {
+                state.resizing = Some(c);
+                TableEvent::Moved
+            }
             TableHit::PagePrev => match self.paging {
                 Some((page, _)) if page > 1 => TableEvent::Page(page - 1),
                 _ => TableEvent::Ignored,
@@ -1397,6 +1477,7 @@ impl ratatui::widgets::StatefulWidget for &Table<'_> {
             return;
         }
         state.stacked = self.stacked(area.width);
+        state.room = self.geom(area).inner.width;
         if state.stacked {
             draw_cards(self, area, buf, state);
         } else {
@@ -1435,7 +1516,7 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
             .unwrap_or_else(|| look.color("card"));
         buf.set_style(area, Style::new().bg(t(ground)));
     }
-    let widths = table.widths(inner.width);
+    let widths = table.widths_sized(inner.width, &state.sizes);
     let card = look
         .paint("table.base.rest.frame", "ground")
         .unwrap_or_else(|| look.color("card"));
@@ -1505,6 +1586,15 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
             if end < inner.right() {
                 buf[(end, geo.head_y)].set_symbol(glyphs.ring_end).set_fg(t(ring));
             }
+        }
+        // A resizable head's edge shows its line while it is dragged or its head chosen by keys.
+        let chosen = table.focused && state.head == Some(i);
+        if c.resizable && (state.resizing == Some(i) || chosen) && x + w + 1 < inner.right() {
+            let line = look.color("primary");
+            buf[(x + w + 1, geo.head_y)]
+                .set_symbol(glyphs.scroll_thumb)
+                .set_fg(t(line))
+                .set_bg(t(head_ground));
         }
         x += w + 2;
     }

@@ -31,10 +31,10 @@ const PROJECTS: [&str; 3] = ["harbor", "juniper", "larkspur"];
 
 fn columns() -> Vec<Column> {
     vec![
-        Column::new("Job").width(ColumnWidth::Fill(3)).sortable(),
-        Column::new("State").sortable(),
-        Column::new("Started by").sortable(),
-        Column::new("Project").sortable(),
+        Column::new("Job").width(ColumnWidth::Fill(3)).sortable().resizable(),
+        Column::new("State").sortable().resizable(),
+        Column::new("Started by").sortable().resizable(),
+        Column::new("Project").sortable().resizable(),
         Column::new("Started").sortable(),
         Column::new("Took").align(Align::End).sortable(),
     ]
@@ -198,6 +198,10 @@ impl app::Program for App {
                 table.scroll(&mut state, 3);
             }
             PointerKind::Move => self.hover = Some(p.at),
+            // A head's edge taken by a press follows a drag and lets go on release.
+            PointerKind::Drag | PointerKind::Release => {
+                table.drag(self.area, &mut state, p);
+            }
             _ => {}
         }
         self.state = state;

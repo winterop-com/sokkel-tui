@@ -113,7 +113,9 @@ the contract say so that it does?
   the active cell in the ring's edges, Left and Right across the columns, Enter or a typed
   character opening it in place, Enter saving and moving down, Tab on, Escape dropping it;
   `TableEvent::Edited` with the value in `TableState::saved`; text only, no F2 yet: `Key` has no
-  function keys). Not yet: date and select editors, resizing, reordering, the grid.
+  function keys). Column resize (`Column::resizable`: the gap after its head
+  is its edge, a drag through `Table::drag`, `<` `>` `=` on a chosen head; `TableState::sizes`).
+  Not yet: date and select editors, resizing, reordering, the grid.
 - `rail`, `top_bar`, `status_line`, `shell` (step 5): the rail's head, groups, entries (icon,
   label, count, unread dot, the active bar, a description under it, parents folding their
   children under their labels, a status dot in a tone; collapsed, a parent's children in a flyout beside the rail, which
