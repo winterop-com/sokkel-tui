@@ -175,6 +175,17 @@ impl Focus {
             .is_some_and(|c| self.stops.iter().any(|s| s.id == c && s.kind == StopKind::Text))
     }
 
+    /// How many stops this frame has named so far: a mark to find the first one named after it.
+    pub fn mark(&self) -> usize {
+        self.next.len()
+    }
+
+    /// The first stop named after `mark` in the last finished frame, in the top layer.
+    pub fn first_after(&self, mark: usize) -> Option<FocusId> {
+        let top = self.layers.len();
+        self.stops.iter().skip(mark).find(|s| s.layer == top).map(|s| s.id)
+    }
+
     /// Give focus to a stop, as the app does after a route change or an action.
     pub fn set(&mut self, id: FocusId) {
         self.current = Some(id);

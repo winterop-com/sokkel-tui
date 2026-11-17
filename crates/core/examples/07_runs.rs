@@ -7,7 +7,7 @@
 //!
 //! Keys: Tab moves through the rail, the search, the palette button, the page and the account;
 //! Ctrl+K the palette; ? the shortcuts; / the search (it narrows the runs by job); G then R and G
-//! then J go to a page; in the table Up, Down, Home, End, PageUp, PageDown, Space selects. The
+//! then J go to a page, Backspace back; in the table Up, Down, Home, End, PageUp, PageDown, Space selects. The
 //! mouse works on every row, button, entry and menu row; the wheel scrolls. Ctrl+Q quits.
 //!
 //! With `--frame` it draws one frame after the keys given (`tab`, `down`, `ctrl-k`, `enter`, a
@@ -245,7 +245,7 @@ impl Runs {
         }
     }
 
-    fn go(&mut self, page: Page) {
+    fn go_to(&mut self, page: Page) {
         self.page = page;
         self.menu = MenuState::default();
     }
@@ -254,6 +254,14 @@ impl Runs {
 impl ShellApp for Runs {
     fn id(&self) -> Option<&str> {
         Some("tidevann")
+    }
+
+    fn route(&self) -> String {
+        if self.page == Page::Runs { "runs" } else { "jobs" }.into()
+    }
+
+    fn go(&mut self, route: &str) {
+        self.go_to(if route == "jobs" { Page::Jobs } else { Page::Runs });
     }
 
     fn chrome<'a>(&'a self, look: &'a Look) -> Chrome<'a> {
@@ -400,10 +408,10 @@ impl ShellApp for Runs {
 
     fn command(&mut self, id: &str) -> Ran {
         match id {
-            "go-runs" => self.go(Page::Runs),
-            "go-jobs" => self.go(Page::Jobs),
+            "go-runs" => self.go_to(Page::Runs),
+            "go-jobs" => self.go_to(Page::Jobs),
             "new" => {
-                self.go(Page::Runs);
+                self.go_to(Page::Runs);
                 self.dialog = Some(DialogFocus::Confirm);
             }
             "failed" => self.menu_event(MenuEvent::Action(1, None)),
@@ -414,8 +422,8 @@ impl ShellApp for Runs {
 
     fn entry(&mut self, group: usize, entry: usize) {
         match (group, entry) {
-            (0, 0) => self.go(Page::Runs),
-            (0, 1) => self.go(Page::Jobs),
+            (0, 0) => self.go_to(Page::Runs),
+            (0, 1) => self.go_to(Page::Jobs),
             _ => {}
         }
     }

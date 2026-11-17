@@ -198,6 +198,13 @@ pub trait ShellApp {
     fn id(&self) -> Option<&str> {
         None
     }
+    /// Where the app is, as a route it can go back to (`runs`, `jobs/nightly-export`). The runtime
+    /// keeps the history: Backspace goes back, the settings over it first. Empty keeps none.
+    fn route(&self) -> String {
+        String::new()
+    }
+    /// Go to a route the app gave before (Back).
+    fn go(&mut self, _route: &str) {}
     /// The rail, the top bar and the status line, this frame.
     fn chrome<'a>(&'a self, look: &'a Look) -> Chrome<'a>;
     /// Draw the page in `area`, naming its stops in `cx.focus` as it draws them (after the
@@ -283,6 +290,7 @@ const WORDS_SHORTCUTS: &str = "Keyboard shortcuts";
 const WORDS_SEARCH: &str = "Search";
 const WORDS_SETTINGS: &str = "Settings";
 const WORDS_TAB: &str = "Move focus";
+const WORDS_BACK: &str = "Back";
 const WORDS_QUIT: &str = "Quit";
 
 /// What a row of the account menu does.
@@ -341,6 +349,16 @@ struct Host<A> {
     worn: (String, Scheme, Density),
     focus: Focus,
     hover: Option<Position>,
+    /// The routes behind this one, and the one shown.
+    history: Vec<String>,
+    route: String,
+    going_back: bool,
+    /// The page's first stop gets focus after this frame (a route change).
+    to_page: bool,
+    page_mark: usize,
+    /// What had focus when a layer opened, to get it back when it closes.
+    opened_from: Option<FocusId>,
+    was_open: bool,
 }
 
 /// Run `app` in sokkel's frame, starting in `look`, or in the look it kept when it has an
@@ -400,14 +418,60 @@ impl<A: ShellApp> Host<A> {
             running: None,
             focus: Focus::new(),
             hover: None,
+            history: Vec::new(),
+            route: String::new(),
+            going_back: false,
+            to_page: false,
+            page_mark: 0,
+            opened_from: None,
+            was_open: false,
         };
+        host.route = host.app.route();
         host.keys = host.registry();
         host
+    }
+
+    /// Back: the settings close first, else the route before this one.
+    fn back(&mut self) -> bool {
+        if self.layer == Layer::Settings {
+            self.layer = Layer::None;
+            return true;
+        }
+        match self.history.pop() {
+            Some(route) => {
+                self.going_back = true;
+                self.app.go(&route);
+                true
+            }
+            None => false,
+        }
     }
 
     /// The frame and the page, once: the shell, the frame's stops, the page with its own, the
     /// account last, the drawer, the app's layer.
     fn draw_frame(&mut self, f: &mut Frame) {
+        // A new route: the one left goes on the history (unless Back left it), and focus moves to
+        // the new page once it has named its stops.
+        let route = self.app.route();
+        if route != self.route {
+            let left = std::mem::replace(&mut self.route, route);
+            if !self.going_back && !left.is_empty() {
+                self.history.push(left);
+            }
+            self.to_page = true;
+        }
+        self.going_back = false;
+        // A layer opening keeps what had focus; closing gives it back.
+        let open = self.layer != Layer::None || self.app.layer_open();
+        if open && !self.was_open {
+            self.opened_from = self.focus.current();
+        } else if !open
+            && self.was_open
+            && let Some(id) = self.opened_from.take()
+        {
+            self.focus.set(id);
+        }
+        self.was_open = open;
         let look = &self.look;
         let window = f.area();
         // The ring goes where the keyboard left focus, from the last frame's stops.
@@ -451,6 +515,7 @@ impl<A: ShellApp> Host<A> {
             active,
             now: self.now,
         };
+        self.page_mark = cx.focus.mark();
         self.app.page(f, page, &mut cx);
         if let Some(r) = self.shell.account() {
             self.focus.stop(account_stop(), r);
@@ -471,6 +536,12 @@ impl<A: ShellApp> Host<A> {
             }
         }
         self.focus.end();
+        if self.to_page {
+            self.to_page = false;
+            if let Some(id) = self.focus.first_after(self.page_mark) {
+                self.focus.set(id);
+            }
+        }
         if self.app.layer_open() {
             let mut cx = Cx {
                 look,
@@ -567,6 +638,7 @@ impl<A: ShellApp> Host<A> {
             .map(|b| (b.keys.label(&words), b.does.clone()))
             .chain([
                 ("Tab".to_string(), WORDS_TAB.to_string()),
+                ("Backspace".to_string(), WORDS_BACK.to_string()),
                 (Keys::Mod('q').label(&words), WORDS_QUIT.to_string()),
             ])
             .collect()
@@ -883,6 +955,12 @@ impl<A: ShellApp> Program for Host<A> {
                 self.palette_event(event);
                 return false;
             }
+            Layer::Settings
+                if key.is(Key::Backspace) && self.settings.focus != crate::settings::SettingsFocus::Search =>
+            {
+                self.back();
+                return false;
+            }
             Layer::Settings => {
                 let mut st = std::mem::take(&mut self.settings);
                 let event = self.dialog().handle(&mut st, key);
@@ -946,6 +1024,9 @@ impl<A: ShellApp> Program for Host<A> {
             return false;
         }
         if self.frame_key(key) {
+            return false;
+        }
+        if key.is(Key::Backspace) && !cx.typing && self.back() {
             return false;
         }
         let mut cx = Cx {

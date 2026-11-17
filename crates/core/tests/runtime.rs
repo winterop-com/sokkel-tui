@@ -233,3 +233,59 @@ fn the_runtime_opens_the_palette_and_keeps_it_open_with_a_refusal() {
     let text = sokkel_tui::snapshot::text(&sokkel_tui::app::shot(Refuses, look(), (120, 30), |_| {}, &keys));
     assert!(!text.contains("Search or run a command"));
 }
+
+/// An app with two places: `b` goes to the second, the page says where it is.
+struct Places {
+    at: String,
+}
+
+impl sokkel_tui::app::ShellApp for Places {
+    fn route(&self) -> String {
+        self.at.clone()
+    }
+
+    fn go(&mut self, route: &str) {
+        self.at = route.into();
+    }
+
+    fn chrome<'a>(&'a self, look: &'a Look) -> sokkel_tui::app::Chrome<'a> {
+        sokkel_tui::app::Chrome {
+            rail: Rail::new(look, "T", "Tidevann"),
+            top: TopBar::new(look),
+            foot: StatusLine::new(look),
+        }
+    }
+
+    fn page(&mut self, f: &mut ratatui::Frame, area: Rect, _cx: &mut sokkel_tui::app::Cx) {
+        f.buffer_mut()
+            .set_string(area.x, area.y, format!("at {}", self.at), ratatui::style::Style::new());
+    }
+
+    fn shortcuts(&self) -> Vec<sokkel_tui::Binding<String>> {
+        vec![sokkel_tui::Binding::new(
+            sokkel_tui::Keys::Char('b'),
+            "b".into(),
+            "Go to b",
+        )]
+    }
+
+    fn command(&mut self, id: &str) -> sokkel_tui::app::Ran {
+        self.at = id.into();
+        sokkel_tui::app::Ran::Done
+    }
+}
+
+#[test]
+fn backspace_goes_back_along_the_routes() {
+    let shot = |keys: &[&str]| {
+        let keys: Vec<KeyPress> = keys.iter().filter_map(|k| KeyPress::named(k)).collect();
+        let app = Places { at: "a".into() };
+        sokkel_tui::snapshot::text(&sokkel_tui::app::shot(app, look(), (120, 30), |_| {}, &keys))
+    };
+    assert!(shot(&["b"]).contains("at b"));
+    assert!(shot(&["b", "backspace"]).contains("at a"));
+    assert!(
+        shot(&["b", "backspace", "backspace"]).contains("at a"),
+        "nothing further back"
+    );
+}
