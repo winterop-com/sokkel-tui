@@ -377,3 +377,43 @@ fn a_button_group_shares_its_dividers_and_rings_on_them() {
     let areas = group(9).areas(Rect::new(1, 0, 19, 1));
     assert_eq!(areas[1], Rect::new(7, 0, 6, 1));
 }
+
+#[test]
+fn a_masked_field_never_shows_its_value_and_takes_a_paste() {
+    let look = look();
+    let field = TextField::new(&look, "Bearer token").masked(true);
+    let mut state = FieldState::default().focused(FieldFocus::Control);
+    assert_eq!(state.paste(&field, "s3cr3t\ttoken\n"), FieldEvent::Edited);
+    assert_eq!(state.value(), "s3cr3ttoken", "control characters and newlines left out");
+    let mut buf = Buffer::empty(Rect::new(0, 0, 30, 2));
+    ratatui::widgets::StatefulWidget::render(&field, buf.area, &mut buf, &mut state);
+    let text = snapshot::text(&buf);
+    assert!(!text.contains("s3cr3t") && text.contains("•••••••••••"), "{text}");
+    assert_eq!(state.cursor_position(), Some(ratatui::layout::Position::new(1 + 11, 1)));
+}
+
+#[test]
+fn a_prompt_submits_its_value_and_cancels() {
+    use sokkel_tui::{Prompt, PromptEvent, PromptFocus, PromptState};
+    let look = look();
+    let p = Prompt::new(&look, "Sign in to https://api.example.org", "Bearer token").field(|f| f.masked(true));
+    let mut st = PromptState::default();
+    p.paste(&mut st, "abc");
+    assert_eq!(p.handle(&mut st, Key::Char('d').into()), PromptEvent::Changed);
+    assert_eq!(p.handle(&mut st, Key::Enter.into()), PromptEvent::Submit("abcd".into()));
+    assert_eq!(p.handle(&mut st, Key::Tab.into()), PromptEvent::Changed);
+    assert_eq!(st.focus, PromptFocus::Cancel);
+    assert_eq!(p.handle(&mut st, Key::Enter.into()), PromptEvent::Cancel);
+    assert_eq!(p.handle(&mut st, Key::Escape.into()), PromptEvent::Cancel);
+    let window = Rect::new(0, 0, 100, 30);
+    let area = p.area(window, &st);
+    let mut buf = Buffer::empty(window);
+    p.render(area, &mut buf, &mut st);
+    let text = snapshot::text(&buf);
+    assert!(text.contains("Sign in to") && text.contains("Bearer token") && !text.contains("abcd"));
+    assert_eq!(
+        p.press(&mut st, area, ratatui::layout::Position::new(0, 0)),
+        PromptEvent::Cancel,
+        "outside"
+    );
+}

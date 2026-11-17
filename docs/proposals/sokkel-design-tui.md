@@ -168,6 +168,15 @@ and no banner paints. sokkel-tui draws one row there, as its reading:
 3. **Asked for:** a `banner` part with its words, tones, paints and a `cells` note; whether a banner
    carries actions (Retry) or a dismiss in a terminal.
 
+## (c6) A masked field, and a prompt
+
+parts/text-field has no masked input. sokkel-tui draws one as its reading: `masked`, each character
+the `bullet` glyph, a column each, the value never on screen, one line; a paste lands in it (control
+characters and newlines left out). A spec could say whether a masked field offers a reveal, and its
+words. sokkel-tui also puts parts/dialog and parts/text-field together as a `Prompt` (one field,
+Submit and Cancel, Enter submits, Escape cancels): a pattern rather than a part, which the contract
+could name.
+
 ## (d) Where it lives
 
 The proposals land in sokkel-design, as egui's did. sokkel-tui embeds the resolved file at a pinned

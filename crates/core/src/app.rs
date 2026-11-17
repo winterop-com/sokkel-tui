@@ -30,7 +30,9 @@ use crate::tokens::{self, Density, Scheme};
 use crate::top_bar::TopBar;
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
-use ratatui::crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event};
+use ratatui::crossterm::event::{
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, Event,
+};
 use ratatui::crossterm::execute;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::Style;
@@ -44,6 +46,8 @@ pub trait Program {
     /// A key; true quits.
     fn key(&mut self, key: KeyPress) -> bool;
     fn pointer(&mut self, _p: Pointer) {}
+    /// Text pasted into the terminal (bracketed paste), whole.
+    fn paste(&mut self, _text: &str) {}
     fn tick(&mut self, _now_ms: u64) {}
     /// Whether it is done, after a press or a tick (a key says so by returning true).
     fn done(&self) -> bool {
@@ -74,6 +78,7 @@ pub fn quits(key: KeyPress) -> bool {
 pub fn run(program: &mut impl Program) -> std::io::Result<()> {
     let mut terminal = ratatui::init();
     let mut mouse = program.mouse();
+    execute!(std::io::stdout(), EnableBracketedPaste)?;
     if mouse {
         execute!(std::io::stdout(), EnableMouseCapture)?;
     }
@@ -100,6 +105,7 @@ pub fn run(program: &mut impl Program) -> std::io::Result<()> {
                             program.pointer(p);
                         }
                     }
+                    Event::Paste(text) => program.paste(&text),
                     _ => {}
                 }
             }
@@ -116,6 +122,7 @@ pub fn run(program: &mut impl Program) -> std::io::Result<()> {
     if mouse {
         execute!(std::io::stdout(), DisableMouseCapture)?;
     }
+    execute!(std::io::stdout(), DisableBracketedPaste)?;
     ratatui::restore();
     result
 }
@@ -275,6 +282,9 @@ pub trait ShellApp {
     /// A pointer event on the page or on the app's open layer; a press has already focused the
     /// stop under it.
     fn pointer(&mut self, _p: Pointer, _cx: &mut Cx) {}
+    /// Text pasted while the page or the app's open layer has the keys (a field takes it with
+    /// [`crate::text_field::FieldState::paste`]).
+    fn paste(&mut self, _text: &str, _cx: &mut Cx) {}
     fn tick(&mut self, _now_ms: u64) {}
 }
 
@@ -1004,6 +1014,43 @@ impl<A: ShellApp> Host<A> {
 impl<A: ShellApp> Program for Host<A> {
     fn look(&self) -> &Look {
         &self.look
+    }
+
+    /// A paste goes where the keys go: the palette's query, the settings' search, the top bar's
+    /// search, else the app (its open layer, or the page).
+    fn paste(&mut self, text: &str) {
+        let typed = || {
+            text.chars()
+                .filter(|c| !c.is_control())
+                .map(|c| KeyPress::new(Key::Char(c)))
+        };
+        match self.layer {
+            Layer::Settings if self.settings.focus != crate::settings::SettingsFocus::Search => {}
+            Layer::Palette | Layer::Settings => {
+                for k in typed().collect::<Vec<_>>() {
+                    self.key(k);
+                }
+            }
+            Layer::Account | Layer::Shortcuts => {}
+            Layer::None if self.shell.searching => {
+                for k in typed().collect::<Vec<_>>() {
+                    self.shell.key(k);
+                }
+                let query = self.shell.query.clone();
+                self.app.search(&query);
+            }
+            Layer::None => {
+                let mut cx = Cx {
+                    look: &self.look,
+                    window: self.window,
+                    focus: &mut self.focus,
+                    hover: self.hover,
+                    active: true,
+                    now: self.now,
+                };
+                self.app.paste(text, &mut cx);
+            }
+        }
     }
 
     fn mouse(&self) -> bool {

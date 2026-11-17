@@ -6,7 +6,8 @@
 //!
 //! Usage: cargo run --example 09_dashboard [-- light] [-- --frame <cols> <rows> <out> [keys...]]
 //! Keys: the runtime's (Ctrl+K, `,`, `?`, Tab); `r` retries the failed panel; `d` drops the connection
-//! and brings it back (a banner, the panels marked stale); the wheel, PageUp and
+//! and brings it back (a banner, the panels marked stale); `t` opens the token prompt (a masked
+//! field; an empty token is turned down); the wheel, PageUp and
 //! PageDown scroll the page. Ctrl+Q quits.
 
 use ratatui::Frame;
@@ -16,9 +17,9 @@ use sokkel_tui::app::{self, Chrome, Cx, Flow, Ran, ShellApp};
 use sokkel_tui::dashboard::grid;
 use sokkel_tui::{
     BannerTone, Cell, ColorMode, Column, ColumnWidth, Command, CommandGroup, DashboardPanel, Fact, Fill, Key, KeyPress,
-    Legend, Look, NoteTone, PageHeader, PanelRead, PanelTool, Pointer, PointerKind, Rail, RailEntry, RailFoot,
-    RailGroup, Row, RowTone, Scheme, Series, Span, StatPanel, StatusLine, Table, TableState, Threshold,
-    TimeSeriesPanel, TopBar, snapshot,
+    Legend, Look, NoteTone, PageHeader, PanelRead, PanelTool, Pointer, PointerKind, Prompt, PromptEvent, PromptState,
+    Rail, RailEntry, RailFoot, RailGroup, Row, RowTone, Scheme, Series, Span, StatPanel, StatusLine, Table, TableState,
+    Threshold, TimeSeriesPanel, TopBar, snapshot,
 };
 
 /// The success rate's scale: critical below 95, warning below 99, good from 99.
@@ -39,6 +40,10 @@ struct Overview {
     failed_at: Rect,
     /// The connection to the daemon dropped: a banner says so, the panels keep what they last read.
     disconnected: bool,
+    /// The token prompt while it is open, where it stands, and a token it turned down.
+    prompt: Option<PromptState>,
+    prompt_at: Rect,
+    rejected: bool,
 }
 
 impl Overview {
@@ -93,6 +98,19 @@ impl Overview {
         spans
     }
 
+    /// What the token prompt's answer does: a token signs in, an empty one is turned down and the
+    /// banner says so; Cancel closes it. It never reopens by itself.
+    fn prompted(&mut self, event: PromptEvent, state: PromptState) {
+        match event {
+            PromptEvent::Submit(token) => {
+                self.rejected = token.is_empty();
+                self.disconnected = false;
+            }
+            PromptEvent::Cancel => {}
+            _ => self.prompt = Some(state),
+        }
+    }
+
     fn trend(&self, base: f64, swing: f64) -> Vec<f64> {
         (0..24)
             .map(|k| {
@@ -113,12 +131,39 @@ impl ShellApp for Overview {
     }
 
     fn banner(&self) -> Option<(BannerTone, String)> {
+        if self.rejected {
+            return Some((
+                BannerTone::Critical,
+                "auth rejected by https://api.example.org: check the token value".into(),
+            ));
+        }
         self.disconnected.then(|| {
             (
                 BannerTone::Critical,
                 "disconnected from https://api.example.org: connection refused (os error 61)".into(),
             )
         })
+    }
+
+    fn layer_open(&self) -> bool {
+        self.prompt.is_some()
+    }
+
+    fn layer(&mut self, f: &mut Frame, cx: &mut Cx) {
+        let Some(state) = self.prompt.as_mut() else { return };
+        let p = token_prompt(cx.look, cx.window);
+        let r = p.area(cx.window, state);
+        p.render(r, f.buffer_mut(), state);
+        if let Some(at) = state.field.cursor_position() {
+            f.set_cursor_position(at);
+        }
+        self.prompt_at = r;
+    }
+
+    fn paste(&mut self, text: &str, cx: &mut Cx) {
+        if let Some(state) = self.prompt.as_mut() {
+            token_prompt(cx.look, cx.window).paste(state, text);
+        }
     }
 
     fn chrome<'a>(&'a self, look: &'a Look) -> Chrome<'a> {
@@ -297,7 +342,16 @@ impl ShellApp for Overview {
         Ran::Done
     }
 
-    fn key(&mut self, key: KeyPress, _cx: &mut Cx) -> Flow {
+    fn key(&mut self, key: KeyPress, cx: &mut Cx) -> Flow {
+        if let Some(mut state) = self.prompt.take() {
+            let event = token_prompt(cx.look, cx.window).handle(&mut state, key);
+            self.prompted(event, state);
+            return Flow::Handled;
+        }
+        if key.key == Key::Char('t') {
+            self.prompt = Some(PromptState::default());
+            return Flow::Handled;
+        }
         if key.key == Key::Char('r') {
             self.command("retry");
             return Flow::Handled;
@@ -310,6 +364,15 @@ impl ShellApp for Overview {
     }
 
     fn pointer(&mut self, p: Pointer, cx: &mut Cx) {
+        if let Some(mut state) = self.prompt.take() {
+            let event = if p.kind == PointerKind::Press {
+                token_prompt(cx.look, cx.window).press(&mut state, self.prompt_at, p.at)
+            } else {
+                PromptEvent::Ignored
+            };
+            self.prompted(event, state);
+            return;
+        }
         let panel = DashboardPanel::new(cx.look, "").read(PanelRead::Failed(None));
         if p.kind == PointerKind::Press && panel.hit(self.failed_at, p.at) == Some(PanelTool::Retry) {
             self.command("retry");
@@ -319,6 +382,15 @@ impl ShellApp for Overview {
     fn tick(&mut self, now: u64) {
         self.now = now;
     }
+}
+
+/// The token prompt: a masked field for a bearer token.
+fn token_prompt(look: &Look, window: Rect) -> Prompt<'_> {
+    Prompt::new(look, "Sign in to https://api.example.org", "Bearer token")
+        .description("The daemon asks for a token.")
+        .field(|f| f.masked(true).help("Paste works; Enter signs in, Escape cancels."))
+        .submit("Sign in")
+        .window(sokkel_tui::cells::Width::of(window))
 }
 
 /// A panel marked stale while the connection is down: it keeps what it last read.
@@ -333,6 +405,9 @@ fn overview() -> Overview {
         hosts: TableState::default(),
         failed_at: Rect::default(),
         disconnected: false,
+        prompt: None,
+        prompt_at: Rect::default(),
+        rejected: false,
     }
 }
 

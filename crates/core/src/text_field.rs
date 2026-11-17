@@ -296,6 +296,22 @@ impl FieldState {
 }
 
 impl FieldState {
+    /// Text pasted at the cursor: control characters left out, and newlines too in a one-line
+    /// input (a text area keeps them).
+    pub fn paste(&mut self, field: &TextField, text: &str) -> FieldEvent {
+        if field.disabled || field.read_only || self.focus != FieldFocus::Control {
+            return FieldEvent::Ignored;
+        }
+        let keep = |c: char| !c.is_control() || (c == '\n' && field.multiline.is_some());
+        let text: String = text.replace("\r\n", "\n").chars().filter(|&c| keep(c)).collect();
+        if text.is_empty() {
+            return FieldEvent::Ignored;
+        }
+        self.value.insert_str(self.cursor, &text);
+        self.cursor += text.len();
+        FieldEvent::Edited
+    }
+
     /// A key in a text area: Enter starts a line, Up and Down move between lines, Home and End go
     /// to a line's ends; the rest as in a one-line input.
     fn handle_area(&mut self, field: &TextField, key: KeyPress) -> FieldEvent {
@@ -385,6 +401,7 @@ pub struct TextField<'a> {
     disabled: bool,
     words: FieldWords,
     multiline: Option<(u16, u16)>,
+    masked: bool,
     /// In a row of fields: the description rows the row gives each, so their controls stand level.
     in_row: Option<u16>,
 }
@@ -407,6 +424,7 @@ impl<'a> TextField<'a> {
             disabled: false,
             words: FieldWords::default(),
             multiline: None,
+            masked: false,
             in_row: None,
         }
     }
@@ -475,6 +493,14 @@ impl<'a> TextField<'a> {
 
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    /// A secret (a token, a password): each character drawn as the bullet, one column each, the
+    /// value itself never on screen. One line. sokkel-tui's reading (proposal c6): the contract's
+    /// text field has no masked input yet.
+    pub fn masked(mut self, on: bool) -> Self {
+        self.masked = on;
         self
     }
 
@@ -613,6 +639,15 @@ impl<'a> TextField<'a> {
             self.look.paint(&key, field)
         };
         c.unwrap_or_else(|| panic!("the contract paints no {field} for the text field's {piece}"))
+    }
+
+    /// The columns `value` takes as drawn: a masked one a column a character.
+    fn shown_width(&self, value: &str) -> usize {
+        if self.masked {
+            value.chars().count()
+        } else {
+            text::width(value)
+        }
     }
 
     /// A text area: each row with the edge at its ends, the value's lines wrapped at its room, the
@@ -799,8 +834,14 @@ impl StatefulWidget for &TextField<'_> {
                 }
                 state.scroll = 0;
             } else {
-                // Keep the cursor in view: the window follows it.
-                let at = text::width(&state.value[..state.cursor]);
+                // Keep the cursor in view: the window follows it. A masked value is drawn as one
+                // bullet a character.
+                let shown: String = if self.masked {
+                    glyphs.bullet.repeat(state.value.chars().count())
+                } else {
+                    state.value.clone()
+                };
+                let at = self.shown_width(&state.value[..state.cursor]);
                 if at < state.scroll {
                     state.scroll = at;
                 } else if room > 0 && at >= state.scroll + room {
@@ -808,7 +849,7 @@ impl StatefulWidget for &TextField<'_> {
                 }
                 let mut col = 0;
                 let mut x = start;
-                for c in state.value.chars() {
+                for c in shown.chars() {
                     let w = text::char_width(c);
                     if col >= state.scroll && col + w <= state.scroll + room {
                         let mut b = [0u8; 4];
@@ -819,7 +860,7 @@ impl StatefulWidget for &TextField<'_> {
                 }
             }
             if focus {
-                let at = text::width(&state.value[..state.cursor]);
+                let at = self.shown_width(&state.value[..state.cursor]);
                 state.cursor_at = Some(Position::new(start + (at - state.scroll) as u16, y));
             }
 

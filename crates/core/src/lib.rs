@@ -26,6 +26,7 @@
 //! - [`dialog`], [`menu`], [`select`]: the overlays, over the popup [`popup`] they share.
 //! - [`banner`]: [`Banner`], a state that holds, across the top of the content.
 //! - [`dashboard`]: the dashboard grid, [`DashboardPanel`] and [`StatPanel`].
+//! - [`prompt`]: [`Prompt`], a dialog asking for one value.
 //! - [`palette`]: the command palette; [`settings`]: the settings dialog.
 
 pub mod app;
@@ -43,6 +44,7 @@ pub mod page_header;
 pub mod page_state;
 pub mod palette;
 pub mod popup;
+pub mod prompt;
 pub mod rail;
 pub mod section;
 pub mod select;
@@ -75,6 +77,7 @@ pub use palette::{
     Command, CommandGroup, CommandPalette, CommandTone, PaletteEvent, PaletteHit, PaletteState, PaletteWords,
 };
 pub use popup::{Item, PopupRow};
+pub use prompt::{Prompt, PromptEvent, PromptFocus, PromptState};
 pub use rail::{Rail, RailEntry, RailFoot, RailGroup, RailLayout, RailWords};
 pub use section::{Section, SectionTone, SectionVariant};
 pub use select::{Select, SelectEvent, SelectOption, SelectState, SelectVariant};

@@ -48,6 +48,10 @@ the contract say so that it does?
 - `banner`: `Banner` in four tones, in the shell's slot under the top bar (`Shell::banner`,
   `ShellApp::banner`), the page a row lower while it shows, its words in the status line when cut;
   grounds as proposal c5 reads them.
+- `prompt`: `Prompt`, a dialog asking for one value (a masked field for a token), Enter submits,
+  Escape cancels, Tab between the field and the verbs, paste, the pointer.
+- `app` passes a paste (bracketed) to what types: the palette, the settings' search, the top bar's
+  search, the app (`ShellApp::paste`).
 - `app` scrolls a page taller than its view (`ShellApp::page_rows`): the wheel, PageUp and PageDown,
   keyboard focus kept in view, a scroller at its end.
 - `button` (step 1): every variant in rest, hover, focus, busy, reason, disabled, invalid and open;
@@ -61,7 +65,8 @@ the contract say so that it does?
   its popover drawn last, editing with a cursor that scrolls the value, wide glyphs measured, read
   only and disabled; a text area (`multiline(rows, max_rows)`: wrapped at its room, growing with its
   text, Enter a new line, Up and Down by lines); `inRow` (fields in a row share their description rows through
-  `TextField::level`, so their controls stand level). Not yet: the proposed busy state.
+  `TextField::level`, so their controls stand level). `masked` (each character the bullet, proposal c6); `FieldState::paste`. Not yet: the proposed
+  busy state.
 - `focus` (step 2): stops named each frame in tab order, Tab and Shift+Tab round the top layer, a
   layer that keeps Tab inside and gives focus back on close, a press of the pointer focusing the
   stop under it, the ring on keyboard focus only, and whether the reader is typing.
