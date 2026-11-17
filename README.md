@@ -14,8 +14,8 @@ parts and the shell), drawn in cells.
 - Focus and keys: tab order, layers, the ring on keyboard focus, a shortcuts registry by typed
   character.
 - The parts, each from its spec in sokkel-design: `Button`, `TextField`, `PageState`, `PageHeader`,
-  `Section` and `Table` so far.
-- `examples/spike`: the shell and the runs table drawn from the paints, static, written to
+  `Section`, `Table`, and the frame: `Rail`, `TopBar`, `StatusLine`.
+- `examples/spike`: the shell and the runs page, every part from the core, static, written to
   `specimens/` as SVG, PNG and text.
 - `examples/parts`: the parts sheets, every part in its variants and states.
 

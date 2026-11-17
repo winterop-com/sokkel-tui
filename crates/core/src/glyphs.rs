@@ -76,6 +76,13 @@ pub struct Glyphs {
     /// After each crumb of a trail (`chevron-right`).
     pub chevron: &'static str,
     pub chevron_down: &'static str,
+    /// The top bar's menu button, below md (`menu`).
+    pub menu: &'static str,
+    /// The search icon (`search`).
+    pub search: &'static str,
+    /// The rail's collapse control (`panel-left-close`) and expand control (`panel-left-open`).
+    pub collapse: &'static str,
+    pub expand: &'static str,
     pub sort_ascending: &'static str,
     pub sort_descending: &'static str,
     pub sortable: &'static str,
@@ -167,6 +174,10 @@ impl Glyphs {
             more: icon("ellipsis"),
             chevron: glyph("chevron-right"),
             chevron_down: glyph("chevron-down"),
+            menu: icon("menu"),
+            search: icon("search"),
+            collapse: icon("panel-left-close"),
+            expand: icon("panel-left-open"),
             sort_ascending: glyph("sort-ascending"),
             sort_descending: glyph("sort-descending"),
             sortable: glyph("sortable"),

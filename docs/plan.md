@@ -58,8 +58,15 @@ the contract say so that it does?
   by dot and word, the range in the foot; loading placeholders, the empty line, a failed read
   unframed under the heads; cards below 69 columns of its own box. Not yet: the bar, the list
   variant, groups, trees, details, row actions, paging, editing, resizing, reordering, the grid.
-- `examples/spike`: the shell drawn by hand from the paints, in every theme and
-  scheme, below and above the md line; its page header and table come from the core.
+- `rail`, `top_bar`, `status_line`, `shell` (step 5): the rail's head, groups, entries (icon,
+  label, count, unread dot, the active bar), collapsed form, foot cell and edge; the top bar's
+  search field, trail, palette button with its keys and actions, and below md the menu button, the
+  last crumb and the search icon; the status line's note with its live dot and tones, its facts,
+  and a focused control's tip in the note's place (principle 23); `ShellLayout` placing them, the
+  drawer below md. Not yet: the rail's parents and flyouts, descriptions, strip, body, resizing and
+  reordering; the panel; what lies under the drawer (T2).
+- `examples/spike`: the shell and the runs page, every part from the core, in every theme and
+  scheme, below and above the md line, collapsed and as a drawer.
 - `examples/parts`: the parts sheets (`controls`, `page`, `table`), every part in its variants and states, in
   color, in ASCII and without color.
 
@@ -74,7 +81,7 @@ then drawn by the spike in place of its hand-drawn copy.
 | 2 | Focus and keys (built) | Tab order, the last input kind, a shortcuts registry matching typed characters, quiet in a field and under an overlay; Mod as Ctrl |
 | 3 | PageState, PageHeader, Section (built) | Loading, failed (headed by what the server answered), empty, the content |
 | 4 | Table (built, the table variant) | The one table: head, sort by keys, selection, tones, the quiet dash, the foot's range, drawing only the visible rows, cards below its own stack width |
-| 5 | Shell: Rail, TopBar, StatusLine | The drawer below about 90 columns, the trail in the top bar only, the account level with the foot |
+| 5 | Shell: Rail, TopBar, StatusLine (built) | The drawer below about 90 columns, the trail in the top bar only, the account level with the foot |
 | 6 | Overlays: Dialog, CommandPalette, Select, DropdownMenu, SettingsDialog | A back stack for settings; focus returned on close; the palette on Ctrl+K, busy release after `busy-release` |
 | 7 | An interactive example | Tidevann's runs on the shell, run in a real terminal |
 

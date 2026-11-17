@@ -19,6 +19,7 @@
 //! - [`page_header`]: [`PageHeader`], a page's head.
 //! - [`section`]: [`Section`], a titled part of a page.
 //! - [`table`]: [`Table`], the one table.
+//! - [`rail`], [`top_bar`], [`status_line`]: the frame's parts, and [`shell`] where they go.
 
 pub mod button;
 pub mod cells;
@@ -28,13 +29,17 @@ pub mod keys;
 pub mod look;
 pub mod page_header;
 pub mod page_state;
+pub mod rail;
 pub mod section;
+pub mod shell;
 pub mod shortcuts;
 pub mod snapshot;
+pub mod status_line;
 pub mod table;
 pub mod text;
 pub mod text_field;
 pub mod tokens;
+pub mod top_bar;
 
 pub use button::{Button, ButtonSize, ButtonVariant, IconPlace, Tip};
 pub use focus::{Focus, FocusId, InputKind};
@@ -43,9 +48,13 @@ pub use keys::{Key, KeyPress};
 pub use look::{Depth, Look, Rgba};
 pub use page_header::{HeaderLayout, PageHeader, PageHeaderWords};
 pub use page_state::{Outcome, PageState, PageStateWords, StateTone};
+pub use rail::{Rail, RailEntry, RailFoot, RailGroup, RailLayout, RailWords};
 pub use section::{Section, SectionTone, SectionVariant};
+pub use shell::ShellLayout;
 pub use shortcuts::{Binding, KeyContext, Keys, ShortcutWords, Shortcuts};
+pub use status_line::{Fact, NoteTone, StatusLine};
 pub use table::{Align, Cell, Column, ColumnWidth, Row, RowTone, SortDir, Table, TableEvent, TableState, TableWords};
 pub use text::{Plural, TextRole};
 pub use text_field::{FieldEvent, FieldFocus, FieldState, FieldWords, Issue, RequiredMark, TextField, Tone};
 pub use tokens::{Density, Scheme};
+pub use top_bar::{TopBar, TopBarFocus, TopBarLayout, TopBarWords};
