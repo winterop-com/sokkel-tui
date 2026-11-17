@@ -44,7 +44,8 @@ specimens:
 	mkdir -p specimens
 	cargo build -q -p sokkel-tui --examples
 	for s in "tidevann dark 120 30" "tidevann dark 80 24" "tidevann light 120 30" "tidevann light 80 24" \
-		"terminal dark 120 30" "tidevann dark 80 24 drawer" "tidevann light 120 30 collapsed compact"; do \
+		"terminal dark 120 30" "tidevann dark 80 24 drawer" "tidevann light 120 30 collapsed compact" \
+		"tidevann dark 120 30 strip" "tidevann light 120 30 strip"; do \
 		set -- $$s; t=$$1; m=$$2; c=$$3; r=$$4; shift 4; \
 		out=specimens/$$t-$$m-$$c$$(for f in "$$@"; do printf -- '-%s' $$f; done); \
 		target/debug/examples/06_shell $$t $$m $$c $$r $$out "$$@" || exit 1; \

@@ -174,6 +174,7 @@ pub struct Rail<'a> {
     words: RailWords,
     size: Option<u16>,
     edge_shown: bool,
+    strip: bool,
 }
 
 impl<'a> Rail<'a> {
@@ -190,6 +191,7 @@ impl<'a> Rail<'a> {
             words: RailWords::default(),
             size: None,
             edge_shown: false,
+            strip: false,
         }
     }
 
@@ -200,6 +202,10 @@ impl<'a> Rail<'a> {
 
     /// Collapsed to its icons; `collapsible` draws the head's control.
     pub fn collapsed(mut self, collapsed: bool, collapsible: bool) -> Self {
+        // A strip neither collapses nor expands.
+        if self.strip {
+            return self;
+        }
         self.collapsed = collapsed;
         self.collapsible = collapsible;
         self
@@ -239,6 +245,19 @@ impl<'a> Rail<'a> {
             .collect()
     }
 
+    /// The strip (`variant="strip"`): 72 wide, each entry its icon over its short label, a
+    /// parent's children in a flyout beside it. It neither collapses nor resizes.
+    pub fn strip(mut self) -> Self {
+        self.strip = true;
+        self.collapsed = true;
+        self.collapsible = false;
+        self
+    }
+
+    pub fn is_strip(&self) -> bool {
+        self.strip
+    }
+
     pub fn is_collapsed(&self) -> bool {
         self.collapsed
     }
@@ -256,7 +275,9 @@ impl<'a> Rail<'a> {
     /// Its width in columns: expanded its size (`defaultSize` 240 px, 29), between `minSize` 200
     /// and `maxSize` 360; 57 collapsed (7).
     pub fn width(&self) -> u16 {
-        if self.collapsed {
+        if self.strip {
+            cols(72.0)
+        } else if self.collapsed {
             cols(57.0)
         } else {
             let (min, default, max) = Rail::sizes();
@@ -320,6 +341,9 @@ impl<'a> Rail<'a> {
 
     /// The rows an entry takes: one, and its description's while expanded.
     fn entry_rows(&self, entry: &RailEntry) -> u16 {
+        if self.strip {
+            return 2;
+        }
         1 + u16::from(!self.collapsed && entry.description.is_some())
     }
 
@@ -499,6 +523,29 @@ impl Widget for &Rail<'_> {
                     } else if entry.unread || entry.count.is_some() {
                         let dot = paint("rest.unreadDot", "ground").unwrap_or(ei);
                         buf.set_string(area.x + inner_w - 2, y, glyphs.status_dot, Style::new().fg(t(dot)));
+                    }
+                    // In a strip, the label under its icon, short and centered.
+                    if self.strip && y + 1 < bottom {
+                        y += 1;
+                        buf.set_style(Rect::new(area.x, y, inner_w, 1), Style::new().bg(t(eg)));
+                        let room = inner_w.saturating_sub(2) as usize;
+                        let label = text::truncate(&entry.label, room, glyphs.ellipsis);
+                        let lx = area.x + 1 + (room as u16).saturating_sub(text::width(&label) as u16) / 2;
+                        let quiet = if entry.active {
+                            ei
+                        } else {
+                            look.color("muted-foreground")
+                        };
+                        buf.set_string(lx, y, label, TextRole::Help.style(look).fg(t(quiet)).bg(t(eg)));
+                        if entry.active {
+                            let bar = paint("active.entry", "edge").unwrap_or_else(|| look.color("primary"));
+                            buf[(area.x, y)].set_symbol(glyphs.focus_mark).set_fg(t(bar));
+                        }
+                        if self.focused == Some((g, e)) {
+                            buf[(area.x, y)]
+                                .set_symbol(glyphs.focus_mark)
+                                .set_fg(look.token("ring"));
+                        }
                     }
                 } else {
                     // A child lines up under its parent's label; a parent's chevron at the end.

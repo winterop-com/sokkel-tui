@@ -17,7 +17,8 @@ use sokkel_tui::app::{self, Chrome, Cx, ShellApp};
 use sokkel_tui::cells::Width;
 use sokkel_tui::{
     Align, Button, ButtonVariant, Cell, Column, ColumnWidth, Density, Fact, Look, NoteTone, PageHeader, Rail,
-    RailEntry, RailFoot, RailGroup, Row, RowTone, Scheme, SortDir, StatusLine, Table, TableState, TopBar, snapshot,
+    RailEntry, RailFoot, RailGroup, Row, RowTone, Scheme, Setting, SettingsSection, SortDir, StatusLine, Table,
+    TableState, TopBar, snapshot,
 };
 
 struct RunRow {
@@ -47,37 +48,41 @@ const RUNS: &[RunRow] = &[
 
 const SELECTED: usize = 1;
 
-fn rail<'a>(look: &'a Look, collapsed: bool, hosts_open: bool) -> Rail<'a> {
-    Rail::new(look, "T", "Tidevann")
-        .groups([
-            RailGroup::new(
-                Some("Workspace"),
-                [
-                    RailEntry::new("Runs").icon("▶").count("1,200").active(),
-                    RailEntry::new("Jobs").icon("◆").count("5"),
-                    RailEntry::new("Schedules")
-                        .icon("◷")
-                        .description("Every job's next run"),
-                    RailEntry::new("Hosts").icon("▣").parent(hosts_open),
-                    RailEntry::new("api.example.org").child(),
-                    RailEntry::new("harbor.example.org").child(),
-                ],
-            ),
-            RailGroup::new(
-                Some("Projects"),
-                [
-                    RailEntry::new("harbor").icon("●"),
-                    RailEntry::new("juniper").icon("●"),
-                    RailEntry::new("larkspur").icon("●"),
-                ],
-            ),
-        ])
-        .collapsed(collapsed, true)
-        .foot(RailFoot {
-            letter: "a".into(),
-            color: "kind-violet".into(),
-            name: "ada".into(),
-        })
+/// The rail's two forms, a setting: the full rail, or the strip of icons over short labels.
+const NAVIGATION: [&str; 2] = ["Full", "Strip"];
+
+fn rail<'a>(look: &'a Look, collapsed: bool, hosts_open: bool, strip: bool) -> Rail<'a> {
+    let rail = Rail::new(look, "T", "Tidevann");
+    let rail = if strip { rail.strip() } else { rail };
+    rail.groups([
+        RailGroup::new(
+            Some("Workspace"),
+            [
+                RailEntry::new("Runs").icon("▶").count("1,200").active(),
+                RailEntry::new("Jobs").icon("◆").count("5"),
+                RailEntry::new("Schedules")
+                    .icon("◷")
+                    .description("Every job's next run"),
+                RailEntry::new("Hosts").icon("▣").parent(hosts_open),
+                RailEntry::new("api.example.org").child(),
+                RailEntry::new("harbor.example.org").child(),
+            ],
+        ),
+        RailGroup::new(
+            Some("Projects"),
+            [
+                RailEntry::new("harbor").icon("●"),
+                RailEntry::new("juniper").icon("●"),
+                RailEntry::new("larkspur").icon("●"),
+            ],
+        ),
+    ])
+    .collapsed(collapsed, true)
+    .foot(RailFoot {
+        letter: "a".into(),
+        color: "kind-violet".into(),
+        name: "ada".into(),
+    })
 }
 
 /// The runs page in sokkel's frame, narrowed by the top bar's search.
@@ -86,6 +91,8 @@ struct Runs {
     query: String,
     /// Hosts folded open in the rail.
     hosts_open: bool,
+    /// The rail drawn as a strip (the Navigation setting).
+    strip: bool,
 }
 
 impl ShellApp for Runs {
@@ -95,7 +102,7 @@ impl ShellApp for Runs {
 
     fn chrome<'a>(&'a self, look: &'a Look) -> Chrome<'a> {
         Chrome {
-            rail: rail(look, false, self.hosts_open),
+            rail: rail(look, false, self.hosts_open, self.strip),
             top: TopBar::new(look).trail(["Tidevann", "Runs"]).search(""),
             foot: StatusLine::new(look).note("Live", NoteTone::Live).live(true).facts([
                 Fact::labeled("host", "api.example.org").code(),
@@ -132,6 +139,26 @@ impl ShellApp for Runs {
 
     fn search(&mut self, query: &str) {
         self.query = query.to_lowercase();
+    }
+
+    fn settings(&self, _look: &Look) -> Vec<SettingsSection> {
+        vec![
+            SettingsSection::new(
+                "navigation",
+                "Navigation",
+                [Setting::new("navigation", "Navigation", 0)
+                    .description("The rail in full, or a strip of icons over short labels.")
+                    .choice(NAVIGATION, usize::from(self.strip))],
+            )
+            .icon("▤")
+            .no_reset(),
+        ]
+    }
+
+    fn chose(&mut self, id: &str, option: usize) {
+        if id == "navigation" {
+            self.strip = option == 1;
+        }
     }
 }
 
@@ -190,8 +217,12 @@ fn main() -> std::io::Result<()> {
     }
     let (cols, rows): (u16, u16) = (args[3].parse().unwrap(), args[4].parse().unwrap());
     let (collapsed, drawer) = (flag("collapsed"), flag("drawer"));
+    let runs = Runs {
+        strip: flag("strip"),
+        ..Runs::default()
+    };
     let buffer = &app::shot(
-        Runs::default(),
+        runs,
         look.clone(),
         (cols, rows),
         |shell| {

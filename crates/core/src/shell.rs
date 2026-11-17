@@ -214,7 +214,7 @@ impl<'a> Shell<'a> {
         // The edge: the rail's last column, resizing it while it is expanded beside the content.
         state.edge = shell
             .rail
-            .filter(|_| !state.collapsed && shell.width != Width::Narrow)
+            .filter(|_| !rail.is_collapsed() && shell.width != Width::Narrow)
             .map(|r| Rect::new(r.right() - 1, r.y, 1, r.height));
         if !state.narrow {
             state.drawer = false;

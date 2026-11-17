@@ -492,8 +492,10 @@ impl<A: ShellApp> Host<A> {
 
     /// A rail entry chosen: a collapsed parent opens its flyout, any other goes to the app.
     fn entry(&mut self, g: usize, e: usize) {
-        let children = self.app.chrome(&self.look).rail.children(g, e);
-        if self.shell.collapsed && !self.shell.drawer && !children.is_empty() {
+        let rail = self.app.chrome(&self.look).rail;
+        let children = rail.children(g, e);
+        // A collapsed rail or a strip opens a parent's children in a flyout beside it.
+        if (self.shell.collapsed || rail.is_strip()) && !self.shell.drawer && !children.is_empty() {
             self.layer = Layer::Flyout(g, e);
             self.flyout = MenuState {
                 open: true,

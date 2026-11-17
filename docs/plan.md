@@ -116,8 +116,9 @@ the contract say so that it does?
   last crumb and the search icon; the status line's note with its live dot and tones, its facts,
   and a focused control's tip in the note's place (principle 23); `ShellLayout` placing them, the
   drawer below md. The rail's edge resizes it (a drag, or Tab to it and Left, Right, Home, End,
-  Enter; `ShellState::rail_size`, between `minSize` and `maxSize`). Not yet: the rail's strip,
-  body and reordering; the panel; what lies under the drawer (T2).
+  Enter; `ShellState::rail_size`, between `minSize` and `maxSize`). The strip (`Rail::strip`: 9
+  columns, each entry its icon over its short label, a parent's children in a flyout; it neither
+  collapses nor resizes). Not yet: the rail's body and reordering; the panel; what lies under the drawer (T2).
 - `dialog`, `menu`, `select`, `popup` (step 6, first half): the dialog (header, body, the footer's
   verbs with the confirm last, a shut confirm's reason as its tip, `busy-release` and Stop
   waiting, the corner close, Escape held while busy, a sheet below md); the dropdown menu (items

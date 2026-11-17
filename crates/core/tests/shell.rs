@@ -260,3 +260,27 @@ fn the_rails_edge_resizes_it_by_a_drag_and_by_keys() {
     assert!(state.edge_key(KeyPress::new(Key::Enter)));
     assert_eq!(state.rail_size, None, "Enter puts back its own width");
 }
+
+#[test]
+fn a_strip_is_its_icons_over_short_labels_and_never_resizes() {
+    use sokkel_tui::{Shell, ShellState};
+    let look = look();
+    let strip = rail(&look).strip();
+    assert_eq!(strip.width(), 9, "72 wide");
+    assert_eq!(
+        strip.clone().collapsed(false, true).width(),
+        9,
+        "it neither collapses nor expands"
+    );
+    let lines = draw(9, 20, strip.clone());
+    let icon = lines
+        .iter()
+        .position(|l| l.trim() == ">" || l.contains(" > "))
+        .expect("Runs' icon");
+    assert!(lines[icon + 1].contains("Runs"), "its label under it: {lines:?}");
+    let shell = Shell::new(&look, strip, TopBar::new(&look), StatusLine::new(&look));
+    let mut state = ShellState::default();
+    let window = Rect::new(0, 0, 120, 30);
+    shell.render(window, &mut Buffer::empty(window), &mut state);
+    assert_eq!(state.edge_area(), None, "no edge to drag");
+}
