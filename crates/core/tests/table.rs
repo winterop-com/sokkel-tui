@@ -224,3 +224,63 @@ fn a_pointer_hits_rows_boxes_and_heads() {
     let mut s = TableState::default();
     assert_eq!(plain.press(&mut s, TableHit::Row(1)), TableEvent::Opened(1));
 }
+
+#[test]
+fn the_bar_holds_the_search_and_the_count_then_the_selection() {
+    use ratatui::layout::Position;
+    use sokkel_tui::TableHit;
+    let look = look();
+    let (c, r) = (columns(), rows());
+    let table = Table::new(&look, &c, &r).selectable(true).bar("", "Search runs", false);
+    let mut s = TableState::default();
+    let (_, lines) = draw(&table, 80, 9, &mut s);
+    assert!(lines[1].contains("⌕ Search runs"), "{lines:?}");
+    assert!(lines[1].trim_end().ends_with("3 rows │"), "{lines:?}");
+    assert!(lines[2].contains("Job"), "the head under the bar");
+    let area = Rect::new(0, 0, 80, 9);
+    assert_eq!(table.hit(area, Position::new(5, 1), &s), Some(TableHit::Search));
+    assert_eq!(
+        table.hit(area, Position::new(20, 4), &s),
+        Some(TableHit::Row(0)),
+        "rows a row lower"
+    );
+    s.selected.insert(1);
+    let (_, lines) = draw(&table, 80, 9, &mut s);
+    assert!(
+        lines[1].contains("1 selected") && lines[1].contains("Clear"),
+        "{lines:?}"
+    );
+    assert_eq!(table.hit(area, Position::new(74, 1), &s), Some(TableHit::Clear));
+    table.press(&mut s, TableHit::Clear);
+    assert!(s.selected.is_empty());
+}
+
+#[test]
+fn a_list_pads_wider_and_stacks_when_its_heads_no_longer_fit() {
+    use sokkel_tui::TableVariant;
+    let look = look();
+    let (c, r) = (columns(), rows());
+    let list = Table::new(&look, &c, &r).variant(TableVariant::List);
+    let (_, lines) = draw(&list, 60, 7, &mut TableState::default());
+    assert!(
+        lines[1].starts_with("│  Job"),
+        "two columns of padding at regular: {lines:?}"
+    );
+    assert!(!list.stacked(60) && list.stacked(14));
+    let compact = look.clone().with_density(sokkel_tui::Density::Compact);
+    let list = Table::new(&compact, &c, &r).variant(TableVariant::List);
+    let (_, lines) = draw(&list, 60, 7, &mut TableState::default());
+    assert!(lines[1].starts_with("│ Job"), "one at compact");
+}
+
+#[test]
+fn unframed_it_draws_no_box_and_its_rule_runs_across() {
+    let look = look();
+    let (c, r) = (columns(), rows());
+    let table = Table::new(&look, &c, &r).framed(false);
+    // 80 columns: a table stacks below 69, whatever its frame.
+    let (_, lines) = draw(&table, 80, 6, &mut TableState::default());
+    assert!(lines[0].starts_with(" Job"), "{lines:?}");
+    assert!(lines[1].starts_with('─') && lines[1].ends_with('─'));
+    assert!(lines[2].contains("nightly-export"));
+}

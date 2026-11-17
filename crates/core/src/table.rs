@@ -14,6 +14,7 @@
 //! and stacked cards. Not yet: the bar (search, tools), the list variant, groups, trees, detail
 //! rows, row actions, paging, editing, resizing, reordering and the grid view.
 
+use crate::button::{Button, ButtonVariant};
 use crate::cells::{PX_PER_COL, by_density, cols};
 use crate::keys::{Key, KeyPress};
 use crate::look::{Look, Rgba};
@@ -383,6 +384,35 @@ fn compare(a: Option<&Cell>, b: Option<&Cell>) -> Ordering {
     }
 }
 
+/// The table's two variants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TableVariant {
+    #[default]
+    Table,
+    /// A list: wider side padding, and cards as soon as its columns no longer fit.
+    List,
+}
+
+/// The bar over the heads: a search at its start and the count at its end; while rows are
+/// selected, the selection bar ("{count} selected" and Clear).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableBar {
+    pub query: String,
+    pub placeholder: String,
+    pub focused: bool,
+}
+
+/// Where a drawn table put its rows: one reading for drawing and for hitting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Geom {
+    inner: Rect,
+    pad: u16,
+    bar_y: Option<u16>,
+    head_y: u16,
+    rule_y: u16,
+    body: Rect,
+}
+
 /// The one table. Build it each frame and draw it with its [`TableState`].
 #[derive(Debug, Clone)]
 pub struct Table<'a> {
@@ -396,6 +426,9 @@ pub struct Table<'a> {
     loading: bool,
     failed: Option<PageState<'a>>,
     words: TableWords,
+    variant: TableVariant,
+    framed: bool,
+    bar: Option<TableBar>,
 }
 
 impl<'a> Table<'a> {
@@ -411,6 +444,9 @@ impl<'a> Table<'a> {
             loading: false,
             failed: None,
             words: TableWords::default(),
+            variant: TableVariant::Table,
+            framed: true,
+            bar: None,
         }
     }
 
@@ -455,6 +491,83 @@ impl<'a> Table<'a> {
         self
     }
 
+    pub fn variant(mut self, variant: TableVariant) -> Self {
+        self.variant = variant;
+        self
+    }
+
+    /// In a box of its own (default), or unframed where something else frames it.
+    pub fn framed(mut self, framed: bool) -> Self {
+        self.framed = framed;
+        self
+    }
+
+    /// The bar over the heads, with the app's search `query` (empty: the `placeholder`).
+    pub fn bar(mut self, query: impl Into<String>, placeholder: impl Into<String>, focused: bool) -> Self {
+        self.bar = Some(TableBar {
+            query: query.into(),
+            placeholder: placeholder.into(),
+            focused,
+        });
+        self
+    }
+
+    /// The side padding of its rows: one column, or a list's `panel-pad` (2, 1 at compact).
+    fn pad(&self) -> u16 {
+        match self.variant {
+            TableVariant::Table => 1,
+            TableVariant::List => by_density(self.look, 2, 1),
+        }
+    }
+
+    fn geom(&self, area: Rect) -> Geom {
+        let inner = if self.framed {
+            Rect::new(
+                area.x + 1,
+                area.y + 1,
+                area.width.saturating_sub(2),
+                area.height.saturating_sub(2),
+            )
+        } else {
+            area
+        };
+        let bar_y = self.bar.as_ref().map(|_| inner.y);
+        let head_y = inner.y + u16::from(bar_y.is_some());
+        let body_y = head_y + 2;
+        Geom {
+            inner,
+            pad: self.pad(),
+            bar_y,
+            head_y,
+            rule_y: head_y + 1,
+            body: Rect {
+                y: body_y,
+                height: inner.bottom().saturating_sub(body_y),
+                ..inner
+            },
+        }
+    }
+
+    /// Whether it draws its rows as cards in a box `width` columns wide: a table below 69 columns
+    /// (576 px); a list as soon as its columns' heads no longer fit.
+    pub fn stacked(&self, width: u16) -> bool {
+        match self.variant {
+            TableVariant::Table => Table::stacks(width),
+            TableVariant::List => {
+                let inner = width.saturating_sub(if self.framed { 2 } else { 0 });
+                let need: u16 = self
+                    .columns
+                    .iter()
+                    .map(|c| text::width(&c.header) as u16 + if c.sortable { 2 } else { 0 })
+                    .sum::<u16>()
+                    + 2 * self.columns.len().saturating_sub(1) as u16
+                    + 2 * self.pad()
+                    + self.select_w();
+                need > inner
+            }
+        }
+    }
+
     /// Whether a box of `width` columns stacks the rows as cards: below 576 px (69 columns).
     pub fn stacks(width: u16) -> bool {
         (width as f64) * PX_PER_COL < 576.0
@@ -480,7 +593,7 @@ impl<'a> Table<'a> {
         let look = self.look;
         let gap = 2u16;
         let n = self.columns.len() as u16;
-        let room = room.saturating_sub(2 + self.select_w() + gap * n.saturating_sub(1));
+        let room = room.saturating_sub(2 * self.pad() + self.select_w() + gap * n.saturating_sub(1));
         let head_w = |c: &Column| text::width(&c.header) as u16 + if c.sortable { 2 } else { 0 };
         let mut w: Vec<u16> = self
             .columns
@@ -597,6 +710,10 @@ pub enum TableHit {
     Head(usize),
     /// A stacked card, by its place.
     Card(usize),
+    /// The bar's search.
+    Search,
+    /// The selection bar's Clear.
+    Clear,
 }
 
 impl TableState {
@@ -613,7 +730,7 @@ impl Table<'_> {
             return None;
         }
         let n = self.rows.len();
-        if Table::stacks(area.width) {
+        if self.stacked(area.width) {
             let look = self.look;
             let pad_y = by_density(look, 1, 0);
             let gap = by_density(look, 1, 0);
@@ -630,22 +747,26 @@ impl Table<'_> {
             }
             return Some(TableHit::Card(place));
         }
-        let inner = Rect::new(
-            area.x + 1,
-            area.y + 1,
-            area.width.saturating_sub(2),
-            area.height.saturating_sub(2),
-        );
+        let g = self.geom(area);
+        let inner = g.inner;
         if !inner.contains(at) {
             return None;
         }
-        let in_box = self.selectable && (inner.x + 1..inner.x + 5).contains(&at.x);
-        if at.y == inner.y {
+        if g.bar_y == Some(at.y) {
+            if !state.selected.is_empty() {
+                let clear = text::width(&self.words.clear) as u16 + 2;
+                return (at.x + clear + 1 >= inner.right()).then_some(TableHit::Clear);
+            }
+            let search_w = (inner.width / 2).min(32);
+            return (at.x < inner.x + g.pad + search_w).then_some(TableHit::Search);
+        }
+        let in_box = self.selectable && (inner.x + g.pad..inner.x + g.pad + 4).contains(&at.x);
+        if at.y == g.head_y {
             if in_box {
                 return Some(TableHit::HeadBox);
             }
             let widths = self.widths(inner.width);
-            let mut x = inner.x + 1 + self.select_w();
+            let mut x = inner.x + g.pad + self.select_w();
             for (i, w) in widths.iter().enumerate() {
                 if (x..x + w).contains(&at.x) {
                     return Some(TableHit::Head(i));
@@ -654,7 +775,7 @@ impl Table<'_> {
             }
             return None;
         }
-        let body_y = inner.y + 2;
+        let body_y = g.body.y;
         if at.y < body_y {
             return None;
         }
@@ -710,7 +831,11 @@ impl Table<'_> {
                 };
                 TableEvent::Sorted
             }
-            TableHit::Head(_) => TableEvent::Ignored,
+            TableHit::Head(_) | TableHit::Search => TableEvent::Ignored,
+            TableHit::Clear => {
+                state.selected.clear();
+                TableEvent::Selected
+            }
         }
     }
 
@@ -733,7 +858,7 @@ impl ratatui::widgets::StatefulWidget for &Table<'_> {
         if area.width < 8 || area.height < 3 {
             return;
         }
-        state.stacked = Table::stacks(area.width);
+        state.stacked = self.stacked(area.width);
         if state.stacked {
             draw_cards(self, area, buf, state);
         } else {
@@ -762,7 +887,16 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
     let look = table.look;
     let glyphs = look.glyphs();
     let t = |c: Rgba| look.terminal(c);
-    let inner = frame(table, area, buf);
+    let geo = table.geom(area);
+    let inner = geo.inner;
+    if table.framed {
+        frame(table, area, buf);
+    } else {
+        let ground = look
+            .paint("table.base.rest.frame", "ground")
+            .unwrap_or_else(|| look.color("card"));
+        buf.set_style(area, Style::new().bg(t(ground)));
+    }
     let widths = table.widths(inner.width);
     let card = look
         .paint("table.base.rest.frame", "ground")
@@ -770,7 +904,10 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
 
     // The head row, and the rule under it as a row of tees.
     let head_ground = look.paint("table.base.rest.head", "ground").unwrap_or(card);
-    let head_row = Rect::new(inner.x, inner.y, inner.width, 1);
+    if let Some(y) = geo.bar_y {
+        draw_bar(table, Rect::new(inner.x, y, inner.width, 1), geo.pad, buf, state);
+    }
+    let head_row = Rect::new(inner.x, geo.head_y, inner.width, 1);
     buf.set_style(head_row, Style::new().bg(t(head_ground)));
     if table.selectable {
         // The head's box: none, some or every row selected.
@@ -785,9 +922,14 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
         let ink = look
             .paint("table.base.rest.head", "ink")
             .unwrap_or_else(|| look.color("table-head-ink"));
-        buf.set_string(inner.x + 1, inner.y, g, Style::new().fg(t(ink)).bg(t(head_ground)));
+        buf.set_string(
+            inner.x + geo.pad,
+            geo.head_y,
+            g,
+            Style::new().fg(t(ink)).bg(t(head_ground)),
+        );
     }
-    let mut x = inner.x + 1 + table.select_w();
+    let mut x = inner.x + geo.pad + table.select_w();
     for (i, c) in table.columns.iter().enumerate() {
         let w = widths[i];
         let sorted = state.sort.filter(|(s, _)| *s == i).map(|(_, d)| d);
@@ -811,42 +953,40 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
         } else {
             x
         };
-        buf.set_stringn(nx, inner.y, &name, w as usize, style);
+        buf.set_stringn(nx, geo.head_y, &name, w as usize, style);
         if let Some(g) = glyph {
-            buf.set_string(nx + name_w + 1, inner.y, g, style);
+            buf.set_string(nx + name_w + 1, geo.head_y, g, style);
         }
         // The head the keys chose: a ring beside its name, as a focused button.
         if table.focused && state.head == Some(i) {
             let ring = look.color("ring");
             let end = nx + name_w + if glyph.is_some() { 2 } else { 0 };
             if nx > inner.x {
-                buf[(nx - 1, inner.y)].set_symbol(glyphs.ring_start).set_fg(t(ring));
+                buf[(nx - 1, geo.head_y)].set_symbol(glyphs.ring_start).set_fg(t(ring));
             }
             if end < inner.right() {
-                buf[(end, inner.y)].set_symbol(glyphs.ring_end).set_fg(t(ring));
+                buf[(end, geo.head_y)].set_symbol(glyphs.ring_end).set_fg(t(ring));
             }
         }
         x += w + 2;
     }
-    let rule_y = inner.y + 1;
+    let rule_y = geo.rule_y;
     if rule_y < inner.bottom() {
         let bx = look.box_glyphs("radius-surface");
         let line = look.paint("table.base.rest.head", "rule").unwrap_or(card);
         let page = look.color("background");
         let st = Style::new().fg(t(line)).bg(t(card));
-        buf[(area.x, rule_y)].set_symbol(bx.tee_start).set_style(st.bg(t(page)));
+        if table.framed {
+            buf[(area.x, rule_y)].set_symbol(bx.tee_start).set_style(st.bg(t(page)));
+            buf[(area.right() - 1, rule_y)]
+                .set_symbol(bx.tee_end)
+                .set_style(st.bg(t(page)));
+        }
         for x in inner.x..inner.right() {
             buf[(x, rule_y)].set_symbol(bx.across).set_style(st);
         }
-        buf[(area.right() - 1, rule_y)]
-            .set_symbol(bx.tee_end)
-            .set_style(st.bg(t(page)));
     }
-    let body = Rect {
-        y: inner.y + 2,
-        height: inner.height.saturating_sub(2),
-        ..inner
-    };
+    let body = geo.body;
     state.view = body.height as usize;
     if body.height == 0 {
         return;
@@ -867,7 +1007,7 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
         // A placeholder bar per cell at row height, filling the view.
         let bar = look.paint("table.base.rest.placeholder", "ground").unwrap_or(card);
         for y in body.y..body.bottom() {
-            let mut x = body.x + 1 + table.select_w();
+            let mut x = body.x + geo.pad + table.select_w();
             for w in &widths {
                 let len = (*w * 6 / 10).max(1);
                 buf.set_style(Rect::new(x, y, len, 1), Style::new().bg(t(bar)));
@@ -881,7 +1021,7 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
             .paint("table.base.rest.empty", "ink")
             .unwrap_or_else(|| look.color("muted-foreground"));
         buf.set_stringn(
-            body.x + 1,
+            body.x + geo.pad,
             body.y,
             &table.words.empty,
             body.width.saturating_sub(2) as usize,
@@ -917,7 +1057,7 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
                 .set_symbol(glyphs.focus_mark)
                 .set_style(Style::new().fg(look.token("ring")).bg(t(ground)));
         }
-        let mut x = body.x + 1;
+        let mut x = body.x + geo.pad;
         if table.selectable {
             let g = if state.selected.contains(&row) {
                 glyphs.checkbox_on
@@ -948,7 +1088,7 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
     // The foot: the range at the end of the frame's bottom line.
     let range = format!(" {} ", table.range());
     let rw = text::width(&range) as u16;
-    if rw + 4 < area.width {
+    if table.framed && rw + 4 < area.width {
         let ink = look
             .paint("table.base.rest.empty", "ink")
             .unwrap_or_else(|| look.color("muted-foreground"));
@@ -960,6 +1100,56 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
             TextRole::Help.style(look).fg(t(ink)).bg(t(page)),
         );
     }
+}
+
+/// The bar over the heads: the search at its start and the count at its end; while rows are
+/// selected, "{count} selected" and Clear.
+fn draw_bar(table: &Table, row: Rect, pad: u16, buf: &mut Buffer, state: &TableState) {
+    let Some(bar) = &table.bar else { return };
+    let look = table.look;
+    let glyphs = look.glyphs();
+    let t = |c: Rgba| look.terminal(c);
+    let quiet = look.color("muted-foreground");
+    let help = TextRole::Help.style(look);
+    if !state.selected.is_empty() {
+        let words = table.words.selected.replace("{count}", &count(state.selected.len()));
+        buf.set_string(
+            row.x + pad,
+            row.y,
+            words,
+            TextRole::Label.style(look).fg(look.token("foreground")),
+        );
+        let clear = Button::new(look, table.words.clear.clone()).variant(ButtonVariant::Ghost);
+        let w = clear.width();
+        clear.render(Rect::new(row.right().saturating_sub(w + 1), row.y, w, 1), buf);
+        return;
+    }
+    // The search, on the field's ground with its edge, focused or not.
+    let w = (row.width / 2).min(32);
+    let r = Rect::new(row.x + pad, row.y, w, 1);
+    let key = if bar.focused {
+        "text-field.base.focus.control"
+    } else {
+        "text-field.base.rest.control"
+    };
+    let ground = look.paint(key, "ground").unwrap_or_else(|| look.color("field"));
+    let edge = look.paint(key, "edge").unwrap_or(ground);
+    buf.set_style(r, Style::new().bg(t(ground)));
+    buf[(r.x, r.y)].set_symbol(glyphs.edge_start).set_fg(t(edge));
+    buf[(r.right() - 1, r.y)].set_symbol(glyphs.edge_end).set_fg(t(edge));
+    buf.set_string(r.x + 1, r.y, glyphs.search, Style::new().fg(t(quiet)));
+    let (words, ink) = if bar.query.is_empty() {
+        (bar.placeholder.as_str(), quiet)
+    } else {
+        (bar.query.as_str(), look.color("foreground"))
+    };
+    let shown = text::truncate(words, w.saturating_sub(4) as usize, glyphs.ellipsis);
+    buf.set_string(r.x + 3, r.y, &shown, TextRole::Body.style(look).fg(t(ink)));
+    // The count at the end: how many rows there are, the range when unframed.
+    let n = table.total.unwrap_or(table.rows.len());
+    let said = table.words.rows.say(n).replace(&n.to_string(), &count(n));
+    let sw = text::width(&said) as u16;
+    buf.set_string(row.right().saturating_sub(sw + pad), row.y, said, help.fg(t(quiet)));
 }
 
 /// Below its stack width: each row a card, its first column the title and every other a line of

@@ -56,8 +56,9 @@ the contract say so that it does?
   view, sorting by keys from the head row (ascending, descending, as given; a missing value last),
   selection with the box column and the head's box, row tones, zebra, the quiet dash, status cells
   by dot and word, the range in the foot; loading placeholders, the empty line, a failed read
-  unframed under the heads; cards below 69 columns of its own box. Not yet: the bar, the list
-  variant, groups, trees, details, row actions, paging, editing, resizing, reordering, the grid.
+  cards below 69 columns of its own box; the bar (a search and the count, the selection bar with
+  Clear); the list variant (wider padding, cards as soon as its heads no longer fit); unframed. Not
+  yet: groups, trees, details, row actions, paging, editing, resizing, reordering, the grid.
 - `rail`, `top_bar`, `status_line`, `shell` (step 5): the rail's head, groups, entries (icon,
   label, count, unread dot, the active bar), collapsed form, foot cell and edge; the top bar's
   search field, trail, palette button with its keys and actions, and below md the menu button, the

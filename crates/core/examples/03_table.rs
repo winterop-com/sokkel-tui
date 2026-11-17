@@ -5,7 +5,9 @@
 //! Usage: cargo run --example 03_table [-- light]
 //! Keys: Up, Down, PgUp, PgDn, Home, End move; Space selects; Up from the first row enters the
 //! head row, where Left and Right choose a head and Enter turns its order; Enter on a row picks it.
-//! The mouse: a press on a row, a box or a head; the wheel. Ctrl+Q quits.
+//! `/` searches the jobs in the bar (Enter or Escape leaves the search); `l` switches between the
+//! table and the list variant. The mouse: a press on a row, a box, a head, the search or Clear; the
+//! wheel. Ctrl+Q quits.
 
 #[path = "common/mod.rs"]
 mod common;
@@ -14,8 +16,8 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use sokkel_tui::{
-    Align, Cell, Column, ColumnWidth, Fact, Key, KeyPress, Look, NoteTone, Pointer, PointerKind, Row, RowTone, SortDir,
-    StatusLine, Table, TableEvent, TableHit, TableState,
+    Align, Cell, CellValue, Column, ColumnWidth, Fact, Key, KeyPress, Look, NoteTone, Pointer, PointerKind, Row,
+    RowTone, SortDir, StatusLine, Table, TableEvent, TableHit, TableState, TableVariant,
 };
 
 const JOBS: [&str; 5] = [
@@ -75,13 +77,39 @@ struct App {
     area: Rect,
     hover: Option<ratatui::layout::Position>,
     picked: Option<String>,
+    query: String,
+    searching: bool,
+    list: bool,
+    all: Vec<Row>,
 }
 
 impl App {
     fn table(&self) -> Table<'_> {
         Table::new(&self.look, &self.columns, &self.rows)
             .selectable(true)
-            .focused(true)
+            .focused(!self.searching)
+            .bar(self.query.clone(), "Search the jobs", self.searching)
+            .variant(if self.list {
+                TableVariant::List
+            } else {
+                TableVariant::Table
+            })
+    }
+
+    /// The rows the search leaves; a new search starts the selection over.
+    fn narrow(&mut self) {
+        let q = self.query.to_lowercase();
+        self.rows = self
+            .all
+            .iter()
+            .filter(|r| match &r.cells[0].value {
+                CellValue::Text(job) => job.contains(&q),
+                _ => true,
+            })
+            .cloned()
+            .collect();
+        self.state.selected.clear();
+        self.state.active = 0;
     }
 
     fn picked(&mut self, event: TableEvent) {
@@ -97,6 +125,32 @@ impl common::App for App {
     }
 
     fn key(&mut self, key: KeyPress) -> bool {
+        if self.searching {
+            match key.key {
+                Key::Char(c) if !key.ctrl => {
+                    self.query.push(c);
+                    self.narrow();
+                }
+                Key::Backspace => {
+                    self.query.pop();
+                    self.narrow();
+                }
+                Key::Enter | Key::Escape | Key::Tab => self.searching = false,
+                _ => {}
+            }
+            return false;
+        }
+        match key.key {
+            Key::Char('/') => {
+                self.searching = true;
+                return false;
+            }
+            Key::Char('l') => {
+                self.list = !self.list;
+                return false;
+            }
+            _ => {}
+        }
         if key.is(Key::Escape) && self.state.head.is_none() {
             return true;
         }
@@ -118,8 +172,10 @@ impl common::App for App {
         let table = self.table();
         match p.kind {
             PointerKind::Press => {
-                if let Some(hit) = table.hit(self.area, p.at, &state) {
-                    let event = table.press(&mut state, hit);
+                let hit = table.hit(self.area, p.at, &state);
+                let event = hit.map(|h| table.press(&mut state, h));
+                self.searching = hit == Some(TableHit::Search);
+                if let Some(event) = event {
                     self.picked(event);
                 }
             }
@@ -155,12 +211,12 @@ impl common::App for App {
                 TableHit::Row(p) | TableHit::Card(p) | TableHit::SelectBox(p) => self.state.row_at(&self.rows, p),
                 _ => None,
             });
-        let table = Table::new(look, &self.columns, &self.rows)
-            .selectable(true)
-            .focused(true)
-            .hovered(hovered)
-            .total(1200);
-        f.render_stateful_widget(&table, self.area, &mut self.state);
+        let mut state = std::mem::take(&mut self.state);
+        // The whole set is 1,200 runs, forty of them here; a search counts what it found.
+        let total = if self.query.is_empty() { 1200 } else { self.rows.len() };
+        let table = self.table().hovered(hovered).total(total);
+        f.render_stateful_widget(&table, self.area, &mut state);
+        self.state = state;
 
         let sort = match self.state.sort {
             Some((c, d)) => format!(
@@ -182,6 +238,7 @@ impl common::App for App {
             Fact::labeled("sort", sort),
             Fact::labeled("selected", self.state.selected.len().to_string()),
             Fact::labeled("row", (self.state.active + 1).to_string()),
+            Fact::labeled("l", if self.list { "list" } else { "table" }),
         ]);
         f.render_widget(
             &foot,
@@ -195,6 +252,10 @@ fn main() -> std::io::Result<()> {
         look: common::look(),
         columns: columns(),
         rows: rows(),
+        all: rows(),
+        query: String::new(),
+        searching: false,
+        list: false,
         state: TableState::default(),
         area: Rect::default(),
         hover: None,
