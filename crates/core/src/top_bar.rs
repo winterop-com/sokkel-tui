@@ -276,11 +276,12 @@ impl Widget for &TopBar<'_> {
             );
         }
         // The trail: crumbs, the chevron between; below md the last after chevron-left.
-        if self.narrow && self.trail.len() > 1 {
-            if let Some(first) = layout.crumbs.first() {
-                let st = Style::new().fg(t(ink("rest.backChevron").unwrap_or(ground)));
-                buf.set_string(first.x - 2, first.y, glyphs.back, st);
-            }
+        if self.narrow
+            && self.trail.len() > 1
+            && let Some(first) = layout.crumbs.first()
+        {
+            let st = Style::new().fg(t(ink("rest.backChevron").unwrap_or(ground)));
+            buf.set_string(first.x - 2, first.y, glyphs.back, st);
         }
         let first = if self.narrow {
             self.trail.len().saturating_sub(1)

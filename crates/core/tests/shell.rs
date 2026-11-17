@@ -69,7 +69,7 @@ fn the_frame_puts_the_rail_beside_the_bar_page_and_foot() {
 #[test]
 fn the_rail_draws_its_head_groups_entries_and_foot() {
     let look = look();
-    let l = draw(29, 12, &rail(&look));
+    let l = draw(29, 12, rail(&look));
     assert!(
         l[0].starts_with("  T  Tidevann"),
         "a column of padding, the mark tile: {l:?}"

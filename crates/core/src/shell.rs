@@ -40,7 +40,7 @@ impl ShellLayout {
         let top_h = TopBar::height(look).min(main.height);
         let foot_h = StatusLine::height(look).min(main.height.saturating_sub(top_h));
         ShellLayout {
-            rail: (rail_w > 0).then(|| Rect {
+            rail: (rail_w > 0).then_some(Rect {
                 width: rail_w,
                 ..window
             }),
