@@ -1,9 +1,10 @@
 //! The parts sheet: every part the core holds, in its variants and states, drawn from the library
 //! alone and written out as SVG and text, cell for cell.
 //!
-//! Usage: sokkel-tui-parts <controls|page> <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]
+//! Usage: sokkel-tui-parts <controls|page|table> <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]
 //!
-//! `controls` is Button and TextField; `page` is PageState, PageHeader and Section.
+//! `controls` is Button and TextField; `page` is PageState, PageHeader and Section; `table` is the
+//! table.
 
 use ratatui::{
     Frame, Terminal,
@@ -18,6 +19,7 @@ use sokkel_tui::{
 };
 
 mod page;
+mod table;
 
 const STATES: [&str; 7] = ["rest", "focus", "hover", "busy", "reason", "invalid", "open"];
 
@@ -232,7 +234,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 7 {
         eprintln!(
-            "usage: sokkel-tui-parts <controls|page> <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]"
+            "usage: sokkel-tui-parts <controls|page|table> <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]"
         );
         std::process::exit(2);
     }
@@ -253,6 +255,7 @@ fn main() {
     let mut term = Terminal::new(TestBackend::new(cols, rows)).unwrap();
     term.draw(|f| match sheet {
         "page" => page::draw(f, &look),
+        "table" => table::draw(f, &look),
         _ => draw_controls(f, &look),
     })
     .unwrap();

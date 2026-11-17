@@ -14,7 +14,7 @@
 
 use crate::keys::{Key, KeyPress};
 use crate::look::{Look, Rgba};
-use crate::text::{self, TextRole};
+use crate::text::{self, Plural, TextRole};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
@@ -62,28 +62,6 @@ impl Issue {
     pub fn action(mut self, label: impl Into<String>) -> Issue {
         self.actions.push(label.into());
         self
-    }
-}
-
-/// Words with a count, in English's two forms.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Plural {
-    pub one: String,
-    pub other: String,
-}
-
-impl Plural {
-    pub fn new(one: &str, other: &str) -> Plural {
-        Plural {
-            one: one.into(),
-            other: other.into(),
-        }
-    }
-
-    /// The words for `count`, the count written in.
-    pub fn say(&self, count: usize) -> String {
-        let form = if count == 1 { &self.one } else { &self.other };
-        form.replace("{count}", &count.to_string())
     }
 }
 

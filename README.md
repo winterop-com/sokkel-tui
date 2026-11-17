@@ -13,8 +13,8 @@ parts and the shell), drawn in cells.
   and the breakpoints in columns (`md` about 90, `lg` about 120); a buffer as SVG and as text.
 - Focus and keys: tab order, layers, the ring on keyboard focus, a shortcuts registry by typed
   character.
-- The parts, each from its spec in sokkel-design: `Button`, `TextField`, `PageState`, `PageHeader`
-  and `Section` so far.
+- The parts, each from its spec in sokkel-design: `Button`, `TextField`, `PageState`, `PageHeader`,
+  `Section` and `Table` so far.
 - `examples/spike`: the shell and the runs table drawn from the paints, static, written to
   `specimens/` as SVG, PNG and text.
 - `examples/parts`: the parts sheets, every part in its variants and states.
@@ -22,6 +22,8 @@ parts and the shell), drawn in cells.
 ![Button and TextField in tidevann dark at 120 columns](docs/assets/parts-tidevann-dark-120.png)
 
 ![PageHeader, PageState and Section in tidevann dark at 120 columns](docs/assets/page-tidevann-dark-120.png)
+
+![The table in tidevann dark at 120 columns](docs/assets/table-tidevann-dark-120.png)
 
 ## Use
 

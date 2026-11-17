@@ -18,6 +18,7 @@
 //! - [`page_state`]: [`PageState`], a read that is loading, failed or empty.
 //! - [`page_header`]: [`PageHeader`], a page's head.
 //! - [`section`]: [`Section`], a titled part of a page.
+//! - [`table`]: [`Table`], the one table.
 
 pub mod button;
 pub mod cells;
@@ -30,6 +31,7 @@ pub mod page_state;
 pub mod section;
 pub mod shortcuts;
 pub mod snapshot;
+pub mod table;
 pub mod text;
 pub mod text_field;
 pub mod tokens;
@@ -43,6 +45,7 @@ pub use page_header::{HeaderLayout, PageHeader, PageHeaderWords};
 pub use page_state::{Outcome, PageState, PageStateWords, StateTone};
 pub use section::{Section, SectionTone, SectionVariant};
 pub use shortcuts::{Binding, KeyContext, Keys, ShortcutWords, Shortcuts};
-pub use text::TextRole;
+pub use table::{Align, Cell, Column, ColumnWidth, Row, RowTone, SortDir, Table, TableEvent, TableState, TableWords};
+pub use text::{Plural, TextRole};
 pub use text_field::{FieldEvent, FieldFocus, FieldState, FieldWords, Issue, RequiredMark, TextField, Tone};
 pub use tokens::{Density, Scheme};

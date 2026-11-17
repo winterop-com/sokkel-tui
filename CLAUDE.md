@@ -12,7 +12,7 @@ contract.
   of their own; the core never depends on an add-on. No empty placeholder crates.
 - `examples/spike` draws the shell and the table by hand from the paints, to SVG and text. Each
   part it draws by hand moves into the core, and the spike then draws it from there.
-- `examples/parts` draws the parts sheets (`controls`, `page`, one per group of parts): every part
+- `examples/parts` draws the parts sheets (`controls`, `page`, `table`, one per group of parts): every part
   the core holds, in its variants and states. A new part or state goes on a sheet.
 - An example uses only the library's public parts; a part it lacks goes into the library.
 

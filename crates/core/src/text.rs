@@ -214,3 +214,25 @@ pub fn wrap_code(s: &str, max: usize) -> Vec<Vec<Piece>> {
     }
     lines
 }
+
+/// Words with a count, in English's two forms.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Plural {
+    pub one: String,
+    pub other: String,
+}
+
+impl Plural {
+    pub fn new(one: &str, other: &str) -> Plural {
+        Plural {
+            one: one.into(),
+            other: other.into(),
+        }
+    }
+
+    /// The words for `count`, the count written in.
+    pub fn say(&self, count: usize) -> String {
+        let form = if count == 1 { &self.one } else { &self.other };
+        form.replace("{count}", &count.to_string())
+    }
+}

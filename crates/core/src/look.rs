@@ -130,6 +130,11 @@ impl Look {
             .unwrap_or_else(|| panic!("the contract has no color {name}"))
     }
 
+    /// Whether the theme has this color token.
+    pub fn has_color(&self, name: &str) -> bool {
+        self.tokens["colors"].get(name).is_some()
+    }
+
     /// An opaque color token (`foreground`, `ring`, `critical-ink`). A translucent one (`hover`)
     /// is read through the paint that uses it, never here.
     pub fn color(&self, name: &str) -> Rgba {

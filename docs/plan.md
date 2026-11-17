@@ -52,9 +52,15 @@ the contract say so that it does?
   from the last with the primary kept, laid out by its own width.
 - `section` (step 3): boxed with its head over a joined rule, or flat; meta, description, actions;
   the critical and graph tones; `flush`. Not yet: `fill` (a body that scrolls).
-- `examples/spike`: the shell and the table drawn by hand from the paints, in every theme and
-  scheme, below and above the md line; its page header's buttons come from the core.
-- `examples/parts`: the parts sheets (`controls`, `page`), every part in its variants and states, in
+- `table` (step 4): the table variant: frame, head and its rule of tees, rows drawn only while in
+  view, sorting by keys from the head row (ascending, descending, as given; a missing value last),
+  selection with the box column and the head's box, row tones, zebra, the quiet dash, status cells
+  by dot and word, the range in the foot; loading placeholders, the empty line, a failed read
+  unframed under the heads; cards below 69 columns of its own box. Not yet: the bar, the list
+  variant, groups, trees, details, row actions, paging, editing, resizing, reordering, the grid.
+- `examples/spike`: the shell drawn by hand from the paints, in every theme and
+  scheme, below and above the md line; its page header and table come from the core.
+- `examples/parts`: the parts sheets (`controls`, `page`, `table`), every part in its variants and states, in
   color, in ASCII and without color.
 
 ## What comes next, in order
@@ -67,7 +73,7 @@ then drawn by the spike in place of its hand-drawn copy.
 | 1 | Button, TextField (built) | Every other part uses them. Busy keeps its label with a spinner in the icon's place; a disabled button with a reason stays focusable and says the reason in the status line; a field's issue mark sits at its control's end |
 | 2 | Focus and keys (built) | Tab order, the last input kind, a shortcuts registry matching typed characters, quiet in a field and under an overlay; Mod as Ctrl |
 | 3 | PageState, PageHeader, Section (built) | Loading, failed (headed by what the server answered), empty, the content |
-| 4 | Table | The one table: head, sort by keys, selection, tones, the quiet dash, the foot's range, drawing only the visible rows, cards below its own stack width |
+| 4 | Table (built, the table variant) | The one table: head, sort by keys, selection, tones, the quiet dash, the foot's range, drawing only the visible rows, cards below its own stack width |
 | 5 | Shell: Rail, TopBar, StatusLine | The drawer below about 90 columns, the trail in the top bar only, the account level with the foot |
 | 6 | Overlays: Dialog, CommandPalette, Select, DropdownMenu, SettingsDialog | A back stack for settings; focus returned on close; the palette on Ctrl+K, busy release after `busy-release` |
 | 7 | An interactive example | Tidevann's runs on the shell, run in a real terminal |

@@ -1,7 +1,7 @@
 //! The spike: sokkel's shell and table drawn from sokkel-design's resolved paints, written out as
 //! SVG and text, cell for cell. Static: no input yet. The parts it draws by hand here move into
 //! the core crate one by one (`docs/plan.md`), and this example then draws them from there: the
-//! page header so far.
+//! page header and the table so far.
 //!
 //! Usage: sokkel-tui-spike <theme> <light|dark> <cols> <rows> <out-without-extension>
 
@@ -11,10 +11,13 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
+    widgets::{Block, Borders, Paragraph},
 };
 use sokkel_tui::cells::{Width, page_inset};
-use sokkel_tui::{Button, ButtonVariant, Look, PageHeader, Scheme, TextRole, snapshot};
+use sokkel_tui::{
+    Align, Button, ButtonVariant, Cell, Column, ColumnWidth, Look, PageHeader, Row, RowTone, Scheme, SortDir, Table,
+    TableState, TextRole, snapshot,
+};
 
 struct RunRow {
     job: &'static str,
@@ -235,103 +238,40 @@ fn draw_page(f: &mut Frame, look: &Look, body: Rect, narrow: bool) {
 }
 
 fn draw_table(f: &mut Frame, look: &Look, area: Rect, narrow: bool) {
-    const FRAME: &str = "table.base.rest.frame";
-    let on = |key: &str, field: &str| look.fill(key, field);
-    // The border's cells stand on the page; only the inside wears the frame's ground.
-    let block = Block::new()
-        .borders(Borders::ALL)
-        .border_type(look.corners("radius-surface"))
-        .border_style(Style::new().fg(look.fill(FRAME, "edge")));
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-    f.buffer_mut()
-        .set_style(inner, Style::new().bg(look.fill(FRAME, "ground")));
-
-    let head = TextRole::Head
-        .style(look)
-        .bg(on("table.base.rest.head", "ground"))
-        .fg(on("table.base.rest.head", "ink"));
-    let sorted = head.fg(on("table.base.sorted.head", "ink"));
-    let faint = look.token("faint");
-    let ring = look.token("ring");
-
-    let mut headers = vec![Cell::from(" "), Cell::from("Job"), Cell::from("State")];
-    headers.push(Cell::from(if narrow { "By" } else { "Started by" }));
+    // The table, from the core: the runs, sorted by when they started, the failed run's row in the
+    // critical tone and the selected one active, as keyboard focus left it.
+    let mut columns = vec![
+        Column::new("Job").width(ColumnWidth::Fill(3)).sortable(),
+        Column::new("State").sortable(),
+        Column::new(if narrow { "By" } else { "Started by" }).sortable(),
+    ];
     if !narrow {
-        headers.push(Cell::from("Project"));
+        columns.push(Column::new("Project").width(ColumnWidth::Fill(2)).sortable());
     }
-    headers.push(Cell::from(Span::styled("Started ▼", sorted)));
-    headers.push(Cell::from("Took"));
-
-    let rows = RUNS.iter().enumerate().map(|(i, r)| {
-        let state = if i == SELECTED {
-            "selected"
-        } else if r.state == "failed" {
-            "toneCritical"
-        } else {
-            "rest"
-        };
-        let row_key = format!("table.base.{state}.row");
-        let ground = look.paint(&row_key, "ground").unwrap_or_else(|| look.color("card"));
-        let status = |suffix: &str| look.token(&format!("status-{}{suffix}", r.state));
-        let state_cell = Line::from(vec![
-            Span::styled("● ", Style::new().fg(status(""))),
-            Span::styled(r.state, Style::new().fg(status("-ink"))),
-        ]);
-        // Principle 10: a missing value is a quiet dash.
-        let maybe = |v: Option<&'static str>| match v {
-            Some(s) => Cell::from(s),
-            None => Cell::from(Span::styled("—", Style::new().fg(faint))),
-        };
-        // Keyboard focus on the selected row: a lead bar in `ring`.
-        let lead = if i == SELECTED {
-            Cell::from(Span::styled("▌", Style::new().fg(ring)))
-        } else {
-            Cell::from(" ")
-        };
-        let job_style = if i == SELECTED {
-            TextRole::Label.style(look)
-        } else {
-            Style::new()
-        };
-        let mut cells = vec![
-            lead,
-            Cell::from(Span::styled(r.job, job_style)),
-            Cell::from(state_cell),
-            maybe(r.by),
-        ];
-        if !narrow {
-            cells.push(Cell::from(r.project));
-        }
-        cells.push(Cell::from(r.started));
-        cells.push(maybe(r.took));
-        Row::new(cells).style(Style::new().bg(look.terminal(ground)).fg(on(&row_key, "ink")))
-    });
-
-    let widths: Vec<Constraint> = if narrow {
-        [1, 16, 13, 9, 10, 7].map(Constraint::Length).to_vec()
-    } else {
-        let mut w = vec![Constraint::Length(1), Constraint::Fill(3)];
-        w.extend([Constraint::Fill(2); 4]);
-        w.push(Constraint::Length(7));
-        w
-    };
-    f.render_widget(
-        Table::new(rows, widths)
-            .header(Row::new(headers).style(head))
-            .column_spacing(2),
-        inner,
-    );
-
-    // The table's foot: its range, in the table's words ("{from}–{to} of {total}").
-    let foot = Rect {
-        x: area.x + 2,
-        y: area.y + area.height - 1,
-        width: 16,
-        height: 1,
-    };
-    let quiet = Style::new().fg(look.fill("table.base.rest.empty", "ink"));
-    f.render_widget(Paragraph::new(Span::styled(" 1–12 of 1,200 ", quiet)), foot);
+    columns.push(Column::new("Started").sortable());
+    columns.push(Column::new("Took").align(Align::End));
+    let rows: Vec<Row> = RUNS
+        .iter()
+        .map(|r| {
+            let mut cells = vec![Cell::text(r.job), Cell::status(r.state), Cell::maybe(r.by)];
+            if !narrow {
+                cells.push(Cell::text(r.project));
+            }
+            cells.push(Cell::text(r.started));
+            cells.push(Cell::maybe(r.took));
+            let tone = if r.state == "failed" {
+                RowTone::Critical
+            } else {
+                RowTone::Plain
+            };
+            Row::new(cells).tone(tone)
+        })
+        .collect();
+    let started = columns.len() - 2;
+    let table = Table::new(look, &columns, &rows).focused(true).total(1200);
+    let mut state = TableState::default().sorted_by(started, SortDir::Descending);
+    state.active = SELECTED;
+    f.render_stateful_widget(&table, area, &mut state);
 }
 
 fn draw_status_line(f: &mut Frame, look: &Look, rule: Rect, area: Rect) {
