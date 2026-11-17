@@ -334,3 +334,18 @@ fn a_text_area_wraps_grows_and_moves_by_lines() {
     }
     assert_eq!(field.height_with(20, &state), 6, "the label and five rows at the most");
 }
+
+#[test]
+fn fields_in_a_row_share_their_description_rows() {
+    let look = look();
+    let plain = TextField::new(&look, "Minute");
+    let told = TextField::new(&look, "Hour").description("0 to 23, the host's time.");
+    let shared = TextField::level([(&plain, 14), (&told, 14)]);
+    assert_eq!(shared, 2, "the description wraps to two rows at 14 columns");
+    let plain = plain.in_row(shared);
+    assert_eq!(plain.height(14), 4, "label, two shared rows, control");
+    let mut buf = Buffer::empty(Rect::new(0, 0, 14, 4));
+    ratatui::widgets::StatefulWidget::render(&plain, buf.area, &mut buf, &mut FieldState::new("0"));
+    let lines: Vec<String> = snapshot::text(&buf).lines().map(String::from).collect();
+    assert!(lines[3].starts_with("▏0"), "the control on the fourth row: {lines:?}");
+}

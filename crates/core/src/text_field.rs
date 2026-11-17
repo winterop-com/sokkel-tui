@@ -385,6 +385,8 @@ pub struct TextField<'a> {
     disabled: bool,
     words: FieldWords,
     multiline: Option<(u16, u16)>,
+    /// In a row of fields: the description rows the row gives each, so their controls stand level.
+    in_row: Option<u16>,
 }
 
 impl<'a> TextField<'a> {
@@ -405,6 +407,7 @@ impl<'a> TextField<'a> {
             disabled: false,
             words: FieldWords::default(),
             multiline: None,
+            in_row: None,
         }
     }
 
@@ -475,6 +478,29 @@ impl<'a> TextField<'a> {
         self
     }
 
+    /// In a row of fields (`inRow`): the field takes `description_rows` rows for its description,
+    /// the most any field in the row needs ([`TextField::level`]), so the controls stand level.
+    pub fn in_row(mut self, description_rows: u16) -> Self {
+        self.in_row = Some(description_rows);
+        self
+    }
+
+    /// The rows its description wraps to at `width` columns.
+    pub fn description_rows(&self, width: u16) -> u16 {
+        self.description
+            .as_ref()
+            .map_or(0, |t| text::wrap(t, width as usize).len() as u16)
+    }
+
+    /// The description rows a row of fields shares: the most any of them needs at its width.
+    pub fn level<'f>(fields: impl IntoIterator<Item = (&'f TextField<'f>, u16)>) -> u16 {
+        fields
+            .into_iter()
+            .map(|(f, w)| f.description_rows(w))
+            .max()
+            .unwrap_or(0)
+    }
+
     /// A text area: at least `rows` lines, growing with its text up to `max_rows`, then
     /// scrolling. Enter starts a new line.
     pub fn multiline(mut self, rows: u16, max_rows: u16) -> Self {
@@ -535,7 +561,8 @@ impl<'a> TextField<'a> {
         let w = width as usize;
         let lines = |t: &Option<String>| t.as_ref().map_or(0, |t| text::wrap(t, w).len());
         let control = self.multiline.map_or(1, |(rows, _)| rows);
-        (1 + control as usize + lines(&self.description) + lines(&self.help) + lines(&self.fallback)) as u16
+        let description = self.in_row.map_or(lines(&self.description), |r| r as usize);
+        (1 + control as usize + description + lines(&self.help) + lines(&self.fallback)) as u16
     }
 
     /// The rows it takes at `width` columns holding `state`'s value: a text area grows with it.
@@ -718,7 +745,11 @@ impl StatefulWidget for &TextField<'_> {
         buf.set_line(area.x, y, &Line::from(spans), area.width);
         y += 1;
 
+        let from = y;
         self.put_lines(buf, area, &mut y, &self.description, "description", TextRole::Body);
+        if let Some(rows) = self.in_row {
+            y = (from + rows).min(area.bottom());
+        }
 
         // The control.
         if y < area.bottom() {

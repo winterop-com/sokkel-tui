@@ -225,6 +225,24 @@ fn draw_controls(f: &mut Frame, look: &Look) {
         col_y[c] += h + 1;
         states.push((field, state));
     }
+    // In a row (`inRow`): the fields share their description rows, so the controls stand level.
+    let mut y = col_y[0].max(col_y[1]);
+    f.buffer_mut().set_string(x0, y, "in a row", quiet(look));
+    y += 1;
+    let row_w = (area.width.saturating_sub(4 + 2 * 2)) / 3;
+    let row = [
+        TextField::new(look, "Minute"),
+        TextField::new(look, "Hour").description("0 to 23, the host's time."),
+        TextField::new(look, "Day"),
+    ];
+    let shared = TextField::level(row.iter().map(|f| (f, row_w)));
+    for (k, (field, value)) in row.into_iter().zip(["0", "2", "*"]).enumerate() {
+        let field = field.in_row(shared);
+        let mut state = FieldState::new(value);
+        let h = field.height(row_w);
+        let r = Rect::new(x0 + k as u16 * (row_w + 2), y, row_w, h).intersection(area);
+        f.render_stateful_widget(&field, r, &mut state);
+    }
     // Overlays last, over what lies below.
     for (field, state) in &states {
         if let Some(p) = field.popover(state) {
@@ -247,7 +265,7 @@ fn draw_controls(f: &mut Frame, look: &Look) {
 
 /// The sheets, and the rows each takes at a wide and at a narrow width.
 const SHEETS: [(&str, u16, u16); 5] = [
-    ("controls", 40, 60),
+    ("controls", 44, 66),
     ("page", 84, 120),
     ("table", 90, 90),
     ("overlays", 56, 90),
