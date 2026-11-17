@@ -1,7 +1,7 @@
 //! The spike: sokkel's shell and the runs table, every part drawn from the core, written out as
 //! SVG and text, cell for cell. Static: no input yet (step 7 makes it a program).
 //!
-//! Usage: sokkel-tui-spike <theme> <light|dark> <cols> <rows> <out-without-extension> [collapsed] [drawer] [compact]
+//! Usage: cargo run --example spike -- <theme> <light|dark> <cols> <rows> <out-without-extension> [collapsed] [drawer] [compact]
 
 use ratatui::{Frame, Terminal, backend::TestBackend, layout::Rect, style::Style};
 use sokkel_tui::cells::Width;
@@ -161,7 +161,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 6 {
         eprintln!(
-            "usage: sokkel-tui-spike <theme> <light|dark> <cols> <rows> <out-without-extension> [collapsed] [drawer] [compact]"
+            "usage: cargo run --example spike -- <theme> <light|dark> <cols> <rows> <out-without-extension> [collapsed] [drawer] [compact]"
         );
         std::process::exit(2);
     }

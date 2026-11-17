@@ -1286,23 +1286,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sokkel-tui-parts"
-version = "0.1.0"
-dependencies = [
- "ratatui",
- "sokkel-tui",
-]
-
-[[package]]
-name = "sokkel-tui-spike"
-version = "0.1.0"
-dependencies = [
- "ratatui",
- "serde_json",
- "sokkel-tui",
-]
-
-[[package]]
 name = "stacker"
 version = "0.1.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"

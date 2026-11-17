@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "examples/*"]
+members = ["crates/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -9,6 +9,5 @@ license = "LicenseRef-Proprietary"
 publish = false
 
 [workspace.dependencies]
-sokkel-tui = { path = "crates/core" }
 ratatui = "0.30"
 serde_json = { version = "1", features = ["preserve_order"] }

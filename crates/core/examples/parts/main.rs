@@ -1,7 +1,7 @@
 //! The parts sheet: every part the core holds, in its variants and states, drawn from the library
 //! alone and written out as SVG and text, cell for cell.
 //!
-//! Usage: sokkel-tui-parts <controls|page|table> <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]
+//! Usage: cargo run --example parts -- <controls|page|table> <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]
 //!
 //! `controls` is Button and TextField; `page` is PageState, PageHeader and Section; `table` is the
 //! table.
@@ -234,7 +234,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 7 {
         eprintln!(
-            "usage: sokkel-tui-parts <controls|page|table> <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]"
+            "usage: cargo run --example parts -- <controls|page|table> <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]"
         );
         std::process::exit(2);
     }

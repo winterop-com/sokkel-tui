@@ -65,9 +65,9 @@ the contract say so that it does?
   and a focused control's tip in the note's place (principle 23); `ShellLayout` placing them, the
   drawer below md. Not yet: the rail's parents and flyouts, descriptions, strip, body, resizing and
   reordering; the panel; what lies under the drawer (T2).
-- `examples/spike`: the shell and the runs page, every part from the core, in every theme and
+- `crates/core/examples/spike.rs`: the shell and the runs page, every part from the core, in every theme and
   scheme, below and above the md line, collapsed and as a drawer.
-- `examples/parts`: the parts sheets (`controls`, `page`, `table`), every part in its variants and states, in
+- `crates/core/examples/parts/`: the parts sheets (`controls`, `page`, `table`), every part in its variants and states, in
   color, in ASCII and without color.
 
 ## What comes next, in order

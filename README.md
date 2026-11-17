@@ -15,9 +15,9 @@ parts and the shell), drawn in cells.
   character.
 - The parts, each from its spec in sokkel-design: `Button`, `TextField`, `PageState`, `PageHeader`,
   `Section`, `Table`, and the frame: `Rail`, `TopBar`, `StatusLine`.
-- `examples/spike`: the shell and the runs page, every part from the core, static, written to
+- `crates/core/examples/spike.rs` (`cargo run --example spike`): the shell and the runs page, every part from the core, static, written to
   `specimens/` as SVG, PNG and text.
-- `examples/parts`: the parts sheets, every part in its variants and states.
+- `crates/core/examples/parts/` (`cargo run --example parts`): the parts sheets, every part in its variants and states.
 
 ![Button and TextField in tidevann dark at 120 columns](docs/assets/parts-tidevann-dark-120.png)
 

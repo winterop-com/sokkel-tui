@@ -10,9 +10,9 @@ contract.
 - A cargo workspace shaped like sokkel-egui's. `crates/core` is the package `sokkel-tui`: tokens,
   the look, text roles, cells, snapshots, and the parts as they come. Add-ons come later as crates
   of their own; the core never depends on an add-on. No empty placeholder crates.
-- `examples/spike` draws the shell and the runs page from the core's parts, to SVG and text: the
+- `crates/core/examples/spike.rs` (`cargo run --example spike`) draws the shell and the runs page from the core's parts, to SVG and text: the
   frame (rail, top bar, status line), the page header and the table, collapsed and as a drawer.
-- `examples/parts` draws the parts sheets (`controls`, `page`, `table`, one per group of parts): every part
+- `crates/core/examples/parts/` (`cargo run --example parts`, one file per sheet) draws the parts sheets (`controls`, `page`, `table`, one per group of parts): every part
   the core holds, in its variants and states. A new part or state goes on a sheet.
 - An example uses only the library's public parts; a part it lacks goes into the library.
 
