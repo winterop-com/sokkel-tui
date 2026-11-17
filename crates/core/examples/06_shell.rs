@@ -47,7 +47,7 @@ const RUNS: &[RunRow] = &[
 
 const SELECTED: usize = 1;
 
-fn rail<'a>(look: &'a Look, collapsed: bool) -> Rail<'a> {
+fn rail<'a>(look: &'a Look, collapsed: bool, hosts_open: bool) -> Rail<'a> {
     Rail::new(look, "T", "Tidevann")
         .groups([
             RailGroup::new(
@@ -55,8 +55,12 @@ fn rail<'a>(look: &'a Look, collapsed: bool) -> Rail<'a> {
                 [
                     RailEntry::new("Runs").icon("▶").count("1,200").active(),
                     RailEntry::new("Jobs").icon("◆").count("5"),
-                    RailEntry::new("Schedules").icon("◷"),
-                    RailEntry::new("Hosts").icon("▣").unread(),
+                    RailEntry::new("Schedules")
+                        .icon("◷")
+                        .description("Every job's next run"),
+                    RailEntry::new("Hosts").icon("▣").parent(hosts_open),
+                    RailEntry::new("api.example.org").child(),
+                    RailEntry::new("harbor.example.org").child(),
                 ],
             ),
             RailGroup::new(
@@ -80,6 +84,8 @@ fn rail<'a>(look: &'a Look, collapsed: bool) -> Rail<'a> {
 #[derive(Default)]
 struct Runs {
     query: String,
+    /// Hosts folded open in the rail.
+    hosts_open: bool,
 }
 
 impl ShellApp for Runs {
@@ -89,7 +95,7 @@ impl ShellApp for Runs {
 
     fn chrome<'a>(&'a self, look: &'a Look) -> Chrome<'a> {
         Chrome {
-            rail: rail(look, false),
+            rail: rail(look, false, self.hosts_open),
             top: TopBar::new(look).trail(["Tidevann", "Runs"]).search(""),
             foot: StatusLine::new(look).note("Live", NoteTone::Live).live(true).facts([
                 Fact::labeled("host", "api.example.org").code(),
@@ -115,6 +121,13 @@ impl ShellApp for Runs {
             ..page
         };
         draw_table(f, look, table, narrow, &self.query);
+    }
+
+    /// A press on Hosts folds its hosts open or shut.
+    fn entry(&mut self, group: usize, entry: usize) {
+        if (group, entry) == (0, 3) {
+            self.hosts_open = !self.hosts_open;
+        }
     }
 
     fn search(&mut self, query: &str) {

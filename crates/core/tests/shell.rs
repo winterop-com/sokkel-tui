@@ -175,3 +175,33 @@ fn the_status_line_says_its_note_its_facts_and_a_focused_tip() {
     let l = draw(30, 2, &line);
     assert!(!l[1].contains("host"), "facts take at most 70 percent: {l:?}");
 }
+
+#[test]
+fn a_parent_folds_its_children_and_an_entry_says_its_description() {
+    let look = look();
+    let rail = |open: bool| {
+        Rail::new(&look, "T", "Tidevann").groups([RailGroup::new(
+            None,
+            [
+                RailEntry::new("Schedules").description("Every job's next run"),
+                RailEntry::new("Hosts").parent(open),
+                RailEntry::new("api.example.org").child(),
+            ],
+        )])
+    };
+    let shut = rail(false).layout(Rect::new(0, 0, 29, 20), 0);
+    assert_eq!(shut.entries.len(), 2, "the shut parent's child left out");
+    assert_eq!(shut.entries[0].1.height, 2, "an entry and its description");
+    let open = rail(true).layout(Rect::new(0, 0, 29, 20), 0);
+    assert_eq!(open.entries.len(), 3);
+    assert_eq!(open.entries[2].0, (0, 2));
+    let l = draw(29, 12, rail(true));
+    assert!(l.iter().any(|r| r.contains("Every job's next run")));
+    assert!(
+        l.iter().any(|r| r.starts_with("   api.example.org")),
+        "under the parent's label: {l:?}"
+    );
+    assert!(l.iter().any(|r| r.contains("Hosts") && r.contains('▾')));
+    let collapsed = rail(true).collapsed(true, true).layout(Rect::new(0, 0, 7, 20), 0);
+    assert_eq!(collapsed.entries.len(), 2, "collapsed, children wait for their flyout");
+}

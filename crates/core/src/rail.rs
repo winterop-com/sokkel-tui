@@ -32,6 +32,12 @@ pub struct RailEntry {
     pub count: Option<String>,
     pub unread: bool,
     pub active: bool,
+    /// A line under the label, while the rail is expanded.
+    pub description: Option<String>,
+    /// 0 for a place of its own; 1 for an entry under the parent before it.
+    pub depth: u8,
+    /// A parent: `Some(open)`, its children shown under it while open.
+    pub parent: Option<bool>,
 }
 
 impl RailEntry {
@@ -42,7 +48,29 @@ impl RailEntry {
             count: None,
             unread: false,
             active: false,
+            description: None,
+            depth: 0,
+            parent: None,
         }
+    }
+
+    /// A line under the label, shown while the rail is expanded.
+    pub fn description(mut self, words: impl Into<String>) -> Self {
+        self.description = Some(words.into());
+        self
+    }
+
+    /// A parent of the entries after it that are [`RailEntry::child`]: its chevron folds them,
+    /// `open` showing them. A press on it comes to the app as its entry; the app folds it.
+    pub fn parent(mut self, open: bool) -> Self {
+        self.parent = Some(open);
+        self
+    }
+
+    /// An entry under the parent before it, lined up under the parent's label.
+    pub fn child(mut self) -> Self {
+        self.depth = 1;
+        self
     }
 
     pub fn icon(mut self, glyph: impl Into<String>) -> Self {
@@ -206,6 +234,27 @@ impl<'a> Rail<'a> {
         Some(words)
     }
 
+    /// A group's entries as shown: a shut parent's children left out, and every child while
+    /// collapsed (its flyout is not drawn yet).
+    fn shown(&self, group: &RailGroup) -> Vec<usize> {
+        let mut out = Vec::new();
+        let mut open = true;
+        for (e, entry) in group.entries.iter().enumerate() {
+            if entry.depth == 0 {
+                open = entry.parent.unwrap_or(true);
+                out.push(e);
+            } else if open && !self.collapsed {
+                out.push(e);
+            }
+        }
+        out
+    }
+
+    /// The rows an entry takes: one, and its description's while expanded.
+    fn entry_rows(&self, entry: &RailEntry) -> u16 {
+        1 + u16::from(!self.collapsed && entry.description.is_some())
+    }
+
     /// Where the entries land in `area`, its foot cell `foot` rows at the bottom.
     pub fn layout(&self, area: Rect, foot: u16) -> RailLayout {
         let mut out = RailLayout::default();
@@ -233,11 +282,13 @@ impl<'a> Rail<'a> {
                 }
                 y += 1;
             }
-            for (e, _) in group.entries.iter().enumerate() {
+            for e in self.shown(group) {
                 if y >= bottom {
                     return out;
                 }
-                out.entries.push(((g, e), Rect::new(area.x, y, inner_w, 1)));
+                let rows = self.entry_rows(&group.entries[e]).min(bottom - y);
+                out.entries.push(((g, e), Rect::new(area.x, y, inner_w, rows)));
+                y += rows - 1;
                 y += 1;
             }
         }
@@ -335,7 +386,8 @@ impl Widget for &Rail<'_> {
                 }
                 y += 1;
             }
-            for (e, entry) in group.entries.iter().enumerate() {
+            for e in self.shown(group) {
+                let entry = &group.entries[e];
                 if y >= bottom {
                     break;
                 }
@@ -371,7 +423,8 @@ impl Widget for &Rail<'_> {
                         buf.set_string(area.x + inner_w - 2, y, glyphs.status_dot, Style::new().fg(t(dot)));
                     }
                 } else {
-                    let mut x = area.x + 1;
+                    // A child lines up under its parent's label; a parent's chevron at the end.
+                    let mut x = area.x + 1 + 2 * entry.depth as u16;
                     if let Some(icon) = &entry.icon {
                         buf.set_string(x, y, icon, st);
                         x += 2;
@@ -379,7 +432,9 @@ impl Widget for &Rail<'_> {
                     let end_w = entry
                         .count
                         .as_ref()
-                        .map_or(if entry.unread { 1 } else { 0 }, |c| text::width(c) as u16);
+                        .map_or(if entry.unread || entry.parent.is_some() { 1 } else { 0 }, |c| {
+                            text::width(c) as u16
+                        });
                     let room = (area.x + inner_w - 1).saturating_sub(x + end_w + 1);
                     buf.set_string(x, y, text::truncate(&entry.label, room as usize, glyphs.ellipsis), st);
                     let ex = area.x + inner_w - 1 - end_w;
@@ -389,6 +444,23 @@ impl Widget for &Rail<'_> {
                     } else if entry.unread {
                         let dot = paint("rest.unreadDot", "ground").unwrap_or(ei);
                         buf.set_string(ex, y, glyphs.status_dot, Style::new().fg(t(dot)));
+                    } else if let Some(open) = entry.parent {
+                        let g = if open { glyphs.chevron_down } else { glyphs.chevron };
+                        let ink = look.color("muted-foreground");
+                        buf.set_string(ex, y, g, Style::new().fg(t(ink)));
+                    }
+                    if let Some(d) = entry.description.as_ref().filter(|_| y + 1 < bottom) {
+                        y += 1;
+                        let dx = x;
+                        let ink = look.color("muted-foreground");
+                        let room = (area.x + inner_w - 1).saturating_sub(dx) as usize;
+                        buf.set_style(Rect::new(area.x, y, inner_w, 1), Style::new().bg(t(eg)));
+                        buf.set_string(
+                            dx,
+                            y,
+                            text::truncate(d, room, glyphs.ellipsis),
+                            TextRole::Help.style(look).fg(t(ink)),
+                        );
                     }
                 }
                 y += 1;
