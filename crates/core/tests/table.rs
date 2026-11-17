@@ -284,3 +284,24 @@ fn unframed_it_draws_no_box_and_its_rule_runs_across() {
     assert!(lines[1].starts_with('─') && lines[1].ends_with('─'));
     assert!(lines[2].contains("nightly-export"));
 }
+
+#[test]
+fn a_toned_state_says_its_own_word_in_its_tones_colors() {
+    use sokkel_tui::StatusTone;
+    let look = look();
+    let c = vec![Column::new("Host"), Column::new("State")];
+    let r = vec![Row::new([
+        Cell::text("juniper.example.org"),
+        Cell::toned("fail", StatusTone::Critical),
+    ])];
+    let table = Table::new(&look, &c, &r);
+    let (buf, lines) = draw(&table, 80, 6, &mut TableState::default());
+    let y = lines.iter().position(|l| l.contains("fail")).unwrap() as u16;
+    let line = &lines[y as usize];
+    let x = line[..line.find("fail").unwrap()].chars().count() as u16;
+    assert_eq!(buf[(x, y)].fg, look.token("critical-ink"));
+    assert!(
+        StatusTone::Critical.rank() > StatusTone::Warning.rank()
+            && StatusTone::Warning.rank() > StatusTone::Good.rank()
+    );
+}

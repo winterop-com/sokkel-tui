@@ -84,11 +84,50 @@ impl Column {
 #[derive(Debug, Clone, PartialEq)]
 pub enum CellValue {
     Text(String),
+    /// A state in words the app chooses (a check's ok, warn, fail), its dot and word in a tone's
+    /// colors: for states the contract's run vocabulary does not hold.
+    Toned(String, StatusTone),
     /// A run state: its dot in `status-<state>` and its word in `status-<state>-ink`, so the state
     /// is said by its word, not its color alone (principle 22).
     Status(String),
     /// Not there: the quiet dash, never a blank.
     Missing,
+}
+
+/// The tone of a state the app names itself: its dot in the tone's color token and its word in
+/// the tone's ink (`good` and `good-ink`, `warning`, `critical`, `info`; quiet in
+/// `muted-foreground`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StatusTone {
+    Good,
+    Warning,
+    Critical,
+    Info,
+    Quiet,
+}
+
+impl StatusTone {
+    /// The dot's color and the word's ink, as tokens.
+    pub fn tokens(self) -> (&'static str, &'static str) {
+        match self {
+            StatusTone::Good => ("good", "good-ink"),
+            StatusTone::Warning => ("warning", "warning-ink"),
+            StatusTone::Critical => ("critical", "critical-ink"),
+            StatusTone::Info => ("info", "info-ink"),
+            StatusTone::Quiet => ("muted-foreground", "muted-foreground"),
+        }
+    }
+
+    /// How bad it is, for the worst of several: critical over warning over info over good.
+    pub fn rank(self) -> u8 {
+        match self {
+            StatusTone::Critical => 4,
+            StatusTone::Warning => 3,
+            StatusTone::Info => 2,
+            StatusTone::Good => 1,
+            StatusTone::Quiet => 0,
+        }
+    }
 }
 
 /// A cell: what it shows, and what it sorts by when that is not its words.
@@ -113,6 +152,14 @@ impl Cell {
         }
     }
 
+    /// A state the app names (ok, warn, fail), its dot and word in `tone`'s colors.
+    pub fn toned(state: impl Into<String>, tone: StatusTone) -> Cell {
+        Cell {
+            value: CellValue::Toned(state.into(), tone),
+            sort: None,
+        }
+    }
+
     pub fn missing() -> Cell {
         Cell {
             value: CellValue::Missing,
@@ -133,7 +180,7 @@ impl Cell {
 
     fn words(&self) -> &str {
         match &self.value {
-            CellValue::Text(s) | CellValue::Status(s) => s,
+            CellValue::Text(s) | CellValue::Status(s) | CellValue::Toned(s, _) => s,
             CellValue::Missing => "",
         }
     }
@@ -141,7 +188,7 @@ impl Cell {
     fn width(&self, look: &Look) -> usize {
         match &self.value {
             CellValue::Text(s) => text::width(s),
-            CellValue::Status(s) => 2 + text::width(s),
+            CellValue::Status(s) | CellValue::Toned(s, _) => 2 + text::width(s),
             CellValue::Missing => text::width(look.glyphs().missing),
         }
     }
@@ -679,6 +726,16 @@ impl<'a> Table<'a> {
         match &cell.value {
             CellValue::Text(s) => vec![(text::truncate(s, w as usize, glyphs.ellipsis), body.fg(t(ink)))],
             CellValue::Missing => vec![(glyphs.missing.to_string(), body.fg(look.token("faint")))],
+            CellValue::Toned(state, tone) => {
+                let (dot, word) = tone.tokens();
+                vec![
+                    (format!("{} ", glyphs.status_dot), body.fg(t(look.color(dot)))),
+                    (
+                        text::truncate(state, (w as usize).saturating_sub(2), glyphs.ellipsis),
+                        body.fg(t(look.color(word))),
+                    ),
+                ]
+            }
             CellValue::Status(state) => {
                 let dot = format!("status-{state}");
                 let word = format!("status-{state}-ink");

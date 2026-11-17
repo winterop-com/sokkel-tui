@@ -38,6 +38,8 @@ pub struct RailEntry {
     pub depth: u8,
     /// A parent: `Some(open)`, its children shown under it while open.
     pub parent: Option<bool>,
+    /// A status dot in a tone at its end (an instance that is down), its word for the status line.
+    pub status: Option<(crate::table::StatusTone, String)>,
 }
 
 impl RailEntry {
@@ -51,6 +53,7 @@ impl RailEntry {
             description: None,
             depth: 0,
             parent: None,
+            status: None,
         }
     }
 
@@ -64,6 +67,13 @@ impl RailEntry {
     /// `open` showing them. A press on it comes to the app as its entry; the app folds it.
     pub fn parent(mut self, open: bool) -> Self {
         self.parent = Some(open);
+        self
+    }
+
+    /// A status dot at its end in `tone`'s color, `word` saying it (fail, warn) where the dot
+    /// cannot: a collapsed entry's tip, a reader without color.
+    pub fn status(mut self, tone: crate::table::StatusTone, word: impl Into<String>) -> Self {
+        self.status = Some((tone, word.into()));
         self
     }
 
@@ -228,10 +238,13 @@ impl<'a> Rail<'a> {
         let (g, e) = self.focused?;
         let entry = self.groups.get(g)?.entries.get(e)?;
         if !self.collapsed {
-            return None;
+            // Expanded, the label is there; a status dot still says its word (principle 22).
+            return entry.status.as_ref().map(|(_, w)| format!("{}  {w}", entry.label));
         }
         let mut words = entry.label.clone();
-        if let Some(c) = &entry.count {
+        if let Some((_, word)) = &entry.status {
+            words += &format!("  {word}");
+        } else if let Some(c) = &entry.count {
             words += &format!("  {c}");
         } else if entry.unread {
             words += &format!("  {}", self.words.unread);
@@ -423,7 +436,10 @@ impl Widget for &Rail<'_> {
                         .clone()
                         .unwrap_or_else(|| entry.label.chars().take(1).collect());
                     buf.set_string(area.x + inner_w.saturating_sub(1) / 2, y, icon, st);
-                    if entry.unread || entry.count.is_some() {
+                    if let Some((tone, _)) = &entry.status {
+                        let dot = look.color(tone.tokens().0);
+                        buf.set_string(area.x + inner_w - 2, y, glyphs.status_dot, Style::new().fg(t(dot)));
+                    } else if entry.unread || entry.count.is_some() {
                         let dot = paint("rest.unreadDot", "ground").unwrap_or(ei);
                         buf.set_string(area.x + inner_w - 2, y, glyphs.status_dot, Style::new().fg(t(dot)));
                     }
@@ -434,16 +450,21 @@ impl Widget for &Rail<'_> {
                         buf.set_string(x, y, icon, st);
                         x += 2;
                     }
-                    let end_w = entry
-                        .count
-                        .as_ref()
-                        .map_or(if entry.unread || entry.parent.is_some() { 1 } else { 0 }, |c| {
-                            text::width(c) as u16
-                        });
+                    let end_w = entry.count.as_ref().map_or(
+                        if entry.unread || entry.parent.is_some() || entry.status.is_some() {
+                            1
+                        } else {
+                            0
+                        },
+                        |c| text::width(c) as u16,
+                    );
                     let room = (area.x + inner_w - 1).saturating_sub(x + end_w + 1);
                     buf.set_string(x, y, text::truncate(&entry.label, room as usize, glyphs.ellipsis), st);
                     let ex = area.x + inner_w - 1 - end_w;
-                    if let Some(c) = &entry.count {
+                    if let Some((tone, _)) = entry.status.as_ref().filter(|_| entry.count.is_none()) {
+                        let dot = look.color(tone.tokens().0);
+                        buf.set_string(ex, y, glyphs.status_dot, Style::new().fg(t(dot)));
+                    } else if let Some(c) = &entry.count {
                         let ink = paint("rest.count", "ink").unwrap_or(ei);
                         buf.set_string(ex, y, c, TextRole::Help.style(look).fg(t(ink)));
                     } else if entry.unread {

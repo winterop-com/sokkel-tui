@@ -205,3 +205,23 @@ fn a_parent_folds_its_children_and_an_entry_says_its_description() {
     let collapsed = rail(true).collapsed(true, true).layout(Rect::new(0, 0, 7, 20), 0);
     assert_eq!(collapsed.entries.len(), 2, "collapsed, children wait for their flyout");
 }
+
+#[test]
+fn a_rail_entry_shows_its_status_dot_and_says_its_word_when_focused() {
+    use sokkel_tui::StatusTone;
+    let look = look();
+    let rail = Rail::new(&look, "T", "Tidevann")
+        .groups([RailGroup::new(
+            None,
+            [RailEntry::new("juniper").status(StatusTone::Critical, "fail")],
+        )])
+        .focused(Some((0, 0)));
+    let mut buf = Buffer::empty(Rect::new(0, 0, 29, 8));
+    (&rail).render(buf.area, &mut buf);
+    let l = lines(&buf);
+    let y = l.iter().position(|r| r.contains("juniper")).unwrap();
+    let x = l[y].rfind('●').unwrap();
+    let x = l[y][..x].chars().count() as u16;
+    assert_eq!(buf[(x, y as u16)].fg, look.token("critical"));
+    assert_eq!(rail.tip().as_deref(), Some("juniper  fail"));
+}

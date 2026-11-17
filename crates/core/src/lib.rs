@@ -89,8 +89,8 @@ pub use shell::{Shell, ShellEvent, ShellLayout, ShellState};
 pub use shortcuts::{Binding, KeyContext, Keys, ShortcutWords, Shortcuts};
 pub use status_line::{Fact, NoteTone, StatusLine};
 pub use table::{
-    Align, Cell, CellValue, Column, ColumnWidth, Row, RowTone, SortDir, Table, TableBar, TableEvent, TableHit,
-    TableState, TableVariant, TableWords,
+    Align, Cell, CellValue, Column, ColumnWidth, Row, RowTone, SortDir, StatusTone, Table, TableBar, TableEvent,
+    TableHit, TableState, TableVariant, TableWords,
 };
 pub use text::{Plural, TextRole};
 pub use text_field::{FieldEvent, FieldFocus, FieldState, FieldWords, Issue, RequiredMark, TextField, Tone};

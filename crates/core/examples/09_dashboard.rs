@@ -19,8 +19,8 @@ use sokkel_tui::dashboard::grid;
 use sokkel_tui::{
     BannerTone, Cell, ColorMode, Column, ColumnWidth, Command, CommandGroup, DashboardPanel, Fact, Fill, Key, KeyPress,
     Legend, Look, NoteTone, PageHeader, PanelRead, PanelTool, Pointer, PointerKind, Prompt, PromptEvent, PromptState,
-    Rail, RailEntry, RailFoot, RailGroup, Row, RowTone, Scheme, Series, Span, StatPanel, StatusLine, Table, TableState,
-    Threshold, TimeSeriesPanel, TopBar, snapshot,
+    Rail, RailEntry, RailFoot, RailGroup, Row, RowTone, Scheme, Series, Span, StatPanel, StatusLine, StatusTone, Table,
+    TableState, Threshold, TimeSeriesPanel, TopBar, snapshot,
 };
 
 /// The success rate's scale: critical below 95, warning below 99, good from 99.
@@ -219,7 +219,11 @@ impl ShellApp for Overview {
                     ),
                     RailGroup::new(
                         Some("Projects"),
-                        ["harbor", "juniper", "larkspur"].map(|p| RailEntry::new(p).icon("●")),
+                        [
+                            RailEntry::new("harbor").icon("●").status(StatusTone::Good, "ok"),
+                            RailEntry::new("juniper").icon("●").status(StatusTone::Critical, "fail"),
+                            RailEntry::new("larkspur").icon("●").status(StatusTone::Warning, "warn"),
+                        ],
                     ),
                 ])
                 .foot(RailFoot {
@@ -276,14 +280,25 @@ impl ShellApp for Overview {
                 Column::new("Runs"),
                 Column::new("p95"),
             ];
+            // The hosts' health, in the words an operator expects, toned.
             let host = |name: &str, state: &str, runs: &str, p95: &str| {
-                Row::new([Cell::text(name), Cell::status(state), Cell::text(runs), Cell::text(p95)])
+                let tone = match state {
+                    "ok" => StatusTone::Good,
+                    "warn" => StatusTone::Warning,
+                    _ => StatusTone::Critical,
+                };
+                Row::new([
+                    Cell::text(name),
+                    Cell::toned(state, tone),
+                    Cell::text(runs),
+                    Cell::text(p95),
+                ])
             };
             let rows = vec![
-                host("api.example.org", "succeeded", "642", "388 ms"),
-                host("harbor.example.org", "running", "401", "430 ms"),
-                host("juniper.example.org", "failed", "212", "—").tone(RowTone::Critical),
-                host("larkspur.example.org", "succeeded", "29", "301 ms"),
+                host("api.example.org", "ok", "642", "388 ms"),
+                host("harbor.example.org", "warn", "401", "430 ms"),
+                host("juniper.example.org", "fail", "212", "—").tone(RowTone::Critical),
+                host("larkspur.example.org", "ok", "29", "301 ms"),
             ];
             let table = Table::new(look, &columns, &rows).framed(false);
             f.render_stateful_widget(&table, body.intersection(area), &mut self.hosts);

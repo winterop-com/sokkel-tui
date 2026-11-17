@@ -38,6 +38,8 @@ the contract say so that it does?
   the web's keys; `shot` draws a frame after scripted keys. A back stack (an app's routes, Escape back
   with nothing open, the settings closing first), focus to the new page's first stop on a route change and back
   to what opened a layer when it closes. Not yet: the rail's resize.
+- `table`'s cells take a state the app names in a tone (`Cell::toned`, `StatusTone`: good,
+  warning, critical, info, quiet), for health states the run vocabulary lacks (proposal c7).
 - `dashboard`: the grid (spans of twelve by its own width), `DashboardPanel` (head with subtitle,
   stale mark and tools, the body padded or flush, the foot; loading, empty, failed with Retry and
   stale kept apart) and `StatPanel` (value and unit, thresholds inking or filling, the change, a
@@ -102,7 +104,7 @@ the contract say so that it does?
   yet: groups, trees, details, row actions, paging, editing, resizing, reordering, the grid.
 - `rail`, `top_bar`, `status_line`, `shell` (step 5): the rail's head, groups, entries (icon,
   label, count, unread dot, the active bar, a description under it, parents folding their
-  children under their labels), collapsed form, foot cell and edge; the top bar's
+  children under their labels, a status dot in a tone), collapsed form, foot cell and edge; the top bar's
   search field, trail, palette button with its keys and actions, and below md the menu button, the
   last crumb and the search icon; the status line's note with its live dot and tones, its facts,
   and a focused control's tip in the note's place (principle 23); `ShellLayout` placing them, the

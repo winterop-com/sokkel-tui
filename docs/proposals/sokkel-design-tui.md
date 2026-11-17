@@ -177,6 +177,15 @@ words. sokkel-tui also puts parts/dialog and parts/text-field together as a `Pro
 Submit and Cancel, Enter submits, Escape cancels): a pattern rather than a part, which the contract
 could name.
 
+## (c7) Health states
+
+The status vocabulary (`status-<state>`) holds a run's states. A health check's own (ok, warn, fail,
+error) has none, and an app that maps them onto run words prints "succeeded" where an operator
+expects OK. sokkel-tui lets an app name its state and give a tone (`Cell::toned`, `StatusTone`:
+good, warning, critical, info, quiet), its dot and word in the tone's tokens, and a rail entry carry
+such a dot (`RailEntry::status`), its word in the status line on focus. Asked for: health states in
+the vocabulary (`status-ok`, `-warn`, `-fail`, `-error`), or a tone a status may name.
+
 ## (d) Where it lives
 
 The proposals land in sokkel-design, as egui's did. sokkel-tui embeds the resolved file at a pinned
