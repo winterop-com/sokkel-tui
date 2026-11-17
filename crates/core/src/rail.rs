@@ -118,6 +118,8 @@ pub struct RailLayout {
     pub entries: Vec<((usize, usize), Rect)>,
     /// The control that collapses the rail, or, collapsed, the head that expands it.
     pub collapse: Option<Rect>,
+    /// The account control in the foot cell: a press opens the account menu.
+    pub account: Option<Rect>,
 }
 
 /// The app's places.
@@ -177,6 +179,11 @@ impl<'a> Rail<'a> {
         self
     }
 
+    /// The account's name in the foot cell, where it has one.
+    pub fn account_name(&self) -> Option<String> {
+        self.foot.as_ref().map(|f| f.name.clone())
+    }
+
     /// Its width in columns: 240 px expanded (29), 57 collapsed (7).
     pub fn width(&self) -> u16 {
         if self.collapsed { cols(57.0) } else { cols(240.0) }
@@ -203,6 +210,9 @@ impl<'a> Rail<'a> {
     pub fn layout(&self, area: Rect, foot: u16) -> RailLayout {
         let mut out = RailLayout::default();
         let look = self.look;
+        if self.foot.is_some() && area.height > 0 {
+            out.account = Some(Rect::new(area.x, area.bottom() - 1, area.width.saturating_sub(1), 1));
+        }
         // The head, then the row level with the top bar's rule.
         let mut y = area.y + 1 + by_density(look, 1, 0);
         let bottom = area.bottom().saturating_sub(foot);

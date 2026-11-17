@@ -115,3 +115,27 @@ fn the_shell_collapses_goes_to_entries_and_opens_its_drawer_below_md() {
     assert_eq!(st.key(KeyPress::new(Key::Escape)), ShellEvent::Changed);
     assert!(!st.drawer);
 }
+
+#[test]
+fn a_press_on_the_account_asks_for_its_menu() {
+    use sokkel_tui::RailFoot;
+    let look = look();
+    let shell = Shell::new(
+        &look,
+        Rail::new(&look, "T", "Tidevann")
+            .groups([RailGroup::new(None, [RailEntry::new("Runs")])])
+            .foot(RailFoot {
+                letter: "a".into(),
+                color: "kind-violet".into(),
+                name: "ada".into(),
+            }),
+        TopBar::new(&look),
+        StatusLine::new(&look),
+    );
+    let window = Rect::new(0, 0, 120, 30);
+    let mut buf = Buffer::empty(window);
+    let mut st = ShellState::default();
+    shell.render(window, &mut buf, &mut st);
+    assert_eq!(st.account(), Some(Rect::new(0, 29, 28, 1)));
+    assert_eq!(st.pointer(press((5, 29))), ShellEvent::Account);
+}

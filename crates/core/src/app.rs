@@ -13,7 +13,9 @@ use crate::cells::Width;
 use crate::glyphs::Charset;
 use crate::keys::{Key, KeyPress, Pointer, PointerKind};
 use crate::look::{Depth, Look};
+use crate::menu::{DropdownMenu, MenuEvent, MenuState};
 use crate::palette::{Command, CommandGroup, CommandPalette, PaletteEvent, PaletteState};
+use crate::popup::{Item, PopupRow};
 use crate::rail::Rail;
 use crate::settings::{
     Setting, SettingsDialog, SettingsEvent, SettingsGroup, SettingsSection, SettingsState, look_chose, look_section,
@@ -118,6 +120,38 @@ pub struct Chrome<'a> {
     pub foot: StatusLine<'a>,
 }
 
+/// The rows an app adds to the account menu, each with the id its command answers to
+/// ([`ShellApp::command`]), and the row that leaves (Sign out, or Sign in where no one is).
+#[derive(Debug, Clone, Default)]
+pub struct Account {
+    pub rows: Vec<(String, Item)>,
+    pub leave: Option<(String, Item)>,
+}
+
+/// The account menu's words, with sokkel-ui's English defaults.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountWords {
+    pub settings: String,
+    pub appearance: String,
+    pub shortcuts: String,
+    pub scheme: String,
+    pub light: String,
+    pub dark: String,
+}
+
+impl Default for AccountWords {
+    fn default() -> Self {
+        AccountWords {
+            settings: "Settings".into(),
+            appearance: "Appearance".into(),
+            shortcuts: "Keyboard shortcuts".into(),
+            scheme: "Scheme".into(),
+            light: "Light".into(),
+            dark: "Dark".into(),
+        }
+    }
+}
+
 /// What an app's key did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Flow {
@@ -148,6 +182,10 @@ pub trait ShellApp {
     fn chose(&mut self, _id: &str, _option: usize) {}
     /// A rail entry was pressed, by (group, entry).
     fn entry(&mut self, _group: usize, _entry: usize) {}
+    /// The app's rows in the account menu, and its Sign out or Sign in.
+    fn account(&self) -> Account {
+        Account::default()
+    }
     /// A key while no layer is open.
     fn key(&mut self, _key: KeyPress) -> Flow {
         Flow::Ignored
@@ -162,6 +200,17 @@ enum Layer {
     None,
     Palette,
     Settings,
+    Account,
+}
+
+/// What a row of the account menu does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AccountAct {
+    None,
+    Settings,
+    Appearance,
+    Scheme(Scheme),
+    App(String),
 }
 
 /// The runtime's own commands and settings, by id.
@@ -198,6 +247,8 @@ struct Host<A> {
     settings_at: Option<Rect>,
     width: Width,
     mouse: bool,
+    account: MenuState,
+    window: Rect,
 }
 
 /// Run `app` in sokkel's frame, starting in `look`.
@@ -213,6 +264,8 @@ pub fn run_shell(app: impl ShellApp, look: Look) -> std::io::Result<()> {
         settings_at: None,
         width: Width::Wide,
         mouse: true,
+        account: MenuState::default(),
+        window: Rect::default(),
     };
     run(&mut host)
 }
@@ -289,11 +342,93 @@ impl<A: ShellApp> Host<A> {
         SettingsDialog::new(&self.look, [SettingsGroup::new(None, sections)]).window(self.width)
     }
 
+    /// The account menu, as sokkel-ui's: the name, Settings, Appearance, the app's rows, the
+    /// scheme, then Sign out or Sign in.
+    fn account_menu(&self) -> (Vec<PopupRow>, Vec<AccountAct>) {
+        let words = AccountWords::default();
+        let chrome = self.app.chrome(&self.look);
+        let name = chrome.rail.account_name().unwrap_or_default();
+        let app = self.app.account();
+        let mut rows = vec![PopupRow::Label(name), PopupRow::Separator];
+        let mut acts = vec![AccountAct::None, AccountAct::None];
+        let mut push = |rows: &mut Vec<PopupRow>, row: PopupRow, act: AccountAct| {
+            rows.push(row);
+            acts.push(act);
+        };
+        push(
+            &mut rows,
+            Item::new(words.settings).icon("⚙").shortcut(",").into(),
+            AccountAct::Settings,
+        );
+        push(
+            &mut rows,
+            Item::new(words.appearance).icon("◐").into(),
+            AccountAct::Appearance,
+        );
+        for (id, item) in app.rows {
+            push(&mut rows, item.into(), AccountAct::App(id));
+        }
+        push(&mut rows, PopupRow::Separator, AccountAct::None);
+        push(&mut rows, PopupRow::Label(words.scheme), AccountAct::None);
+        let dark = self.look.scheme() == Scheme::Dark;
+        push(
+            &mut rows,
+            Item::new(words.light).check(!dark).into(),
+            AccountAct::Scheme(Scheme::Light),
+        );
+        push(
+            &mut rows,
+            Item::new(words.dark).check(dark).into(),
+            AccountAct::Scheme(Scheme::Dark),
+        );
+        if let Some((id, item)) = app.leave {
+            push(&mut rows, PopupRow::Separator, AccountAct::None);
+            push(&mut rows, item.into(), AccountAct::App(id));
+        }
+        (rows, acts)
+    }
+
+    fn account_event(&mut self, event: MenuEvent, acts: &[AccountAct]) {
+        match event {
+            MenuEvent::Closed => self.layer = Layer::None,
+            MenuEvent::Action(i, _) => {
+                let (theme, density) = (self.look.theme().to_string(), self.look.density());
+                self.layer = Layer::None;
+                match acts.get(i).cloned().unwrap_or(AccountAct::None) {
+                    AccountAct::Settings => {
+                        self.open(Layer::Settings);
+                        // The app's first section, past the look and the frame, where it has one.
+                        if !self.app.settings(&self.look).is_empty() {
+                            self.settings.shown = (0, 2);
+                        }
+                    }
+                    AccountAct::Appearance => self.open(Layer::Settings),
+                    AccountAct::Scheme(s) => {
+                        self.relook(s, density, &theme);
+                        self.layer = Layer::Account;
+                    }
+                    AccountAct::App(id) => self.app.command(&id),
+                    AccountAct::None => {}
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn open(&mut self, layer: Layer) {
         self.layer = layer;
         self.palette = PaletteState::default();
         self.settings = SettingsState::default();
-        self.shell.drawer = false;
+        if layer == Layer::Account {
+            let (rows, _) = self.account_menu();
+            self.account = MenuState {
+                open: true,
+                highlight: crate::popup::stops(&rows).first().copied().unwrap_or(0),
+                sub: None,
+            };
+        } else {
+            self.shell.drawer = false;
+        }
     }
 
     fn relook(&mut self, scheme: Scheme, density: Density, theme: &str) {
@@ -401,6 +536,14 @@ impl<A: ShellApp> Program for Host<A> {
                 self.settings_event(event);
                 return false;
             }
+            Layer::Account => {
+                let (rows, acts) = self.account_menu();
+                let mut st = self.account;
+                let event = DropdownMenu::new(&self.look, rows).handle(&mut st, key);
+                self.account = st;
+                self.account_event(event, &acts);
+                return false;
+            }
             Layer::None => {}
         }
         if self.shell.key(key) != ShellEvent::Ignored {
@@ -455,7 +598,34 @@ impl<A: ShellApp> Program for Host<A> {
                 self.settings = st;
                 self.settings_event(event);
             }
+            Layer::Account => {
+                let Some(anchor) = self.shell.account() else { return };
+                let (rows, acts) = self.account_menu();
+                let menu = DropdownMenu::new(&self.look, rows);
+                let mut st = self.account;
+                let window = self.window;
+                let event = match (p.kind, menu.hit(window, anchor, p.at, &st)) {
+                    (PointerKind::Move, Some(h)) => {
+                        menu.hover(&mut st, h);
+                        MenuEvent::Ignored
+                    }
+                    (PointerKind::Press, Some(h)) => menu.press(&mut st, h),
+                    (PointerKind::Press, None) => {
+                        let (area, _) = menu.areas(window, anchor, &st);
+                        if area.contains(p.at) {
+                            MenuEvent::Ignored
+                        } else {
+                            MenuEvent::Closed
+                        }
+                    }
+                    _ => MenuEvent::Ignored,
+                };
+                drop(menu);
+                self.account = st;
+                self.account_event(event, &acts);
+            }
             Layer::None => match self.shell.pointer(p) {
+                ShellEvent::Account => self.open(Layer::Account),
                 ShellEvent::Entry(g, e) => self.app.entry(g, e),
                 ShellEvent::Palette | ShellEvent::Search => self.open(Layer::Palette),
                 ShellEvent::Changed => {}
@@ -468,6 +638,7 @@ impl<A: ShellApp> Program for Host<A> {
     fn draw(&mut self, f: &mut Frame) {
         let window = f.area();
         self.width = Width::of(window);
+        self.window = window;
         let active = self.layer == Layer::None;
         draw_shell(&mut self.app, &self.look, f, &mut self.shell, active);
         self.palette_at = None;
@@ -496,6 +667,12 @@ impl<A: ShellApp> Program for Host<A> {
                 drop(d);
                 self.settings = st;
                 self.settings_at = Some(r);
+            }
+            Layer::Account => {
+                if let Some(anchor) = self.shell.account() {
+                    let (rows, _) = self.account_menu();
+                    DropdownMenu::new(&self.look, rows).render(window, anchor, f.buffer_mut(), &self.account);
+                }
             }
             Layer::None => {}
         }

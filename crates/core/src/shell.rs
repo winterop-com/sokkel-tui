@@ -111,6 +111,7 @@ pub struct ShellState {
     menu: Option<Rect>,
     search: Option<Rect>,
     palette: Option<Rect>,
+    account: Option<Rect>,
     drawer_at: Option<Rect>,
 }
 
@@ -127,6 +128,9 @@ pub enum ShellEvent {
     Search,
     /// The top bar's command palette button was pressed.
     Palette,
+    /// The account control in the rail's foot cell was pressed: open the account menu over
+    /// [`ShellState::account`].
+    Account,
 }
 
 impl<'a> Shell<'a> {
@@ -150,12 +154,14 @@ impl<'a> Shell<'a> {
         }
         state.entries.clear();
         state.collapse = None;
+        state.account = None;
         state.drawer_at = None;
         if let Some(r) = shell.rail {
             (&rail).render(r, buf);
             let l = rail.layout(r, 0);
             state.entries = l.entries;
             state.collapse = l.collapse;
+            state.account = l.account;
         }
         let top = self.top.clone().window(shell.width);
         let l = top.layout(shell.top);
@@ -174,7 +180,9 @@ impl<'a> Shell<'a> {
         let r = ShellLayout::drawer(state.window, rail.width());
         Clear.render(r, buf);
         (&rail).render(r, buf);
-        state.entries = rail.layout(r, 0).entries;
+        let l = rail.layout(r, 0);
+        state.entries = l.entries;
+        state.account = l.account;
         state.drawer_at = Some(r);
     }
 }
@@ -204,6 +212,9 @@ impl ShellState {
         let hit = |r: Option<Rect>| r.is_some_and(|r| r.contains(at));
         let entry = self.entries.iter().find(|(_, r)| r.contains(at)).map(|(e, _)| *e);
         if let Some(drawer) = self.drawer_at {
+            if hit(self.account) {
+                return ShellEvent::Account;
+            }
             self.drawer = false;
             return match entry {
                 Some((g, e)) => ShellEvent::Entry(g, e),
@@ -225,6 +236,9 @@ impl ShellState {
         if let Some((g, e)) = entry {
             return ShellEvent::Entry(g, e);
         }
+        if hit(self.account) {
+            return ShellEvent::Account;
+        }
         if hit(self.search) {
             return ShellEvent::Search;
         }
@@ -232,6 +246,11 @@ impl ShellState {
             return ShellEvent::Palette;
         }
         ShellEvent::Ignored
+    }
+
+    /// Where the account control was drawn: the account menu opens over it.
+    pub fn account(&self) -> Option<Rect> {
+        self.account
     }
 
     /// Whether a press at `at` lands on the open drawer, which stands over the page.
