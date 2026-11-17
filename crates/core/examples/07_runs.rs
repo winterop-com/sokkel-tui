@@ -714,9 +714,17 @@ fn jobs() -> (Vec<Column>, Vec<Row>) {
             ("Command", format!("tidevann run {name}")),
         ])
     };
+    // A job's last runs, its children in the tree.
+    let run = |n: &str, when: &str, state: &str| {
+        Row::new([Cell::text(n), Cell::missing(), Cell::text(when), Cell::status(state)]).child()
+    };
     let rows = vec![
         job("nightly-export", "harbor", "every night at 02:00", "running"),
+        run("run 412", "today 02:00", "running"),
+        run("run 411", "yesterday 02:00", "succeeded"),
         job("sync-inventory", "juniper", "every hour", "failed").tone(RowTone::Critical),
+        run("run 98", "today 11:58", "failed").tone(RowTone::Critical),
+        run("run 97", "today 10:58", "succeeded"),
         job("rebuild-index", "larkspur", "every night at 01:40", "succeeded"),
         job("send-digest", "harbor", "every morning at 07:00", "queued"),
         job("import-orders", "juniper", "every 15 minutes", "succeeded"),

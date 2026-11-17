@@ -137,6 +137,31 @@ pub fn draw(f: &mut Frame, look: &Look) {
     state.expanded.insert(1);
     place(f, "a row's detail, open under it", 12, &table, &mut state, &mut y);
 
+    // A tree: each job's runs under it, nightly-export open.
+    let run = |job: &str, state: &str, by: &str, took: &str| {
+        Row::new([Cell::text(job), Cell::status(state), Cell::text(by), Cell::text(took)])
+    };
+    let tree = vec![
+        run("nightly-export", "running", "ada", "—"),
+        run("run 412", "running", "ada", "—").child(),
+        run("run 411", "succeeded", "ada", "6m 19s").child(),
+        run("sync-inventory", "failed", "grace", "2m 41s"),
+        run("run 98", "failed", "grace", "2m 41s").child(),
+        run("rebuild-index", "succeeded", "linus", "14m 02s"),
+    ];
+    let table = Table::new(look, &columns, &tree).focused(true);
+    let mut state = TableState::default();
+    state.expanded.insert(0);
+    state.active = 1;
+    place(
+        f,
+        "a tree: each job's runs under it, nightly-export open",
+        11,
+        &table,
+        &mut state,
+        &mut y,
+    );
+
     // A pager at the foot: the second page of three, the range counted from it.
     let table = Table::new(look, &columns, &rows)
         .paging(2, 3)

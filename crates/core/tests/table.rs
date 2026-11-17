@@ -417,3 +417,40 @@ fn a_rows_detail_opens_under_it() {
     assert_eq!(hit, TableHit::Row(0));
     assert_eq!(table.press(&mut s, hit), TableEvent::Detail(0, true));
 }
+
+#[test]
+fn a_trees_children_show_under_an_open_parent_and_keys_pass_closed_ones() {
+    use sokkel_tui::{Key, KeyPress, TableEvent};
+    let look = look();
+    let c = vec![Column::new("Job").sortable(), Column::new("State")];
+    let row = |job: &str, state: &str| Row::new([Cell::text(job), Cell::status(state)]);
+    let r = vec![
+        row("sync-inventory", "failed"),
+        row("run 98", "failed").child(),
+        row("nightly-export", "running"),
+        row("run 412", "running").child(),
+    ];
+    let table = Table::new(&look, &c, &r).focused(true);
+    let mut s = TableState::default();
+    let (_, lines) = draw(&table, 80, 10, &mut s);
+    assert!(
+        !lines.iter().any(|l| l.contains("run 98")),
+        "closed, its children hide: {lines:?}"
+    );
+    // Down passes the closed parent's child.
+    s.handle(&table, KeyPress::new(Key::Down));
+    assert_eq!(s.active_row(&r), Some(2));
+    // Right opens it; Down goes into its child; Left goes back to the parent.
+    assert_eq!(s.handle(&table, KeyPress::new(Key::Right)), TableEvent::Detail(2, true));
+    s.handle(&table, KeyPress::new(Key::Down));
+    assert_eq!(s.active_row(&r), Some(3));
+    let (_, lines) = draw(&table, 80, 10, &mut s);
+    let at = |w: &str| lines.iter().position(|l| l.contains(w)).unwrap();
+    assert_eq!(at("run 412"), at("nightly-export") + 1);
+    assert!(lines[at("run 412")].contains("    run 412"), "set in under its parent");
+    assert_eq!(s.handle(&table, KeyPress::new(Key::Left)), TableEvent::Moved);
+    assert_eq!(s.active_row(&r), Some(2));
+    // Sorted, the children stay with their parent.
+    s.sort = Some((0, sokkel_tui::SortDir::Ascending));
+    assert_eq!(s.order(&r), vec![2, 3, 0, 1]);
+}

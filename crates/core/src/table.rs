@@ -211,6 +211,8 @@ pub struct Row {
     pub tone: RowTone,
     /// The row's detail (`detail`): labeled lines it opens under itself.
     pub detail: Vec<(String, String)>,
+    /// Its depth in a tree (`childRows`): a row deeper than the one before it is that row's child.
+    pub depth: u8,
 }
 
 impl Row {
@@ -219,7 +221,20 @@ impl Row {
             cells: cells.into_iter().collect(),
             tone: RowTone::Plain,
             detail: Vec::new(),
+            depth: 0,
         }
+    }
+
+    /// A child of the row before it at a lesser depth (`childRows`): shown while that row is open,
+    /// its first cell set in under its parent's.
+    pub fn child(self) -> Self {
+        self.depth(1)
+    }
+
+    /// Its depth in the tree: 0 a root, 1 a child, 2 a grandchild.
+    pub fn depth(mut self, depth: u8) -> Self {
+        self.depth = depth;
+        self
     }
 
     /// A detail the row opens under itself: Enter, Right or a press opens it, Left closes it.
@@ -324,6 +339,29 @@ enum BodyLine {
     Detail(usize, usize),
 }
 
+/// Whether a row has children: the row after it is deeper.
+fn has_children(rows: &[Row], row: usize) -> bool {
+    rows.get(row + 1).is_some_and(|n| n.depth > rows[row].depth)
+}
+
+/// The row's parent: the nearest row before it at a lesser depth.
+fn parent_of(rows: &[Row], row: usize) -> Option<usize> {
+    let d = rows.get(row)?.depth;
+    (d > 0).then(|| (0..row).rev().find(|&j| rows[j].depth < d)).flatten()
+}
+
+/// Whether a row shows: each of its ancestors open.
+fn shown(rows: &[Row], row: usize, expanded: &BTreeSet<usize>) -> bool {
+    let mut at = row;
+    while let Some(p) = parent_of(rows, at) {
+        if !expanded.contains(&p) {
+            return false;
+        }
+        at = p;
+    }
+    true
+}
+
 /// The words a row's cell in `column` gives its group.
 fn group_key(rows: &[Row], row: usize, column: usize) -> String {
     rows[row]
@@ -382,14 +420,20 @@ impl TableState {
             };
             (0..n).map(move |i| BodyLine::Detail(place, i))
         };
+        let seen = |p: &usize| shown(rows, order[*p], &self.expanded);
         let Some(g) = self.group else {
             return (0..order.len())
+                .filter(seen)
                 .flat_map(|p| std::iter::once(BodyLine::Row(p)).chain(detail(p)))
                 .collect();
         };
         let mut out = Vec::new();
         let mut last: Option<String> = None;
         for (place, &row) in order.iter().enumerate() {
+            if !seen(&place) {
+                out.extend(detail(place));
+                continue;
+            }
             let key = group_key(rows, row, g);
             if last.as_ref() != Some(&key) {
                 let n = order.iter().filter(|&&r| group_key(rows, r, g) == key).count();
@@ -431,7 +475,24 @@ impl TableState {
             }
             order.sort_by_key(|&r| firsts.iter().position(|k| *k == group_key(rows, r, g)).unwrap_or(0));
         }
+        // A tree: the roots in that order, each followed by its descendants as given.
+        if rows.iter().any(|r| r.depth > 0) {
+            let mut tree = Vec::with_capacity(order.len());
+            for &r in order.iter().filter(|&&r| rows[r].depth == 0) {
+                tree.push(r);
+                tree.extend((r + 1..rows.len()).take_while(|&j| rows[j].depth > 0));
+            }
+            order = tree;
+        }
         order
+    }
+
+    /// The places drawn, in order: every row but those under a closed parent.
+    fn visible(&self, rows: &[Row]) -> Vec<usize> {
+        self.lines(rows)
+            .into_iter()
+            .filter_map(|l| if let BodyLine::Row(p) = l { Some(p) } else { None })
+            .collect()
     }
 
     /// The row index of the active row.
@@ -475,15 +536,18 @@ impl TableState {
                 _ => TableEvent::Ignored,
             };
         }
-        let last = n.saturating_sub(1);
+        // The keys move over the rows shown: a closed parent's children are passed over.
+        let vis = self.visible(table.rows);
+        let last = vis.len().saturating_sub(1);
+        let at = vis.iter().position(|&p| p == self.active).unwrap_or(0);
         let page = self.view.max(1);
         let moved = |s: &mut TableState, to: usize| {
-            s.active = to.min(last);
+            s.active = vis.get(to.min(last)).copied().unwrap_or(0);
             TableEvent::Moved
         };
         match key.key {
-            Key::Down => moved(self, self.active + 1),
-            Key::Up if self.active == 0 && !self.stacked && !sortable.is_empty() => {
+            Key::Down => moved(self, at + 1),
+            Key::Up if at == 0 && !self.stacked && !sortable.is_empty() => {
                 // Into the head row, on the sorted head, else the first sortable one.
                 self.head = Some(match self.sort {
                     Some((c, _)) if sortable.contains(&c) => c,
@@ -491,15 +555,15 @@ impl TableState {
                 });
                 TableEvent::Moved
             }
-            Key::Up => moved(self, self.active.saturating_sub(1)),
-            Key::PageDown => moved(self, self.active + page),
-            Key::PageUp => moved(self, self.active.saturating_sub(page)),
+            Key::Up => moved(self, at.saturating_sub(1)),
+            Key::PageDown => moved(self, at + page),
+            Key::PageUp => moved(self, at.saturating_sub(page)),
             Key::Home => moved(self, 0),
             Key::End => moved(self, last),
             Key::Right | Key::Left | Key::Enter
                 if self
                     .active_row(table.rows)
-                    .is_some_and(|r| !table.rows[r].detail.is_empty()) =>
+                    .is_some_and(|r| table.opens(r) || key.key == Key::Left && parent_of(table.rows, r).is_some()) =>
             {
                 let r = self.active_row(table.rows).unwrap_or(0);
                 let open = match key.key {
@@ -507,7 +571,15 @@ impl TableState {
                     Key::Left => false,
                     _ => !self.expanded.contains(&r),
                 };
-                if open == self.expanded.contains(&r) {
+                if open == self.expanded.contains(&r) || !table.opens(r) {
+                    // Left on a child with nothing open goes to its parent.
+                    if key.key == Key::Left
+                        && let Some(p) = parent_of(table.rows, r)
+                    {
+                        let order = self.order(table.rows);
+                        self.active = order.iter().position(|&x| x == p).unwrap_or(self.active);
+                        return TableEvent::Moved;
+                    }
                     return TableEvent::Ignored;
                 }
                 if open {
@@ -823,11 +895,16 @@ impl<'a> Table<'a> {
 
     /// The disclosure chevron's columns, while some row has a detail.
     fn lead_w(&self) -> u16 {
-        if self.rows.iter().any(|r| !r.detail.is_empty()) {
+        if (0..self.rows.len()).any(|r| self.opens(r)) {
             2
         } else {
             0
         }
+    }
+
+    /// Whether a row opens: it has a detail, or children.
+    fn opens(&self, row: usize) -> bool {
+        !self.rows[row].detail.is_empty() || has_children(self.rows, row)
     }
 
     /// Each column's width in columns, across `room`.
@@ -1087,7 +1164,7 @@ impl Table<'_> {
                 state.active = p;
                 // A row with a detail opens or closes it.
                 if let Some(r) = state.row_at(self.rows, p)
-                    && !self.rows[r].detail.is_empty()
+                    && self.opens(r)
                 {
                     let open = !state.expanded.remove(&r);
                     if open {
@@ -1157,8 +1234,10 @@ impl Table<'_> {
         if self.rows.is_empty() {
             return TableEvent::Ignored;
         }
-        let last = self.rows.len() as isize - 1;
-        state.active = (state.active as isize + by).clamp(0, last) as usize;
+        let vis = state.visible(self.rows);
+        let at = vis.iter().position(|&p| p == state.active).unwrap_or(0) as isize;
+        let to = (at + by).clamp(0, vis.len() as isize - 1) as usize;
+        state.active = vis.get(to).copied().unwrap_or(0);
         TableEvent::Moved
     }
 }
@@ -1438,33 +1517,36 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
             x += 4;
         }
         // A row with a detail leads with its chevron: closed, or open while it shows.
+        let indent = 2 * table.rows[row].depth as u16;
         if table.lead_w() > 0 {
-            if !table.rows[row].detail.is_empty() {
+            if table.opens(row) {
                 let g = if state.expanded.contains(&row) {
                     glyphs.chevron_down
                 } else {
                     glyphs.chevron
                 };
                 let quiet = look.color("muted-foreground");
-                buf.set_string(x, y, g, Style::new().fg(t(quiet)).bg(t(ground)));
+                buf.set_string(x + indent, y, g, Style::new().fg(t(quiet)).bg(t(ground)));
             }
             x += table.lead_w();
         }
         for (i, c) in table.columns.iter().enumerate() {
-            let w = widths[i];
+            // A child's first cell is set in under its parent's.
+            let inset = if i == 0 { indent.min(widths[i]) } else { 0 };
+            let (sx, sw) = (x + inset, widths[i] - inset);
             let cell = table.rows[row].cells.get(i).cloned().unwrap_or_else(Cell::missing);
-            let spans = table.cell_spans(&cell, w, ground, ink);
+            let spans = table.cell_spans(&cell, sw, ground, ink);
             let cw: u16 = spans.iter().map(|(s, _)| text::width(s) as u16).sum();
             let mut cx = if c.align == Align::End {
-                x + w.saturating_sub(cw)
+                sx + sw.saturating_sub(cw)
             } else {
-                x
+                sx
             };
             for (s, st) in spans {
-                buf.set_stringn(cx, y, &s, (x + w).saturating_sub(cx) as usize, st);
+                buf.set_stringn(cx, y, &s, (sx + sw).saturating_sub(cx) as usize, st);
                 cx += text::width(&s) as u16;
             }
-            x += w + 2;
+            x += widths[i] + 2;
         }
         // The row's menu button at its end: quiet, in the row's ink while the row is active.
         if table.row_actions {
