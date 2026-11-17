@@ -1,7 +1,13 @@
-//! The parts sheet: every part the core holds, in its variants and states, drawn from the library
-//! alone and written out as SVG and text, cell for cell.
+//! The parts sheets: every part the core holds, in its variants and states, drawn from the library
+//! alone.
 //!
-//! Usage: cargo run --example parts -- <controls|page|table|overlays|palette> <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]
+//! `cargo run --example 08_gallery` shows them in the terminal: ← and → (or Tab) move between the
+//! sheets, `t` the theme, `s` the scheme, `a` ASCII, `c` no color; ↑ ↓, PgUp PgDn, Home End and the
+//! wheel scroll; `m` turns mouse capture off and on (off: the terminal selects text as usual);
+//! `q` or Esc quits.
+//!
+//! With arguments it writes one sheet out as SVG and text, cell for cell, for `make specimens`:
+//! cargo run --example 08_gallery -- <controls|page|table|overlays|palette> <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]
 //!
 //! `controls` is Button and TextField; `page` is PageState, PageHeader and Section; `table` is the
 //! table; `overlays` the dialog, the dropdown menu and the select; `palette` the command
@@ -233,11 +239,151 @@ fn draw_controls(f: &mut Frame, look: &Look) {
     }
 }
 
+/// The sheets, and the rows each takes at a wide and at a narrow width.
+const SHEETS: [(&str, u16, u16); 5] = [
+    ("controls", 40, 52),
+    ("page", 84, 120),
+    ("table", 90, 90),
+    ("overlays", 56, 90),
+    ("palette", 64, 100),
+];
+
+fn draw_sheet(f: &mut Frame, sheet: &str, look: &Look) {
+    match sheet {
+        "page" => page::draw(f, look),
+        "table" => table::draw(f, look),
+        "overlays" => overlays::draw(f, look),
+        "palette" => palette::draw(f, look),
+        _ => draw_controls(f, look),
+    }
+}
+
+/// The sheets in the terminal, scrolled when taller than it.
+fn view() -> std::io::Result<()> {
+    use ratatui::crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, MouseEventKind};
+    use ratatui::crossterm::execute;
+    use sokkel_tui::{Fact, Key, KeyPress, NoteTone, StatusLine, tokens};
+
+    let themes = tokens::themes();
+    let (mut sheet, mut theme, mut scheme, mut ascii, mut nocolor) = (0usize, 0usize, Scheme::Dark, false, false);
+    let mut scroll: u16 = 0;
+    let mut mouse = true;
+    let mut terminal = ratatui::init();
+    execute!(std::io::stdout(), EnableMouseCapture)?;
+    let result = (|| -> std::io::Result<()> {
+        loop {
+            let mut look = Look::new(themes[theme], scheme).expect("a theme the contract has");
+            if ascii {
+                look = look.with_charset(Charset::Ascii);
+            }
+            if nocolor {
+                look = look.with_depth(Depth::None);
+            }
+            let (name, tall, narrow) = SHEETS[sheet];
+            let mut max_scroll = 0;
+            terminal.draw(|f| {
+                let area = f.area();
+                let rows = if area.width >= 100 { tall } else { narrow };
+                // The sheet, drawn whole off screen at the terminal's width.
+                let mut off = Terminal::new(TestBackend::new(area.width, rows)).expect("a buffer");
+                off.draw(|g| draw_sheet(g, name, &look)).expect("a sheet");
+                let src = off.backend().buffer();
+                let view = area.height.saturating_sub(1);
+                max_scroll = rows.saturating_sub(view);
+                scroll = scroll.min(max_scroll);
+                for y in 0..view.min(rows) {
+                    for x in 0..area.width {
+                        f.buffer_mut()[(x, y)] = src[(x, y + scroll)].clone();
+                    }
+                }
+                let foot = StatusLine::new(&look)
+                    .note(
+                        "← → sheets  t theme  s scheme  a ascii  c no color  m mouse  q quit",
+                        NoteTone::Plain,
+                    )
+                    .facts([
+                        Fact::labeled("mouse", if mouse { "on" } else { "off" }),
+                        Fact::labeled("sheet", name).code(),
+                        Fact::labeled("theme", themes[theme]).code(),
+                        Fact::new(match scheme {
+                            Scheme::Dark => "dark",
+                            Scheme::Light => "light",
+                        }),
+                    ]);
+                f.render_widget(&foot, Rect::new(0, area.height.saturating_sub(1), area.width, 1));
+            })?;
+            let page = terminal.size()?.height.saturating_sub(2).max(1);
+            match event::read()? {
+                Event::Key(k) => {
+                    let Some(key) = KeyPress::from_crossterm(&k) else {
+                        continue;
+                    };
+                    if key.ctrl && key.key == Key::Char('c') {
+                        return Ok(());
+                    }
+                    match key.key {
+                        Key::Char('q') | Key::Escape => return Ok(()),
+                        Key::Right | Key::Tab => {
+                            sheet = (sheet + 1) % SHEETS.len();
+                            scroll = 0;
+                        }
+                        Key::Left | Key::BackTab => {
+                            sheet = (sheet + SHEETS.len() - 1) % SHEETS.len();
+                            scroll = 0;
+                        }
+                        Key::Char('t') => theme = (theme + 1) % themes.len(),
+                        Key::Char('T') => theme = (theme + themes.len() - 1) % themes.len(),
+                        Key::Char('s') => {
+                            scheme = match scheme {
+                                Scheme::Dark => Scheme::Light,
+                                Scheme::Light => Scheme::Dark,
+                            }
+                        }
+                        Key::Char('a') => ascii = !ascii,
+                        Key::Char('c') => nocolor = !nocolor,
+                        Key::Char('m') => {
+                            mouse = !mouse;
+                            if mouse {
+                                execute!(std::io::stdout(), EnableMouseCapture)?;
+                            } else {
+                                execute!(std::io::stdout(), DisableMouseCapture)?;
+                            }
+                        }
+                        Key::Down => scroll = (scroll + 1).min(max_scroll),
+                        Key::Up => scroll = scroll.saturating_sub(1),
+                        Key::PageDown | Key::Char(' ') => scroll = (scroll + page).min(max_scroll),
+                        Key::PageUp => scroll = scroll.saturating_sub(page),
+                        Key::Home => scroll = 0,
+                        Key::End => scroll = max_scroll,
+                        _ => {}
+                    }
+                }
+                Event::Mouse(m) => match m.kind {
+                    MouseEventKind::ScrollDown => scroll = (scroll + 3).min(max_scroll),
+                    MouseEventKind::ScrollUp => scroll = scroll.saturating_sub(3),
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+    })();
+    execute!(std::io::stdout(), DisableMouseCapture)?;
+    ratatui::restore();
+    result
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.len() == 1 {
+        if let Err(e) = view() {
+            eprintln!("parts: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if args.len() < 7 {
         eprintln!(
-            "usage: cargo run --example parts -- <controls|page|table|overlays|palette> <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]"
+            "usage: cargo run --example 08_gallery -- <controls|page|table|overlays|palette> <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]"
         );
         std::process::exit(2);
     }
@@ -256,14 +402,7 @@ fn main() {
     }
     let (cols, rows): (u16, u16) = (args[4].parse().unwrap(), args[5].parse().unwrap());
     let mut term = Terminal::new(TestBackend::new(cols, rows)).unwrap();
-    term.draw(|f| match sheet {
-        "page" => page::draw(f, &look),
-        "table" => table::draw(f, &look),
-        "overlays" => overlays::draw(f, &look),
-        "palette" => palette::draw(f, &look),
-        _ => draw_controls(f, &look),
-    })
-    .unwrap();
+    term.draw(|f| draw_sheet(f, sheet, &look)).unwrap();
     let buffer = term.backend().buffer();
     let plain = Look::new(&args[2], scheme).unwrap();
     let ground = plain.token("background");

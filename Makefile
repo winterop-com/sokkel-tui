@@ -47,24 +47,24 @@ specimens:
 		"terminal dark 120 30" "tidevann dark 80 24 drawer" "tidevann light 120 30 collapsed compact"; do \
 		set -- $$s; t=$$1; m=$$2; c=$$3; r=$$4; shift 4; \
 		out=specimens/$$t-$$m-$$c$$(for f in "$$@"; do printf -- '-%s' $$f; done); \
-		target/debug/examples/spike $$t $$m $$c $$r $$out "$$@" || exit 1; \
+		target/debug/examples/06_shell $$t $$m $$c $$r $$out "$$@" || exit 1; \
 		if command -v rsvg-convert >/dev/null; then rsvg-convert -z 2 $$out.svg -o $$out.png; fi; \
 	done
 	for s in "controls 40 52" "page 84 120" "table 90 90" "overlays 56 90" "palette 64 100"; do \
 		set -- $$s; sheet=$$1; tall=$$2; narrow=$$3; \
 		for v in "tidevann dark 120 $$tall" "tidevann dark 80 $$narrow" "tidevann light 120 $$tall" "tidevann light 80 $$narrow" "terminal dark 120 $$tall"; do \
 			set -- $$v; \
-			target/debug/examples/parts $$sheet $$1 $$2 $$3 $$4 specimens/$$sheet-$$1-$$2-$$3 || exit 1; \
+			target/debug/examples/08_gallery $$sheet $$1 $$2 $$3 $$4 specimens/$$sheet-$$1-$$2-$$3 || exit 1; \
 			if command -v rsvg-convert >/dev/null; then rsvg-convert -z 2 specimens/$$sheet-$$1-$$2-$$3.svg -o specimens/$$sheet-$$1-$$2-$$3.png; fi; \
 		done; \
-		target/debug/examples/parts $$sheet tidevann dark 80 $$narrow specimens/$$sheet-ascii-nocolor-80 ascii nocolor || exit 1; \
+		target/debug/examples/08_gallery $$sheet tidevann dark 80 $$narrow specimens/$$sheet-ascii-nocolor-80 ascii nocolor || exit 1; \
 	done
 	for s in "dark 120 30" "dark 80 24" "light 120 30" "light 80 24"; do \
 		set -- $$s; \
 		for k in "rest" "palette ctrl-k"; do \
 			set -- $$s $$k; m=$$1; c=$$2; r=$$3; name=$$4; shift 4; \
 			out=specimens/runs-$$m-$$c-$$name; \
-			target/debug/examples/runs $$m --frame $$c $$r $$out "$$@" || exit 1; \
+			target/debug/examples/07_runs $$m --frame $$c $$r $$out "$$@" || exit 1; \
 			if command -v rsvg-convert >/dev/null; then rsvg-convert -z 2 $$out.svg -o $$out.png; fi; \
 		done; \
 	done

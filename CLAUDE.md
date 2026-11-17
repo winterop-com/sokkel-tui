@@ -10,13 +10,11 @@ contract.
 - A cargo workspace shaped like sokkel-egui's. `crates/core` is the package `sokkel-tui`: tokens,
   the look, text roles, cells, snapshots, and the parts as they come. Add-ons come later as crates
   of their own; the core never depends on an add-on. No empty placeholder crates.
-- `crates/core/examples/runs.rs` (`cargo run --example runs`) is the interactive app on every
-  part; `--frame` draws a scripted frame for the specimens. Run it in a real terminal (tmux) after
-  a change to keys or layers.
-- `crates/core/examples/spike.rs` (`cargo run --example spike`) draws the shell and the runs page from the core's parts, to SVG and text: the
-  frame (rail, top bar, status line), the page header and the table, collapsed and as a drawer.
-- `crates/core/examples/parts/` (`cargo run --example parts`, one file per sheet) draws the parts sheets (`controls`, `page`, `table`, `overlays`, `palette`, one module per sheet): every part
-  the core holds, in its variants and states. A new part or state goes on a sheet.
+- `crates/core/examples/` is a progression, numbered so `cargo run --example` lists it in order:
+  `01_basic` (a button and a field) up to `07_runs` (the whole app) and `08_gallery` (every sheet,
+  browsed in the terminal; with arguments it writes a sheet out for `make specimens`, one module per
+  sheet). `06_shell` draws the frame to SVG and text; `07_runs --frame` draws a scripted frame.
+  Run an interactive example in a real terminal (tmux) after a change to keys, mouse or layers.
 - An example uses only the library's public parts; a part it lacks goes into the library.
 
 ## The contract

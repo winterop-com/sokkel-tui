@@ -2,7 +2,7 @@
 //! and selecting by keys, a filter menu, a New run dialog whose confirm stays busy a moment, the
 //! command palette, the shortcuts dialog and the settings dialog. Every part is the core's.
 //!
-//! Usage: cargo run --example runs [-- light] [-- --frame <cols> <rows> <out> [keys...]]
+//! Usage: cargo run --example 07_runs [-- light] [-- --frame <cols> <rows> <out> [keys...]]
 //!
 //! Keys: Tab and Shift+Tab move focus; Ctrl+K the palette; ? the shortcuts; / the search; G then R
 //! and G then J go to a page; in the table Up, Down, Home, End, PageUp, PageDown, Space selects,
