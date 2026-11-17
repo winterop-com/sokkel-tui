@@ -79,6 +79,12 @@ the contract say so that it does?
   where the layout puts it, Reset to defaults asking first, below md a list then a section with
   Back). Not yet: the palette's app search and two-line rows and foot, radio groups, a dialog's
   header bar and status, the nested shade, and what lies under a layer (T2).
+- `crates/core/examples/runs.rs` (step 7, `cargo run --example runs`): Tidevann's runs in a real
+  terminal: the shell, the runs and jobs pages, the table sorting and selecting by keys, a filter
+  menu, a New run dialog whose confirm stays busy a moment, the palette (Ctrl+K), the shortcuts
+  (`?`), the settings dialog with a select, the search (`/`), G then R and G then J, Tab through
+  the stops with their tips in the status line, Ctrl+Q to quit. With `--frame` it draws one frame
+  after scripted keys, for `make specimens`.
 - `crates/core/examples/spike.rs`: the shell and the runs page, every part from the core, in every theme and
   scheme, below and above the md line, collapsed and as a drawer.
 - `crates/core/examples/parts/`: the parts sheets (`controls`, `page`, `table`, `overlays`, `palette`), every part in its variants and states, in
@@ -97,6 +103,6 @@ then drawn by the spike in place of its hand-drawn copy.
 | 4 | Table (built, the table variant) | The one table: head, sort by keys, selection, tones, the quiet dash, the foot's range, drawing only the visible rows, cards below its own stack width |
 | 5 | Shell: Rail, TopBar, StatusLine (built) | The drawer below about 90 columns, the trail in the top bar only, the account level with the foot |
 | 6 | Overlays: Dialog, CommandPalette, Select, DropdownMenu, SettingsDialog (built) | A back stack for settings; focus returned on close; the palette on Ctrl+K, busy release after `busy-release` |
-| 7 | An interactive example | Tidevann's runs on the shell, run in a real terminal |
+| 7 | An interactive example (built) | Tidevann's runs on the shell, run in a real terminal |
 
 Tooltip has no floating box here: its words are said in the status line (proposal, point 7).

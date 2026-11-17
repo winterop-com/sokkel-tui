@@ -4,7 +4,7 @@ sokkel's design system in a terminal, with ratatui. The same contract as sokkel-
 sokkel-egui ([sokkel-design](https://winterop-com.github.io/sokkel-design/): its tokens, paints,
 parts and the shell), drawn in cells.
 
-![The shell and the table in tidevann dark at 120 columns](docs/assets/tidevann-dark-120.png)
+![Tidevann's runs with the command palette open, in tidevann dark at 120 columns](docs/assets/runs-dark-120-palette.png)
 
 ## What is here
 
@@ -16,6 +16,9 @@ parts and the shell), drawn in cells.
 - The parts, each from its spec in sokkel-design: `Button`, `TextField`, `PageState`, `PageHeader`,
   `Section`, `Table`, the frame (`Rail`, `TopBar`, `StatusLine`), and the overlays `Dialog`,
   `DropdownMenu`, `Select`, `CommandPalette` and `SettingsDialog`.
+- `crates/core/examples/runs.rs` (`cargo run --example runs`, `-- light` for the light scheme):
+  Tidevann's runs in a real terminal, every part working by keys. Ctrl+K the palette, `?` the
+  shortcuts, Ctrl+Q quits.
 - `crates/core/examples/spike.rs` (`cargo run --example spike`): the shell and the runs page, every part from the core, static, written to
   `specimens/` as SVG, PNG and text.
 - `crates/core/examples/parts/` (`cargo run --example parts`): the parts sheets, every part in its variants and states.

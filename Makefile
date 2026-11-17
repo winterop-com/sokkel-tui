@@ -59,6 +59,15 @@ specimens:
 		done; \
 		target/debug/examples/parts $$sheet tidevann dark 80 $$narrow specimens/$$sheet-ascii-nocolor-80 ascii nocolor || exit 1; \
 	done
+	for s in "dark 120 30" "dark 80 24" "light 120 30" "light 80 24"; do \
+		set -- $$s; \
+		for k in "rest" "palette ctrl-k"; do \
+			set -- $$s $$k; m=$$1; c=$$2; r=$$3; name=$$4; shift 4; \
+			out=specimens/runs-$$m-$$c-$$name; \
+			target/debug/examples/runs $$m --frame $$c $$r $$out "$$@" || exit 1; \
+			if command -v rsvg-convert >/dev/null; then rsvg-convert -z 2 $$out.svg -o $$out.png; fi; \
+		done; \
+	done
 
 all: fmt-check check test
 
