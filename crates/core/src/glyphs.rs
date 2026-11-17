@@ -122,6 +122,8 @@ pub struct Glyphs {
     /// lowest first, and a panel's stale mark.
     pub spark: [&'static str; 8],
     pub stale: &'static str,
+    /// A swatch: a block in its color (a legend's series, a select's theme).
+    pub swatch: &'static str,
     /// The arrows of a change, up and down (`arrow-up`, `arrow-down`).
     pub arrow_up: &'static str,
     pub arrow_down: &'static str,
@@ -220,6 +222,7 @@ impl Glyphs {
                 ["_", ".", "-", "=", "+", "*", "#", "@"]
             },
             stale: if charset == Charset::Unicode { "◷" } else { "!" },
+            swatch: if charset == Charset::Unicode { "■" } else { "#" },
             arrow_up: icon("arrow-up"),
             arrow_down: icon("arrow-down"),
             info: icon("info"),

@@ -32,6 +32,8 @@ pub enum SelectVariant {
 pub struct SelectOption {
     pub label: String,
     pub lead: Option<String>,
+    /// The lead's color, a color token: a swatch.
+    pub swatch: Option<String>,
     pub detail: Option<String>,
     pub disabled: bool,
 }
@@ -46,6 +48,13 @@ impl SelectOption {
 
     pub fn lead(mut self, glyph: impl Into<String>) -> Self {
         self.lead = Some(glyph.into());
+        self
+    }
+
+    /// A swatch before the label: a block in the `color` token (a theme's color, a series'), so
+    /// the option shows what it picks.
+    pub fn swatch(mut self, color: impl Into<String>) -> Self {
+        self.swatch = Some(color.into());
         self
     }
 
@@ -153,7 +162,11 @@ impl<'a> Select<'a> {
             .iter()
             .map(|o| {
                 let mut i = Item::new(o.label.clone()).disabled(o.disabled);
-                i.icon = o.lead.clone();
+                i.icon = o
+                    .lead
+                    .clone()
+                    .or_else(|| o.swatch.as_ref().map(|_| self.look.glyphs().swatch.to_string()));
+                i.icon_color = o.swatch.clone();
                 i.detail = o.detail.clone();
                 PopupRow::Item(i)
             })
@@ -165,7 +178,12 @@ impl<'a> Select<'a> {
         let widest = self
             .options
             .iter()
-            .map(|o| text::width(&o.label) + o.lead.as_ref().map_or(0, |l| text::width(l) + 1))
+            .map(|o| {
+                text::width(&o.label)
+                    + o.lead
+                        .as_ref()
+                        .map_or(usize::from(o.swatch.is_some()) * 2, |l| text::width(l) + 1)
+            })
             .chain(std::iter::once(text::width(&self.placeholder)))
             .max()
             .unwrap_or(0);
@@ -272,7 +290,12 @@ impl<'a> Select<'a> {
         let mut x = row.x + 1;
         let chosen = self.value.and_then(|v| self.options.get(v));
         let style = TextRole::Body.style(look).patch(base).fg(t(ink));
-        if let Some(lead) = chosen.and_then(|o| o.lead.as_ref()) {
+        let swatch_glyph = chosen
+            .and_then(|o| o.swatch.as_ref())
+            .map(|_| glyphs.swatch.to_string());
+        if let Some(lead) = chosen.and_then(|o| o.lead.clone()).or(swatch_glyph).as_ref() {
+            let swatch = chosen.and_then(|o| o.swatch.as_deref()).filter(|c| look.has_color(c));
+            let style = swatch.map_or(style, |c| style.fg(look.token(c)));
             buf.set_string(x, row.y, lead, style);
             x += text::width(lead) as u16 + 1;
         }

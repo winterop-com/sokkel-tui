@@ -1256,7 +1256,7 @@ impl Widget for &TimeSeriesPanel<'_> {
 
         // The legend: a row of swatches and names, or a table of each series' figures.
         let ly = axis_y + 2;
-        let swatch = "■";
+        let swatch = glyphs.swatch;
         match self.legend {
             Legend::None => {}
             Legend::List => {

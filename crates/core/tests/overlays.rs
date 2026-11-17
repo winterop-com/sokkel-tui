@@ -393,3 +393,18 @@ fn a_dialog_holds_a_header_bar_a_status_row_and_shades_under_another() {
         "the words kept under the shade"
     );
 }
+
+#[test]
+fn a_swatch_shows_the_color_its_option_picks() {
+    use sokkel_tui::{Select, SelectOption, SelectState};
+    let look = look();
+    let s = Select::new(
+        &look,
+        ["kind-blue", "kind-violet"].map(|c| SelectOption::new(c).swatch(c)),
+    )
+    .value(Some(1));
+    let mut buf = Buffer::empty(Rect::new(0, 0, 24, 1));
+    s.render_trigger(buf.area, &mut buf, &SelectState::default());
+    assert_eq!(buf[(1, 0)].symbol(), "■");
+    assert_eq!(buf[(1, 0)].fg, look.token("kind-violet"));
+}

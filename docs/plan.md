@@ -115,7 +115,8 @@ the contract say so that it does?
   waiting, the corner close, Escape held while busy, a sheet below md); the dropdown menu (items
   with icon and keys, labels, separators, check rows in a gutter, destructive and disabled rows,
   one level of submenu, typeahead); the select (field and quiet triggers, its list with details
-  and the chosen row's check, typeahead while closed, read only, disabled).
+  and the chosen row's check, typeahead while closed, read only, disabled, swatches in their
+  color tokens).
 - `palette`, `settings` (step 6, second half): the command palette (groups of commands with icon,
   hint or code, meta in its tone, kind and key caps, a disabled command's reason; a fuzzy filter
   over labels and keywords; a command that answers later holding it open until `busy-release`, then

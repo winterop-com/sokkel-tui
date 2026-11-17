@@ -114,6 +114,15 @@ pub fn draw(f: &mut Frame, look: &Look) {
         Rect::new(sx + 1, y + 10, 16, 1)
     };
     quiet.render_trigger(quiet_at, f.buffer_mut(), &SelectState::default());
+    // Swatches: each option shows the color it picks.
+    let colors = ["kind-blue", "kind-green", "kind-violet", "kind-pink"]
+        .map(|c| SelectOption::new(c.trim_start_matches("kind-")).swatch(c));
+    let swatches = Select::new(look, colors).value(Some(2));
+    let swatch_at = Rect {
+        y: quiet_at.y + 2,
+        ..quiet_at
+    };
+    swatches.render_trigger(swatch_at, f.buffer_mut(), &SelectState::default());
 
     // Overlays last: the menu and the open list over what lies under them.
     let menu_window = Rect::new(area.x, area.y, sx.saturating_sub(2).max(30), area.height);

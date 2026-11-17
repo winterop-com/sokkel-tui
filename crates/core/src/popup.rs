@@ -32,6 +32,8 @@ pub struct Item {
     pub label: String,
     /// A glyph before the label, in the look's character set.
     pub icon: Option<String>,
+    /// The icon's color, a color token: a swatch (a theme, a color) drawn in its own color.
+    pub icon_color: Option<String>,
     /// The keys that do the same, at the row's end (a menu's).
     pub shortcut: Option<String>,
     /// A quiet fact at the row's end (a select's).
@@ -401,6 +403,8 @@ impl Popup<'_> {
             x += gutter;
         }
         if let Some(icon) = &item.icon {
+            let swatch = item.icon_color.as_deref().filter(|c| self.look.has_color(c));
+            let style = swatch.map_or(style, |c| style.fg(self.look.token(c)));
             buf.set_string(x, y, icon, style);
             x += text::width(icon) as u16 + 1;
         }
