@@ -89,7 +89,7 @@ the contract say so that it does?
   Stop waiting; the refusal; Ctrl+K and Escape closing it, not while a command runs) and the
   settings dialog (the column with its search and groups, the pane with each setting's control
   where the layout puts it, Reset to defaults asking first, below md a list then a section with
-  Back). Not yet: the palette's app search and two-line rows and foot, radio groups, a dialog's
+  Back); radio rows (`Item::radio`, the account menu's scheme). Not yet: the palette's app search and two-line rows and foot, a dialog's
   header bar and status, the nested shade, and what lies under a layer (T2).
 - The pointer, where the terminal reports it (`keys::Pointer`): the table says what a position
   hits (a row, its box, the head's box, a head, a card) and acts on a press; the menu, the select's

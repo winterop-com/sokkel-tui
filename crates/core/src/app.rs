@@ -761,12 +761,12 @@ impl<A: ShellApp> Host<A> {
         let dark = self.look.scheme() == Scheme::Dark;
         push(
             &mut rows,
-            Item::new(words.light).check(!dark).into(),
+            Item::new(words.light).radio(!dark).into(),
             AccountAct::Scheme(Scheme::Light),
         );
         push(
             &mut rows,
-            Item::new(words.dark).check(dark).into(),
+            Item::new(words.dark).radio(dark).into(),
             AccountAct::Scheme(Scheme::Dark),
         );
         if let Some((id, item)) = app.leave {

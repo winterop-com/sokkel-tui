@@ -338,3 +338,28 @@ fn a_menu_opens_acts_and_closes_by_the_pointer() {
     assert_eq!(m.pointer(&mut st, window, anchor, press(70, 20)), MenuEvent::Closed);
     assert!(!st.open);
 }
+
+#[test]
+fn a_radio_row_shows_its_check_and_keeps_the_menu_open() {
+    use sokkel_tui::{MenuEvent, MenuState};
+    let look = look();
+    let m = DropdownMenu::new(
+        &look,
+        [
+            PopupRow::Label("Scheme".into()),
+            Item::new("Light").radio(false).into(),
+            Item::new("Dark").radio(true).into(),
+        ],
+    );
+    let mut st = MenuState {
+        open: true,
+        highlight: 1,
+        sub: None,
+    };
+    assert_eq!(m.handle(&mut st, press(Key::Enter)), MenuEvent::Action(1, None));
+    assert!(st.open, "a radio row keeps the menu open");
+    let window = Rect::new(0, 0, 40, 10);
+    let mut buf = Buffer::empty(window);
+    m.render(window, Rect::new(0, 0, 10, 1), &mut buf, &st);
+    assert!(snapshot::text(&buf).contains("✓ Dark"));
+}

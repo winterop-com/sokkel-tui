@@ -40,6 +40,9 @@ pub struct Item {
     pub disabled: bool,
     /// A check row: on or off. `None` for a plain row.
     pub check: Option<bool>,
+    /// A radio row: one of a group under a label, the chosen one on. Drawn as a check row; the app
+    /// keeps one row of the group on.
+    pub radio: bool,
     /// The row opens a submenu: a chevron at its end.
     pub submenu: bool,
 }
@@ -79,6 +82,14 @@ impl Item {
 
     pub fn check(mut self, on: bool) -> Self {
         self.check = Some(on);
+        self
+    }
+
+    /// A radio row of a group, `on` while it is the chosen one: its check shows, and choosing it
+    /// keeps the menu open, as a check row does.
+    pub fn radio(mut self, on: bool) -> Self {
+        self.check = Some(on);
+        self.radio = true;
         self
     }
 }
