@@ -1,9 +1,8 @@
 //! The glyphs the parts draw, from sokkel-design's `glyphs.json`, in its Unicode or ASCII form.
 //!
 //! A terminal cannot choose its font, so every glyph a part draws has a form any terminal shows.
-//! A few glyphs are this renderer's own until glyphs.json holds them, each marked below: the edge at
-//! a one-row control's ends and the focus ring in the cells beside it (open-questions T3 and T4, as
-//! the owner decided them on 2026-11-17), the heavy top rule of a critical box, and a graph's dot.
+//! Every glyph comes from glyphs.json; the bare brackets a control's ends take without color are the
+//! ASCII forms of its edge.
 
 use crate::tokens;
 use serde_json::Value;
@@ -105,18 +104,19 @@ pub struct Glyphs {
     pub box_ascii: BoxGlyphs,
     /// The required star, a typed character.
     pub required: &'static str,
-    /// T3 as decided (b): the edge of a one-row control at its ends; not yet in glyphs.json.
+    /// The edge of a one-row control at its ends (`edge-start`, `edge-end`; T3).
     pub edge_start: &'static str,
     pub edge_end: &'static str,
-    /// T4 as decided: keyboard focus on a control, in the cell beside each end; not yet in glyphs.json.
+    /// Keyboard focus on a one-row control, in the cell beside each end (`focus-ring-start`,
+    /// `focus-ring-end`; T4).
     pub ring_start: &'static str,
     pub ring_end: &'static str,
     /// A control's ends where no color can show it: typed brackets.
     pub bare_start: &'static str,
     pub bare_end: &'static str,
-    /// sokkel-tui's own: a critical box's top rule, heavy as the web's 2 px.
+    /// A critical box's top rule (`rule-heavy`).
     pub heavy_rule: &'static str,
-    /// sokkel-tui's own: one dot of a graph's dot grid.
+    /// One dot of the graph tone's dot grid (`grid-dot`).
     pub dot: &'static str,
 }
 
@@ -159,7 +159,6 @@ impl Glyphs {
                 tee_end: g("teeEnd"),
             }
         };
-        let unicode = charset == Charset::Unicode;
         Glyphs {
             spinner: file["glyphs"]["spinner"][form]
                 .as_array()
@@ -198,14 +197,14 @@ impl Glyphs {
             box_square: boxed("square"),
             box_ascii: boxed("ascii"),
             required: "*",
-            edge_start: if unicode { "▏" } else { "[" },
-            edge_end: if unicode { "▕" } else { "]" },
-            ring_start: if unicode { "┃" } else { ">" },
-            ring_end: if unicode { "┃" } else { "<" },
+            edge_start: glyph("edge-start"),
+            edge_end: glyph("edge-end"),
+            ring_start: glyph("focus-ring-start"),
+            ring_end: glyph("focus-ring-end"),
             bare_start: "[",
             bare_end: "]",
-            heavy_rule: if unicode { "━" } else { "=" },
-            dot: if unicode { "·" } else { "." },
+            heavy_rule: glyph("rule-heavy"),
+            dot: glyph("grid-dot"),
         }
     }
 }

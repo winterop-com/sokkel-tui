@@ -10,8 +10,8 @@
 //! comes after one blank row at either density. The mark is `circle-alert`, or `triangle-alert`
 //! in the warning tone, one column and a gap before the heading.
 //!
-//! The warning tone's frame (`warning/8` in a `warning/35` edge) has no resolved paint yet, so a
-//! warning is drawn in the failed frame; its triangle and heading say it, as unframed they do.
+//! The warning tone draws its own frame and mark (`failed+warning`: `warning/8` in a `warning/35`
+//! edge, the triangle in its ink); its other pieces are the failed state's.
 
 use crate::button::{Button, ButtonSize, ButtonVariant, IconPlace};
 use crate::cells::by_density;
@@ -291,7 +291,13 @@ impl Widget for &PageState<'_> {
         let t = |c: Rgba| look.terminal(c);
         let state = self.state_key();
         let page = look.color(self.on);
-        let frame_key = format!("page-state.base.{state}.frame");
+        // The warning tone's frame and mark are a state of their own; the rest is failed's.
+        let toned = if state == "failed" && self.tone == StateTone::Warning {
+            "failed+warning"
+        } else {
+            state
+        };
+        let frame_key = format!("page-state.base.{toned}.frame");
         let ground = if self.framed {
             look.paint(&frame_key, "ground").unwrap_or(page)
         } else {
@@ -352,7 +358,11 @@ impl Widget for &PageState<'_> {
                         glyphs.issue_critical,
                         piece("mark", "ink").unwrap_or_else(|| look.color("destructive")),
                     ),
-                    StateTone::Warning => (glyphs.issue_warning, look.color("warning-ink")),
+                    StateTone::Warning => (
+                        glyphs.issue_warning,
+                        look.paint("page-state.base.failed+warning.mark", "ink")
+                            .unwrap_or_else(|| look.color("warning-ink")),
+                    ),
                 };
                 put(buf, inner.x, y, mark, Style::new().fg(t(mark_ink)));
                 let head_ink = piece("heading", "ink").unwrap_or_else(|| look.color("foreground"));
