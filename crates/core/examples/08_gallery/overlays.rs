@@ -158,10 +158,12 @@ pub fn draw(f: &mut Frame, look: &Look) {
             "1,200 runs to api.example.org.",
         ),
         (
-            "shut: its reason in the status line",
+            "a header bar with its steps, a refusal over the footer",
             Dialog::new(look, "New job")
                 .width(DialogWidth::Sm)
                 .back(true)
+                .header(1)
+                .status("A job needs a schedule before it is made.", true)
                 .note("Step 2 of 2")
                 .confirm(Confirm::new("Create").why(Some("Give the job a schedule first")))
                 .focus(DialogFocus::Confirm),
@@ -186,6 +188,13 @@ pub fn draw(f: &mut Frame, look: &Look) {
         (&dialog).render(r, f.buffer_mut());
         let layout = dialog.layout(r);
         body(f, look, layout.body, words);
+        if let Some(h) = layout.header {
+            // The app's rows in the header bar: here the steps, the second one current.
+            let quiet = TextRole::Help.style(look).fg(look.token("muted-foreground"));
+            let now = TextRole::Label.style(look).fg(look.token("foreground"));
+            f.buffer_mut().set_string(h.x, h.y, "1 Name", quiet);
+            f.buffer_mut().set_string(h.x + 9, h.y, "2 Schedule", now);
+        }
         if let Some(tip) = dialog.tip() {
             note(f, look, room.x, room.bottom(), &format!("status line: {tip}"));
         }

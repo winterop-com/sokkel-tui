@@ -363,3 +363,33 @@ fn a_radio_row_shows_its_check_and_keeps_the_menu_open() {
     m.render(window, Rect::new(0, 0, 10, 1), &mut buf, &st);
     assert!(snapshot::text(&buf).contains("✓ Dark"));
 }
+
+#[test]
+fn a_dialog_holds_a_header_bar_a_status_row_and_shades_under_another() {
+    use sokkel_tui::{Confirm, Dialog, DialogWidth};
+    let look = look();
+    let d = Dialog::new(&look, "New job")
+        .width(DialogWidth::Sm)
+        .header(1)
+        .status("A job needs a schedule before it is made.", true)
+        .confirm(Confirm::new("Create"));
+    let window = Rect::new(0, 0, 100, 30);
+    let area = d.area(window, 2);
+    let l = d.layout(area);
+    let (h, st) = (l.header.unwrap(), l.status.unwrap());
+    assert!(
+        h.y < l.body.y && l.body.bottom() <= st.y,
+        "header bar, body, status, in order"
+    );
+    let mut buf = Buffer::empty(window);
+    (&d).render(area, &mut buf);
+    let text = snapshot::text(&buf);
+    assert!(text.contains("! A job needs a schedule"), "{text}");
+    d.shade(area, &mut buf);
+    let shade = look.terminal(look.paint("dialog.base.nested.nestedShade", "ground").unwrap());
+    assert_eq!(buf[(area.x + 3, area.y + 3)].bg, shade);
+    assert!(
+        snapshot::text(&buf).contains("New job"),
+        "the words kept under the shade"
+    );
+}

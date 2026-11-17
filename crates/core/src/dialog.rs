@@ -124,6 +124,10 @@ pub enum DialogEvent {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DialogLayout {
     pub body: Rect,
+    /// The header bar's rows under the title, where the app draws (a step indicator, tabs).
+    pub header: Option<Rect>,
+    /// The status row over the footer.
+    pub status: Option<Rect>,
     pub close: Option<Rect>,
     pub cancel: Option<Rect>,
     pub back: Option<Rect>,
@@ -147,6 +151,8 @@ pub struct Dialog<'a> {
     focus: DialogFocus,
     words: DialogWords,
     sheet: bool,
+    header_rows: u16,
+    status: Option<(String, bool)>,
 }
 
 impl<'a> Dialog<'a> {
@@ -164,6 +170,8 @@ impl<'a> Dialog<'a> {
             busy_ms: 0,
             focus: DialogFocus::None,
             words: DialogWords::default(),
+            header_rows: 0,
+            status: None,
             sheet: false,
         }
     }
@@ -210,6 +218,30 @@ impl<'a> Dialog<'a> {
     pub fn busy_for(mut self, ms: u64) -> Self {
         self.busy_ms = ms;
         self
+    }
+
+    /// A header bar: the title row on its own ground over a rule, then `rows` rows the app holds
+    /// under it, outside the scroll ([`DialogLayout::header`]). The ground is the footer's, as
+    /// sokkel-tui reads it: the contract paints none for it yet.
+    pub fn header(mut self, rows: u16) -> Self {
+        self.header_rows = rows;
+        self
+    }
+
+    /// The status row over the footer, outside the scroll: a status line, or a refusal (a problem
+    /// line in the critical ink, its mark before it).
+    pub fn status(mut self, words: impl Into<String>, refusal: bool) -> Self {
+        self.status = Some((words.into(), refusal));
+        self
+    }
+
+    /// Shade a dialog standing under another one (`nested`): its box in the nested shade's ground,
+    /// its words kept. Draw it, then shade it, then draw the one over it.
+    pub fn shade(&self, area: Rect, buf: &mut Buffer) {
+        let area = area.intersection(buf.area);
+        if let Some(c) = self.look.paint("dialog.base.nested.nestedShade", "ground") {
+            buf.set_style(area, Style::new().bg(self.look.terminal(c)));
+        }
     }
 
     pub fn focus(mut self, focus: DialogFocus) -> Self {
@@ -331,9 +363,10 @@ impl<'a> Dialog<'a> {
         let pad = by_density(self.look, 1, 0);
         let gap = by_density(self.look, 1, 0);
         let inner_w = w.saturating_sub(2 + 4);
-        let header = 1 + self.description_lines(inner_w);
+        let header = 1 + self.description_lines(inner_w) + if self.header_rows > 0 { 1 + self.header_rows } else { 0 };
         let footer = if self.has_footer() { 2 } else { 0 };
-        2 + pad + header + gap + body + if footer > 0 { gap + footer } else { pad }
+        let status = u16::from(self.status.is_some());
+        2 + pad + header + gap + body + status + if footer > 0 { gap + footer } else { pad }
     }
 
     /// Where the dialog stands in `window`, around a body of `body` rows: centered; a sheet
@@ -415,8 +448,25 @@ impl<'a> Dialog<'a> {
         if self.has_close() {
             out.close = Some(Rect::new(area.right().saturating_sub(side + 4), area.y + side, 3, 1));
         }
-        let header = 1 + self.description_lines(inner.width);
-        let footer = if self.has_footer() { 2 + gap } else { pad };
+        let mut header = 1 + self.description_lines(inner.width);
+        if self.header_rows > 0 {
+            // The rule under the title, then the app's rows.
+            out.header = Some(Rect {
+                y: inner.y + header + 1,
+                height: self.header_rows,
+                ..inner
+            });
+            header += 1 + self.header_rows;
+        }
+        let mut footer = if self.has_footer() { 2 + gap } else { pad };
+        if self.status.is_some() {
+            out.status = Some(Rect {
+                y: (area.bottom().saturating_sub(side + footer.min(2) + 1)).max(inner.y),
+                height: 1,
+                ..inner
+            });
+            footer += 1;
+        }
         out.body = Rect {
             y: inner.y + header + gap,
             height: inner.height.saturating_sub(header + gap + footer),
@@ -504,6 +554,46 @@ impl Widget for &Dialog<'_> {
                 buf.set_string(x, y, line, TextRole::Body.style(look).fg(t(di)));
                 y += 1;
             }
+        }
+        // The header bar: the title's rows on the footer's ground, a rule under them.
+        if let Some(h) = layout.header {
+            let fkey = "dialog.base.rest.footer";
+            let hg = look.paint(fkey, "ground").unwrap_or(ground);
+            let rule = look.paint(fkey, "rule").unwrap_or_else(|| look.color("border"));
+            let band = Rect::new(
+                area.x + side,
+                area.y + side,
+                area.width.saturating_sub(2 * side),
+                h.y - 1 - (area.y + side),
+            );
+            for yy in band.y..band.bottom() {
+                for xx in band.x..band.right() {
+                    buf[(xx, yy)].set_bg(t(hg));
+                }
+            }
+            for xx in band.x..band.right() {
+                buf[(xx, h.y - 1)].set_symbol(glyphs.rule).set_fg(t(rule));
+            }
+        }
+        // The status row over the footer.
+        if let (Some((words, refusal)), Some(r)) = (&self.status, layout.status) {
+            let (mark, si) = if *refusal {
+                (Some(glyphs.issue_critical), look.color("critical-ink"))
+            } else {
+                (None, look.color("muted-foreground"))
+            };
+            let mut sx = r.x;
+            if let Some(m) = mark {
+                buf.set_string(sx, r.y, m, Style::new().fg(t(si)));
+                sx += 2;
+            }
+            let room = r.right().saturating_sub(sx) as usize;
+            buf.set_string(
+                sx,
+                r.y,
+                text::truncate(words, room, glyphs.ellipsis),
+                TextRole::Help.style(look).fg(t(si)),
+            );
         }
         if let Some(r) = layout.close {
             let b = Button::icon(look, glyphs.close, self.words.close.clone())
