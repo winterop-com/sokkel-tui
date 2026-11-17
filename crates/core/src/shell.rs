@@ -104,6 +104,9 @@ pub struct Shell<'a> {
 #[derive(Debug, Clone, Default)]
 pub struct ShellState {
     pub collapsed: bool,
+    /// Full screen (a kiosk, a wall display): no rail and no top bar, the page filling the window
+    /// over the status line.
+    pub kiosk: bool,
     /// Below md: the rail open over the page.
     pub drawer: bool,
     /// The top bar's search: what it holds, and whether it is being typed in (`/` or a press).
@@ -177,7 +180,25 @@ impl<'a> Shell<'a> {
             .clone()
             .collapsed(state.collapsed, true)
             .focused(state.rail_focus);
-        let shell = ShellLayout::new(look, window, rail.width());
+        let shell = if state.kiosk {
+            let foot_h = StatusLine::height(look).min(window.height);
+            ShellLayout {
+                rail: None,
+                top: Rect { height: 0, ..window },
+                content: Rect {
+                    height: window.height - foot_h,
+                    ..window
+                },
+                foot: Rect {
+                    y: window.bottom() - foot_h,
+                    height: foot_h,
+                    ..window
+                },
+                width: Width::of(window),
+            }
+        } else {
+            ShellLayout::new(look, window, rail.width())
+        };
         state.window = window;
         state.narrow = shell.width == Width::Narrow;
         if !state.narrow {
@@ -203,7 +224,11 @@ impl<'a> Shell<'a> {
         } else {
             state.top_focus
         });
-        let l = top.layout(shell.top);
+        let l = if shell.top.height > 0 {
+            top.layout(shell.top)
+        } else {
+            crate::top_bar::TopBarLayout::default()
+        };
         (state.menu, state.search, state.palette) = (l.menu, l.search, l.palette);
         if l.search.is_none() {
             state.searching = false;
@@ -212,7 +237,9 @@ impl<'a> Shell<'a> {
             let room = r.width.saturating_sub(4) as usize;
             Position::new(r.x + 3 + text::width(&state.query).min(room) as u16, r.y)
         });
-        (&top).render(shell.top, buf);
+        if shell.top.height > 0 {
+            (&top).render(shell.top, buf);
+        }
         // The banner's row, and the whole of its words in the status line when they are cut short.
         let mut shell = shell;
         let mut tip = None;
@@ -272,8 +299,12 @@ impl ShellState {
     }
 
     /// A key the frame answers: typed into the search while it has focus (Enter, Escape or Tab
-    /// leave it), Escape closes the drawer.
+    /// leave it), Escape closes the drawer, and leaves full screen.
     pub fn key(&mut self, key: KeyPress) -> ShellEvent {
+        if self.kiosk && key.is(Key::Escape) {
+            self.kiosk = false;
+            return ShellEvent::Changed;
+        }
         if self.searching {
             match key.key {
                 Key::Char(c) if !key.ctrl && !key.alt => self.query.push(c),

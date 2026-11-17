@@ -322,3 +322,27 @@ fn a_banner_takes_its_row_under_the_top_bar_and_its_words_go_to_the_status_line_
         look.terminal(look.paint("page-state.base.failed.frame", "ground").unwrap())
     );
 }
+
+#[test]
+fn full_screen_drops_the_rail_and_the_top_bar_and_escape_leaves_it() {
+    let look = look();
+    let shell = Shell::new(
+        &look,
+        Rail::new(&look, "T", "Tidevann").groups([RailGroup::new(None, [RailEntry::new("Runs")])]),
+        TopBar::new(&look).trail(["Tidevann", "Runs"]),
+        StatusLine::new(&look).note("Live", NoteTone::Live),
+    );
+    let window = Rect::new(0, 0, 120, 30);
+    let mut buf = Buffer::empty(window);
+    let mut st = ShellState::default();
+    st.kiosk = true;
+    let page = shell.render(window, &mut buf, &mut st);
+    assert!(page.x < 5 && page.y < 3, "the page from the window's start: {page:?}");
+    let text = sokkel_tui::snapshot::text(&buf);
+    assert!(
+        !text.contains("Tidevann") && text.contains("Live"),
+        "no rail, no top bar, the status line kept"
+    );
+    assert_eq!(st.key(KeyPress::new(Key::Escape)), ShellEvent::Changed);
+    assert!(!st.kiosk);
+}

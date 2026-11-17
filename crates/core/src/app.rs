@@ -204,6 +204,11 @@ pub enum Flow {
 
 /// An app in sokkel's frame. Only [`ShellApp::chrome`] and [`ShellApp::page`] are required.
 pub trait ShellApp {
+    /// Whether the app starts full screen (a wall display): the reader leaves it with Escape or the
+    /// palette.
+    fn kiosk(&self) -> bool {
+        false
+    }
     /// The app's name for what it keeps between runs (its look, under [`kept_path`]); None keeps
     /// nothing.
     fn id(&self) -> Option<&str> {
@@ -341,6 +346,7 @@ const SCHEME: &str = "sokkel.scheme";
 const DENSITY: &str = "sokkel.density";
 const RAIL: &str = "sokkel.rail";
 const MOUSE: &str = "sokkel.mouse";
+const KIOSK: &str = "sokkel.kiosk";
 const THEME: &str = "sokkel.theme:";
 
 /// The frame's own stops.
@@ -472,6 +478,7 @@ impl<A: ShellApp> Host<A> {
             rows: 0,
         };
         host.route = host.app.route();
+        host.shell.kiosk = host.app.kiosk();
         host.keys = host.registry();
         host
     }
@@ -801,6 +808,16 @@ impl<A: ShellApp> Host<A> {
             )
             .icon("▣"),
             Command::new(
+                KIOSK,
+                if self.shell.kiosk {
+                    "Leave full screen"
+                } else {
+                    "Full screen"
+                },
+            )
+            .icon("□")
+            .hint("the page alone, Escape leaves"),
+            Command::new(
                 MOUSE,
                 if self.mouse {
                     "Turn the mouse off"
@@ -828,6 +845,9 @@ impl<A: ShellApp> Host<A> {
                 Setting::new(RAIL, "Rail", 0)
                     .description("Expanded, or collapsed to its icons.")
                     .choice(["Expanded", "Collapsed"], usize::from(self.shell.collapsed)),
+                Setting::new(KIOSK, "Full screen", 0)
+                    .description("The page alone, for a wall display: no rail, no top bar.")
+                    .choice(["Off", "On"], usize::from(self.shell.kiosk)),
                 Setting::new(MOUSE, "Mouse", 0)
                     .description("Off, the terminal selects text as it does without an app.")
                     .choice(["On", "Off"], usize::from(!self.mouse)),
@@ -977,6 +997,7 @@ impl<A: ShellApp> Host<A> {
                 &theme,
             ),
             RAIL => self.shell.collapsed = !self.shell.collapsed,
+            KIOSK => self.shell.kiosk = !self.shell.kiosk,
             MOUSE => self.mouse = !self.mouse,
             t if t.starts_with(THEME) => self.relook(scheme, density, &t[THEME.len()..]),
             _ => match self.app.command(id) {
@@ -1007,6 +1028,7 @@ impl<A: ShellApp> Host<A> {
                 } else {
                     match id.as_str() {
                         RAIL => self.shell.collapsed = option == 1,
+                        KIOSK => self.shell.kiosk = option == 1,
                         MOUSE => self.mouse = option == 0,
                         _ => self.app.chose(&id, option),
                     }
