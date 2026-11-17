@@ -994,8 +994,8 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
         let ink = look
             .paint(&format!("table.base.{key}.head"), "ink")
             .unwrap_or_else(|| look.color("table-head-ink"));
-        let style = TextRole::Head.style(look).fg(t(ink)).bg(t(head_ground));
-        let name = TextRole::Head.transform(look, &c.header);
+        let style = TextRole::ColumnHead.style(look).fg(t(ink)).bg(t(head_ground));
+        let name = TextRole::ColumnHead.transform(look, &c.header);
         let glyph = match sorted {
             Some(SortDir::Ascending) => Some(glyphs.sort_ascending),
             Some(SortDir::Descending) => Some(glyphs.sort_descending),

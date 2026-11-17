@@ -1,5 +1,5 @@
 {
     "$description": "The sokkel-design commit whose resolved tokens crates/core embeds. make tokens fetches that file at this commit from GitHub; make tokens-check fails when the embedded copy is not it. Move the pin with make tokens REF=<commit>.",
     "repo": "winterop-com/sokkel-design",
-    "commit": "9095168bb2d14567162de6c5b697bfba1d0efb48"
+    "commit": "ca7506bb8292296a32ee540086d318424af90cb7"
 }

@@ -15,6 +15,9 @@ pub enum TextRole {
     DetailTitle,
     SectionTitle,
     Head,
+    /// A table's column head: the head's weight, and the theme's head transform (upper case in
+    /// some themes), which a group head never takes.
+    ColumnHead,
     Body,
     Action,
     Label,
@@ -32,6 +35,7 @@ impl TextRole {
             TextRole::DetailTitle => "detail-title",
             TextRole::SectionTitle => "section-title",
             TextRole::Head => "head",
+            TextRole::ColumnHead => "column-head",
             TextRole::Body => "body",
             TextRole::Action => "action",
             TextRole::Label => "label",
@@ -63,7 +67,7 @@ impl TextRole {
     /// The role's words as the theme sets them: `head` takes `table-head-transform` (upper case in
     /// some themes) where the part asks for it, as the table's heads do.
     pub fn transform(self, look: &Look, words: &str) -> String {
-        if self == TextRole::Head && look.word("table-head-transform") == Some("uppercase") {
+        if self == TextRole::ColumnHead && look.word("table-head-transform") == Some("uppercase") {
             words.to_uppercase()
         } else {
             words.to_string()
