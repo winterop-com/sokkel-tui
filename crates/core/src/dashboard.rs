@@ -357,6 +357,21 @@ impl<'a> DashboardPanel<'a> {
         }
     }
 
+    /// Where an expanded panel stands in `window` (its `expanded` state: the content in a
+    /// full-screen dialog): the window less two columns and a row on each side, the whole window
+    /// below md, as a dialog's sheet is.
+    pub fn expanded_area(window: Rect) -> Rect {
+        if crate::cells::Width::of(window) == crate::cells::Width::Narrow {
+            return window;
+        }
+        Rect::new(
+            window.x + 2,
+            window.y + 1,
+            window.width.saturating_sub(4),
+            window.height.saturating_sub(2),
+        )
+    }
+
     /// The tool a press at `at` lands on, in a panel drawn at `area`.
     pub fn hit(&self, area: Rect, at: ratatui::layout::Position) -> Option<PanelTool> {
         let l = self.layout(area);
@@ -383,6 +398,8 @@ impl Widget for &DashboardPanel<'_> {
         let glyphs = look.glyphs();
         let t = |c: Rgba| look.terminal(c);
         let page = look.color("background");
+        // The panel owns its box: what stood there is gone, as when it opens over the page.
+        ratatui::widgets::Clear.render(area, buf);
         let ground = self.paint("rest.panel", "ground").unwrap_or_else(|| look.color("card"));
         let edge = self
             .paint("rest.panel", "edge")

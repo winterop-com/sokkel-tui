@@ -129,3 +129,19 @@ fn a_time_series_draws_its_lines_axis_labels_and_legend() {
         .legend(Legend::None);
     assert!(draw(40, 12, &area).contains('█'));
 }
+
+#[test]
+fn an_expanded_panel_takes_the_window_and_clears_what_stood_there() {
+    let window = Rect::new(0, 0, 120, 30);
+    assert_eq!(DashboardPanel::expanded_area(window), Rect::new(2, 1, 116, 28));
+    assert_eq!(
+        DashboardPanel::expanded_area(Rect::new(0, 0, 60, 20)),
+        Rect::new(0, 0, 60, 20),
+        "a sheet below md"
+    );
+    let look = look();
+    let mut buf = Buffer::empty(Rect::new(0, 0, 30, 6));
+    buf.set_string(3, 3, "leftover", ratatui::style::Style::new());
+    (&DashboardPanel::new(&look, "Runs")).render(buf.area, &mut buf);
+    assert!(!snapshot::text(&buf).contains("leftover"));
+}

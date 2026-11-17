@@ -7,7 +7,8 @@
 //! Usage: cargo run --example 09_dashboard [-- light] [-- --frame <cols> <rows> <out> [keys...]]
 //! Keys: the runtime's (Ctrl+K, `,`, `?`, Tab); `r` retries the failed panel; `d` drops the connection
 //! and brings it back (a banner, the panels marked stale); `t` opens the token prompt (a masked
-//! field; an empty token is turned down); the wheel, PageUp and
+//! field; an empty token is turned down); `x`, or a press on its expand tool, expands Runs per hour
+//! over the page; the wheel, PageUp and
 //! PageDown scroll the page. Ctrl+Q quits.
 
 use ratatui::Frame;
@@ -44,6 +45,9 @@ struct Overview {
     prompt: Option<PromptState>,
     prompt_at: Rect,
     rejected: bool,
+    /// Runs per hour expanded over the page, and where it stands on the page.
+    expanded: bool,
+    runs_at: Rect,
 }
 
 impl Overview {
@@ -98,6 +102,33 @@ impl Overview {
         spans
     }
 
+    /// Runs per hour: two series and yesterday's dashed reference, with a legend table.
+    fn runs_panel<'a>(&self, look: &'a Look) -> TimeSeriesPanel<'a> {
+        let hours: Vec<String> = (0..24).map(|h| format!("{h:02}")).collect();
+        let ok: Vec<f64> = (0..24)
+            .map(|h| self.wave(50.0 + 2.0 * h as f64, 12.0, h as f64 / 3.0).round())
+            .collect();
+        let bad: Vec<f64> = (0..24)
+            .map(|h| (self.wave(4.0, 3.0, h as f64).max(0.0)).round())
+            .collect();
+        TimeSeriesPanel::new(
+            stale_if(
+                DashboardPanel::new(look, "Runs per hour")
+                    .subtitle("today")
+                    .expandable(true),
+                self.disconnected,
+            ),
+            hours,
+        )
+        .series([
+            Series::new("succeeded", ok).color("good"),
+            Series::new("failed", bad).color("critical"),
+            Series::new("yesterday", (0..24).map(|h| 48.0 + 2.0 * h as f64)).dashed(),
+        ])
+        .fill(Fill::None)
+        .legend(Legend::Table)
+    }
+
     /// What the token prompt's answer does: a token signs in, an empty one is turned down and the
     /// banner says so; Cancel closes it. It never reopens by itself.
     fn prompted(&mut self, event: PromptEvent, state: PromptState) {
@@ -146,7 +177,7 @@ impl ShellApp for Overview {
     }
 
     fn layer_open(&self) -> bool {
-        self.prompt.is_some()
+        self.prompt.is_some() || self.expanded
     }
 
     fn layer_scrim(&self) -> bool {
@@ -154,6 +185,10 @@ impl ShellApp for Overview {
     }
 
     fn layer(&mut self, f: &mut Frame, cx: &mut Cx) {
+        if self.expanded {
+            let r = DashboardPanel::expanded_area(cx.window);
+            (&self.runs_panel(cx.look)).render(r, f.buffer_mut());
+        }
         let Some(state) = self.prompt.as_mut() else { return };
         let p = token_prompt(cx.look, cx.window);
         let r = p.area(cx.window, state);
@@ -274,29 +309,10 @@ impl ShellApp for Overview {
         if let Some(r) = it.next() {
             (&series).render(r.intersection(area), f.buffer_mut());
         }
-        let ok: Vec<f64> = (0..24)
-            .map(|h| self.wave(50.0 + 2.0 * h as f64, 12.0, h as f64 / 3.0).round())
-            .collect();
-        let bad: Vec<f64> = (0..24)
-            .map(|h| (self.wave(4.0, 3.0, h as f64).max(0.0)).round())
-            .collect();
-        let runs = TimeSeriesPanel::new(
-            stale(
-                DashboardPanel::new(look, "Runs per hour")
-                    .subtitle("today")
-                    .expandable(true),
-            ),
-            hours,
-        )
-        .series([
-            Series::new("succeeded", ok).color("good"),
-            Series::new("failed", bad).color("critical"),
-            Series::new("yesterday", (0..24).map(|h| 48.0 + 2.0 * h as f64)).dashed(),
-        ])
-        .fill(Fill::None)
-        .legend(Legend::Table);
+        let runs = self.runs_panel(look);
         if let Some(r) = it.next() {
             (&runs).render(r.intersection(area), f.buffer_mut());
+            self.runs_at = *r;
         }
         let failed = match self.retrying {
             Some(t) if cx.now.saturating_sub(t) < 2500 => PanelRead::Loading(cx.now.saturating_sub(t)),
@@ -347,9 +363,19 @@ impl ShellApp for Overview {
     }
 
     fn key(&mut self, key: KeyPress, cx: &mut Cx) -> Flow {
+        if self.expanded {
+            if key.is(Key::Escape) {
+                self.expanded = false;
+            }
+            return Flow::Handled;
+        }
         if let Some(mut state) = self.prompt.take() {
             let event = token_prompt(cx.look, cx.window).handle(&mut state, key);
             self.prompted(event, state);
+            return Flow::Handled;
+        }
+        if key.key == Key::Char('x') {
+            self.expanded = true;
             return Flow::Handled;
         }
         if key.key == Key::Char('t') {
@@ -368,6 +394,24 @@ impl ShellApp for Overview {
     }
 
     fn pointer(&mut self, p: Pointer, cx: &mut Cx) {
+        // Expanded, a press outside it or on its expand tool closes it; on the page, the expand
+        // tool opens it.
+        if p.kind == PointerKind::Press {
+            if self.expanded {
+                let r = DashboardPanel::expanded_area(cx.window);
+                let tool = self.runs_panel(cx.look).frame().hit(r, p.at);
+                if !r.contains(p.at) || tool == Some(PanelTool::Expand) {
+                    self.expanded = false;
+                }
+                return;
+            }
+            if self.prompt.is_none()
+                && self.runs_panel(cx.look).frame().hit(self.runs_at, p.at) == Some(PanelTool::Expand)
+            {
+                self.expanded = true;
+                return;
+            }
+        }
         if let Some(mut state) = self.prompt.take() {
             let event = if p.kind == PointerKind::Press {
                 token_prompt(cx.look, cx.window).press(&mut state, self.prompt_at, p.at)
@@ -412,6 +456,8 @@ fn overview() -> Overview {
         prompt: None,
         prompt_at: Rect::default(),
         rejected: false,
+        expanded: false,
+        runs_at: Rect::default(),
     }
 }
 
