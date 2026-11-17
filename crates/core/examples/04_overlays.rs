@@ -291,6 +291,8 @@ impl app::Program for App {
             .render_list(area, self.at[1], f.buffer_mut(), &self.select);
         self.dialog_at = None;
         if self.dialog {
+            // What lies under the dialog, under its scrim (T2).
+            look.scrim(f.buffer_mut(), area);
             let d = self.dialog();
             let r = d.area(area, 1);
             (&d).render(r, f.buffer_mut());

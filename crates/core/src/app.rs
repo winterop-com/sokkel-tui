@@ -89,7 +89,10 @@ pub fn run(program: &mut impl Program) -> std::io::Result<()> {
             if program.done() {
                 return Ok(());
             }
-            terminal.draw(|f| program.draw(f))?;
+            terminal.draw(|f| {
+                program.draw(f);
+                program.look().finish(f.buffer_mut());
+            })?;
             let wait = Duration::from_millis(program.look().duration_ms("motion-fast"));
             if event::poll(wait)? {
                 match event::read()? {
@@ -237,6 +240,11 @@ pub trait ShellApp {
     }
     /// Draw the app's open layer, over the frame and the drawer.
     fn layer(&mut self, _f: &mut Frame, _cx: &mut Cx) {}
+    /// Whether the app's open layer stands over a scrim (a dialog does; a menu does not): the
+    /// runtime lays what is under it under the scrim first.
+    fn layer_scrim(&self) -> bool {
+        false
+    }
     /// The app's commands, shown in the palette before the runtime's own.
     fn commands(&self) -> Vec<CommandGroup> {
         Vec::new()
@@ -414,11 +422,18 @@ pub fn shot(
     let mut host = Host::new(app, look, None);
     setup(&mut host.shell);
     let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(cols, rows)).expect("a test terminal");
-    term.draw(|f| host.draw(f)).expect("a frame");
+    let frame = |term: &mut ratatui::Terminal<ratatui::backend::TestBackend>, host: &mut Host<_>| {
+        term.draw(|f| {
+            host.draw(f);
+            host.look.finish(f.buffer_mut());
+        })
+        .expect("a frame");
+    };
+    frame(&mut term, &mut host);
     for (n, key) in keys.iter().enumerate() {
         host.tick(n as u64 * 100);
         host.key(*key);
-        term.draw(|f| host.draw(f)).expect("a frame");
+        frame(&mut term, &mut host);
     }
     term.backend().buffer().clone()
 }
@@ -611,6 +626,9 @@ impl<A: ShellApp> Host<A> {
                     .set_fg(look.terminal(ring));
             }
         }
+        if self.shell.drawer {
+            look.scrim(f.buffer_mut(), window);
+        }
         {
             let chrome = self.app.chrome(look);
             Shell::new(look, chrome.rail, chrome.top, chrome.foot).render_drawer(f.buffer_mut(), &mut self.shell);
@@ -643,6 +661,9 @@ impl<A: ShellApp> Host<A> {
             }
         }
         if self.app.layer_open() {
+            if self.app.layer_scrim() {
+                look.scrim(f.buffer_mut(), window);
+            }
             let mut cx = Cx {
                 look,
                 window,
@@ -1316,6 +1337,10 @@ impl<A: ShellApp> Program for Host<A> {
         }
         self.palette_at = None;
         self.settings_at = None;
+        // The palette, the settings and the shortcuts stand over a scrim; the account menu does not.
+        if matches!(self.layer, Layer::Palette | Layer::Settings | Layer::Shortcuts) {
+            self.look.scrim(f.buffer_mut(), window);
+        }
         match self.layer {
             Layer::Palette => {
                 let mut st = std::mem::take(&mut self.palette);

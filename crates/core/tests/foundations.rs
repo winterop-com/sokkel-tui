@@ -194,3 +194,51 @@ fn the_cells_constants_are_the_contracts() {
         .collect();
     assert_eq!(sizes, sokkel_tui::cells::CHECK_SIZES);
 }
+
+#[test]
+fn sixteen_colors_go_by_role_and_hover_draws_in_reverse() {
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    use ratatui::style::{Color, Modifier};
+    use sokkel_tui::Depth;
+    let look = Look::new("tidevann", Scheme::Dark).unwrap().with_depth(Depth::Ansi16);
+    assert_eq!(look.token("critical-ink"), Color::Indexed(1), "critical: red");
+    assert_eq!(look.token("warning-ink"), Color::Indexed(3), "warning: yellow");
+    assert_eq!(look.token("good-ink"), Color::Indexed(2), "good: green");
+    assert_eq!(look.token("muted-foreground"), Color::Indexed(8), "quiet: bright black");
+    assert_eq!(look.token("background"), Color::Reset, "the terminal's own ground");
+    let hover = look.paint("dashboard-panel.base.hover.tool", "ground").unwrap();
+    let mut buf = Buffer::empty(Rect::new(0, 0, 2, 1));
+    buf[(0, 0)].set_bg(look.terminal(hover)).set_symbol("x");
+    look.finish(&mut buf);
+    assert!(
+        buf[(0, 0)].modifier.contains(Modifier::REVERSED),
+        "a hover ground in reverse video"
+    );
+    assert_eq!(buf[(0, 0)].bg, Color::Reset);
+}
+
+#[test]
+fn a_scrim_flattens_what_lies_under_a_layer() {
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    use ratatui::style::Color;
+    use sokkel_tui::Depth;
+    let look = Look::new("tidevann", Scheme::Light).unwrap();
+    let mut buf = Buffer::empty(Rect::new(0, 0, 2, 1));
+    buf[(0, 0)]
+        .set_bg(look.token("background"))
+        .set_fg(look.token("foreground"));
+    let area = buf.area;
+    look.scrim(&mut buf, area);
+    assert_ne!(
+        buf[(0, 0)].bg,
+        look.token("background"),
+        "the ground laid under the backdrop"
+    );
+    let sixteen = look.clone().with_depth(Depth::Ansi16);
+    let mut buf = Buffer::empty(Rect::new(0, 0, 2, 1));
+    let area = buf.area;
+    sixteen.scrim(&mut buf, area);
+    assert_eq!((buf[(0, 0)].fg, buf[(0, 0)].bg), (Color::Indexed(8), Color::Reset));
+}

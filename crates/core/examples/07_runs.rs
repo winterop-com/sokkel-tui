@@ -437,6 +437,10 @@ impl ShellApp for Runs {
         self.menu.open || self.dialog.is_some()
     }
 
+    fn layer_scrim(&self) -> bool {
+        self.dialog.is_some()
+    }
+
     fn layer(&mut self, f: &mut Frame, cx: &mut Cx) {
         let look = cx.look;
         if let (true, Some(anchor)) = (self.menu.open, self.filter_at) {

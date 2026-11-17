@@ -55,11 +55,15 @@ make specimens    # the spike and the parts sheet: specimens/*.svg, *.png (with 
 make tokens       # fetch sokkel-design's resolved tokens at the pinned commit (REF=<commit> moves it)
 ```
 
-The examples run in a terminal: `cargo run --example 01_basic` up to `08_gallery`. They draw the
+The examples run in a terminal: `cargo run --example 01_basic` up to `09_dashboard`. They draw the
 exact colors only when `COLORTERM` is `truecolor` (or `24bit`); otherwise each color is the nearest
-of 256, where close grounds (hover, a selected row) can blur together, and with `NO_COLOR` set they
-draw no color at all. Check `echo $COLORTERM` before judging the look; macOS Terminal.app does not
-set it, and inside tmux it depends on the setup. The specimens are always drawn in full color.
+of 256, where close grounds (hover, a selected row) can blur together. A terminal known to have
+only sixteen (`TERM` of `linux`, `vt100`, `ansi`) gets the contract's sixteen-color reading: each
+color by its role (critical red, warning yellow, good green), the terminal's own theme deciding the
+shade, hover and selection in reverse video. With `NO_COLOR` set they draw no color at all.
+`SOKKEL_COLORS` (`truecolor`, `256`, `16`, `none`) says it outright. Check `echo $COLORTERM` and
+`echo $TERM` before judging the look; macOS Terminal.app does not set `COLORTERM`, and inside tmux
+it depends on the setup. The specimens are drawn in full color, and some in sixteen.
 
 `docs/plan.md` has the order the parts come in. `docs/proposals/sokkel-design-tui.md` is what the
 terminal asks of the contract.

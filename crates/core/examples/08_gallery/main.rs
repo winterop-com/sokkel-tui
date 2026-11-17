@@ -314,7 +314,7 @@ struct Gallery {
     theme: usize,
     scheme: Scheme,
     ascii: bool,
-    nocolor: bool,
+    depth: Depth,
     mouse: bool,
     scroll: u16,
     /// The scroll's end and a page's rows, from the last frame.
@@ -329,9 +329,7 @@ impl Gallery {
         if self.ascii {
             look = look.with_charset(Charset::Ascii);
         }
-        if self.nocolor {
-            look = look.with_depth(Depth::None);
-        }
+        look = look.with_depth(self.depth);
         self.look = look;
     }
 }
@@ -365,7 +363,7 @@ impl sokkel_tui::app::Program for Gallery {
         }
         let foot = StatusLine::new(&self.look)
             .note(
-                "← → sheets  t theme  s scheme  a ascii  c no color  m mouse  q quit",
+                "← → sheets  t theme  s scheme  a ascii  c colors  m mouse  q quit",
                 NoteTone::Plain,
             )
             .facts([
@@ -400,7 +398,14 @@ impl sokkel_tui::app::Program for Gallery {
                 }
             }
             Key::Char('a') => self.ascii = !self.ascii,
-            Key::Char('c') => self.nocolor = !self.nocolor,
+            Key::Char('c') => {
+                self.depth = match self.depth {
+                    Depth::TrueColor => Depth::Ansi256,
+                    Depth::Ansi256 => Depth::Ansi16,
+                    Depth::Ansi16 => Depth::None,
+                    Depth::None => Depth::TrueColor,
+                }
+            }
             Key::Char('m') => self.mouse = !self.mouse,
             Key::Down => self.scroll = (self.scroll + 1).min(self.max_scroll),
             Key::Up => self.scroll = self.scroll.saturating_sub(1),
@@ -431,7 +436,7 @@ fn view() -> std::io::Result<()> {
         theme: 0,
         scheme: Scheme::Dark,
         ascii: false,
-        nocolor: false,
+        depth: Depth::detect(),
         mouse: true,
         scroll: 0,
         max_scroll: 0,
@@ -469,13 +474,18 @@ fn main() {
     if args[7..].iter().any(|a| a == "nocolor") {
         look = look.with_depth(Depth::None);
     }
+    if args[7..].iter().any(|a| a == "ansi16") {
+        look = look.with_depth(Depth::Ansi16);
+    }
     let (cols, rows): (u16, u16) = (args[4].parse().unwrap(), args[5].parse().unwrap());
     let mut term = Terminal::new(TestBackend::new(cols, rows)).unwrap();
-    term.draw(|f| draw_sheet(f, sheet, &look)).unwrap();
+    term.draw(|f| {
+        draw_sheet(f, sheet, &look);
+        look.finish(f.buffer_mut());
+    })
+    .unwrap();
     let buffer = term.backend().buffer();
     let plain = Look::new(&args[2], scheme).unwrap();
-    let ground = plain.token("background");
-    let ink = plain.token("foreground");
-    std::fs::write(format!("{}.svg", args[6]), snapshot::svg(buffer, ground, ink)).unwrap();
+    std::fs::write(format!("{}.svg", args[6]), snapshot::svg_in(buffer, &plain)).unwrap();
     std::fs::write(format!("{}.txt", args[6]), snapshot::text(buffer)).unwrap();
 }

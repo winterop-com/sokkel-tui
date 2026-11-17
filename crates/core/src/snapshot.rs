@@ -127,3 +127,29 @@ pub fn text(buffer: &Buffer) -> String {
 fn unicode_width(s: &str) -> usize {
     ratatui::text::Span::raw(s).width()
 }
+
+/// The buffer as SVG in `look`: its ground and ink the look's, and in sixteen colors each index the
+/// theme's own `ansi-*` color, as a sokkel terminal shows it.
+pub fn svg_in(buffer: &Buffer, look: &crate::look::Look) -> String {
+    let mut b = buffer.clone();
+    let ansi = |c: Color| match c {
+        Color::Indexed(i) if i < 16 => {
+            let a = look.ansi(i);
+            Color::Rgb(a.0, a.1, a.2)
+        }
+        c => c,
+    };
+    let area = b.area;
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            let cell = &mut b[(x, y)];
+            let (fg, bg) = (ansi(cell.fg), ansi(cell.bg));
+            cell.set_fg(fg).set_bg(bg);
+        }
+    }
+    let plain = |name: &str| {
+        let c = look.color(name);
+        Color::Rgb(c.0, c.1, c.2)
+    };
+    svg(&b, plain("background"), plain("foreground"))
+}

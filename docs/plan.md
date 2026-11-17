@@ -54,6 +54,14 @@ the contract say so that it does?
   search, the app (`ShellApp::paste`).
 - `app` scrolls a page taller than its view (`ShellApp::page_rows`): the wheel, PageUp and PageDown,
   keyboard focus kept in view, a scroller at its end.
+- `look` draws in sixteen colors by role (T1, decided): each color by the token its paint names
+  (`paintSources`), an index over the terminal's default over reverse where tokens share a color,
+  hover and selection grounds in reverse video (`Look::finish`); `SOKKEL_COLORS` says the depth
+  outright, and 256 stays the guess where the terminal is not known to have sixteen. Under a layer
+  (the palette, the settings, the shortcuts, the drawer, an app's dialog via
+  `ShellApp::layer_scrim`) the cells are flattened under the dialog's backdrop (T2, decided):
+  `Look::scrim`; in sixteen colors and none, two fixed colors. `snapshot::svg_in` draws sixteen as
+  the theme's `ansi-*`.
 - `button` (step 1): every variant in rest, hover, focus, busy, reason, disabled, invalid and open;
   icon buttons with `pressed`, `destructiveHover`, an icon at either end. One row at every size; the
   edge in the pad cells; the focus ring in the cell beside each end; the tip for the status line.

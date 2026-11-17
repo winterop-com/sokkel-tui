@@ -5,13 +5,24 @@
 //! by its resolved key (`button.default.hover.container`) in its `flat` form, which the resolver
 //! writes over the surface each piece stands on (`standsOn`), and a disabled one in its `faded`
 //! form. The renderer never mixes (principle 20). In 256 colors each is the nearest of xterm's
-//! 16 to 255 by OKLab, as `colorDepth.ansi256` says; with no color, words and glyphs carry it.
+//! 16 to 255 by OKLab, as `colorDepth.ansi256` says. In sixteen colors each takes the index its
+//! token's role gives it (`colorDepth.ansi16.paints`, T1): a paint by the token its source names
+//! (`paintSources`), the terminal's own theme deciding what the index looks like, and a `reverse`
+//! ground drawn in reverse video ([`Look::finish`]). With no color, words and glyphs carry it.
+//!
+//! Under a layer (a dialog, the palette, the drawer) the cells are flattened under the scrim at run
+//! time ([`Look::scrim`], T2): the one blend a renderer is allowed.
 
 use crate::glyphs::{Charset, Glyphs};
-use crate::tokens::{Density, Scheme, resolved};
+use crate::tokens::{Density, Scheme, index, resolved};
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
 use ratatui::style::Color;
+use ratatui::style::Modifier;
 use ratatui::widgets::BorderType;
 use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// How many colors the terminal shows (`colorDepth`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -21,6 +32,8 @@ pub enum Depth {
     TrueColor,
     /// xterm's indices 16 to 255, each the nearest to the resolved color by OKLab.
     Ansi256,
+    /// The terminal's sixteen, by role (T1).
+    Ansi16,
     /// No color (`NO_COLOR`): bold, reverse and words carry the meaning.
     None,
 }
@@ -31,15 +44,29 @@ impl Depth {
         if std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()) {
             return Depth::None;
         }
-        match std::env::var("COLORTERM").as_deref() {
-            Ok("truecolor") | Ok("24bit") => Depth::TrueColor,
+        // SOKKEL_COLORS says outright (truecolor, 256, 16, none); else what the terminal says.
+        match std::env::var("SOKKEL_COLORS").as_deref() {
+            Ok("truecolor") | Ok("24bit") => return Depth::TrueColor,
+            Ok("256") => return Depth::Ansi256,
+            Ok("16") => return Depth::Ansi16,
+            Ok("none") => return Depth::None,
+            _ => {}
+        }
+        if matches!(std::env::var("COLORTERM").as_deref(), Ok("truecolor") | Ok("24bit")) {
+            return Depth::TrueColor;
+        }
+        // 256 colors unless the terminal is one known to have only sixteen: guessing sixteen from
+        // a plain `xterm` or `screen` would flatten terminals that show 256.
+        match std::env::var("TERM").as_deref() {
+            Ok("dumb") => Depth::None,
+            Ok("linux") | Ok("vt100") | Ok("vt220") | Ok("ansi") | Ok("cons25") => Depth::Ansi16,
             _ => Depth::Ansi256,
         }
     }
 }
 
 /// An sRGB color with alpha, as the resolved file writes it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Rgba(pub u8, pub u8, pub u8, pub u8);
 
 impl Rgba {
@@ -68,7 +95,23 @@ pub struct Look {
     charset: Charset,
     tokens: &'static Value,
     paints: &'static Value,
+    /// In sixteen colors: what each opaque color of this theme and scheme draws as.
+    ansi16: Option<Arc<HashMap<Rgba, Ansi16>>>,
 }
+
+/// What a color draws as in sixteen colors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Ansi16 {
+    /// The terminal's own default for the field.
+    Default,
+    /// Reverse video, in place of a ground.
+    Reverse,
+    Index(u8),
+}
+
+/// A cell's color that stands for reverse video in sixteen colors, until [`Look::finish`] turns it
+/// into the modifier: index 16 is never drawn at that depth.
+const REVERSE: Color = Color::Indexed(16);
 
 impl Look {
     /// A look in a theme the contract has; `None` for a theme it lacks.
@@ -84,6 +127,7 @@ impl Look {
             charset: Charset::Unicode,
             tokens,
             paints,
+            ansi16: None,
         })
     }
 
@@ -94,7 +138,67 @@ impl Look {
 
     pub fn with_depth(mut self, depth: Depth) -> Look {
         self.depth = depth;
+        self.ansi16 = (depth == Depth::Ansi16).then(|| Arc::new(self.ansi16_map()));
         self
+    }
+
+    /// The sixteen-color map: each color token of the theme by its role, then each paint's flat
+    /// colors by the token its source names.
+    fn ansi16_map(&self) -> HashMap<Rgba, Ansi16> {
+        let roles = &index()["colorDepth"]["ansi16"];
+        let names: Vec<&str> = roles["tokens"]
+            .as_array()
+            .map_or(Vec::new(), |a| a.iter().filter_map(Value::as_str).collect());
+        let role = |token: &str| -> Ansi16 {
+            match roles["paints"].get(token).and_then(Value::as_str) {
+                Some("reverse") => Ansi16::Reverse,
+                Some(ansi) => names
+                    .iter()
+                    .position(|n| *n == ansi)
+                    .map_or(Ansi16::Default, |i| Ansi16::Index(i as u8)),
+                None => Ansi16::Default,
+            }
+        };
+        // Tokens share resolved colors, so a color can stand for several roles: an index wins
+        // over the terminal's default, and the default over reverse, which keeps reverse video for
+        // the grounds only hover and selection paint.
+        let rank = |r: Ansi16| match r {
+            Ansi16::Index(_) => 2,
+            Ansi16::Default => 1,
+            Ansi16::Reverse => 0,
+        };
+        let mut map: HashMap<Rgba, Ansi16> = HashMap::new();
+        let mut put = |c: Rgba, r: Ansi16| {
+            let e = map.entry(c).or_insert(r);
+            if rank(r) > rank(*e) {
+                *e = r;
+            }
+        };
+        if let Some(colors) = self.tokens["colors"].as_object() {
+            for (name, hex) in colors {
+                if let Some(c) = hex.as_str().and_then(Rgba::parse).filter(|c| c.is_opaque()) {
+                    put(c, role(name));
+                }
+            }
+        }
+        if let Some(sources) = resolved()["paintSources"][self.scheme.key()].as_object() {
+            for (key, fields) in sources {
+                let Some(fields) = fields.as_object() else { continue };
+                for (field, source) in fields {
+                    let Some(source) = source.as_str() else { continue };
+                    // The first token the source names: `primary/80`, `mix(card, primary 10%)`.
+                    let token = source
+                        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+                        .find(|w| {
+                            !w.is_empty() && *w != "mix" && *w != "none" && !w.chars().all(|c| c.is_ascii_digit())
+                        });
+                    if let (Some(token), Some(c)) = (token, self.paint(key, field)) {
+                        put(c, role(token));
+                    }
+                }
+            }
+        }
+        map
     }
 
     pub fn with_charset(mut self, charset: Charset) -> Look {
@@ -213,8 +317,88 @@ impl Look {
         match self.depth {
             Depth::TrueColor => Color::Rgb(c.0, c.1, c.2),
             Depth::Ansi256 => Color::Indexed(nearest_256(c)),
+            Depth::Ansi16 => match self.ansi16.as_ref().and_then(|m| m.get(&c)) {
+                Some(Ansi16::Index(i)) => Color::Indexed(*i),
+                Some(Ansi16::Reverse) => REVERSE,
+                _ => Color::Reset,
+            },
             Depth::None => Color::Reset,
         }
+    }
+
+    /// What the frame needs after it is drawn: in sixteen colors, a cell a `reverse` paint grounds
+    /// is drawn in reverse video on the terminal's own colors. The runtime calls it each frame.
+    pub fn finish(&self, buf: &mut Buffer) {
+        if self.depth != Depth::Ansi16 {
+            return;
+        }
+        let area = buf.area;
+        for y in area.top()..area.bottom() {
+            for x in area.left()..area.right() {
+                let cell = &mut buf[(x, y)];
+                if cell.bg == REVERSE || cell.fg == REVERSE {
+                    cell.set_bg(Color::Reset).set_fg(Color::Reset);
+                    cell.modifier.insert(Modifier::REVERSED);
+                }
+            }
+        }
+    }
+
+    /// A paint's field as the resolver writes it, alpha and all: only the scrim reads it, the one
+    /// blend a renderer makes (T2).
+    pub fn paint_raw(&self, key: &str, field: &str) -> Option<Rgba> {
+        self.field_of(key, field).and_then(Rgba::parse)
+    }
+
+    /// Lay what lies in `area` under a layer's scrim (`colorDepth.underLayer`, T2): in truecolor
+    /// and 256 colors each cell's ground and ink flattened under the dialog's backdrop, source-over
+    /// in sRGB; in sixteen colors every cell in ansi-bright-black on the terminal's ground; with no
+    /// color plain. The glyphs stay.
+    pub fn scrim(&self, buf: &mut Buffer, area: Rect) {
+        let area = area.intersection(buf.area);
+        let scrim = self
+            .paint_raw("dialog.base.rest.backdrop", "ground")
+            .or_else(|| Rgba::parse(self.color_hex("scrim")))
+            .unwrap_or(Rgba(0, 0, 0, 77));
+        let page = self.color("background");
+        let ink = self.color("foreground");
+        let over = |c: Rgba| -> Rgba {
+            let a = scrim.3 as f32 / 255.0;
+            let mix = |s: u8, d: u8| (s as f32 * a + d as f32 * (1.0 - a)).round() as u8;
+            Rgba(mix(scrim.0, c.0), mix(scrim.1, c.1), mix(scrim.2, c.2), 255)
+        };
+        let back = |c: Color, own: Rgba| -> Rgba {
+            match c {
+                Color::Rgb(r, g, b) => Rgba(r, g, b, 255),
+                Color::Indexed(i) => xterm_256(i),
+                _ => own,
+            }
+        };
+        for y in area.top()..area.bottom() {
+            for x in area.left()..area.right() {
+                let cell = &mut buf[(x, y)];
+                match self.depth {
+                    Depth::TrueColor | Depth::Ansi256 => {
+                        let (bg, fg) = (over(back(cell.bg, page)), over(back(cell.fg, ink)));
+                        cell.set_bg(self.terminal(bg)).set_fg(self.terminal(fg));
+                    }
+                    Depth::Ansi16 => {
+                        cell.set_bg(Color::Reset).set_fg(Color::Indexed(8));
+                        cell.modifier = Modifier::empty();
+                    }
+                    Depth::None => {
+                        cell.set_bg(Color::Reset).set_fg(Color::Reset);
+                        cell.modifier = Modifier::empty();
+                    }
+                }
+            }
+        }
+    }
+
+    /// The theme's sixteen as the terminal shows them in a sokkel terminal (`ansi-*`), by index.
+    pub fn ansi(&self, n: u8) -> Rgba {
+        let names = &index()["colorDepth"]["ansi16"]["tokens"];
+        names[n as usize].as_str().map_or(Rgba(0, 0, 0, 255), |n| self.color(n))
     }
 
     /// A color token in the terminal's depth.

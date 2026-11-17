@@ -149,6 +149,10 @@ impl ShellApp for Overview {
         self.prompt.is_some()
     }
 
+    fn layer_scrim(&self) -> bool {
+        true
+    }
+
     fn layer(&mut self, f: &mut Frame, cx: &mut Cx) {
         let Some(state) = self.prompt.as_mut() else { return };
         let p = token_prompt(cx.look, cx.window);
@@ -419,7 +423,10 @@ fn main() -> std::io::Result<()> {
         } else {
             Scheme::Dark
         };
-        let look = Look::new("tidevann", scheme).expect("tidevann");
+        let mut look = Look::new("tidevann", scheme).expect("tidevann");
+        if args.iter().any(|a| a == "ansi16") {
+            look = look.with_depth(sokkel_tui::Depth::Ansi16);
+        }
         let size = (
             args[at + 1].parse().expect("columns"),
             args[at + 2].parse().expect("rows"),
@@ -427,10 +434,7 @@ fn main() -> std::io::Result<()> {
         let keys: Vec<KeyPress> = args[at + 4..].iter().filter_map(|k| KeyPress::named(k)).collect();
         let buf = app::shot(overview(), look.clone(), size, |_| {}, &keys);
         let out = &args[at + 3];
-        std::fs::write(
-            format!("{out}.svg"),
-            snapshot::svg(&buf, look.token("background"), look.token("foreground")),
-        )?;
+        std::fs::write(format!("{out}.svg"), snapshot::svg_in(&buf, &look))?;
         std::fs::write(format!("{out}.txt"), snapshot::text(&buf))?;
         return Ok(());
     }

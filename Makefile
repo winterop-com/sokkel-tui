@@ -58,6 +58,8 @@ specimens:
 			if command -v rsvg-convert >/dev/null; then rsvg-convert -z 2 specimens/$$sheet-$$1-$$2-$$3.svg -o specimens/$$sheet-$$1-$$2-$$3.png; fi; \
 		done; \
 		target/debug/examples/08_gallery $$sheet tidevann dark 80 $$narrow specimens/$$sheet-ascii-nocolor-80 ascii nocolor || exit 1; \
+		target/debug/examples/08_gallery $$sheet tidevann dark 80 $$narrow specimens/$$sheet-ansi16-dark-80 ansi16 || exit 1; \
+		if command -v rsvg-convert >/dev/null; then rsvg-convert -z 2 specimens/$$sheet-ansi16-dark-80.svg -o specimens/$$sheet-ansi16-dark-80.png; fi; \
 	done
 	for s in "dark 120 30" "dark 80 24" "light 120 30" "light 80 24"; do \
 		set -- $$s; \
@@ -76,6 +78,14 @@ specimens:
 	for s in "dark 120 24" "light 80 24"; do \
 		set -- $$s; out=specimens/dashboard-$$1-$$2-disconnected; \
 		target/debug/examples/09_dashboard $$1 --frame $$2 $$3 $$out d || exit 1; \
+		if command -v rsvg-convert >/dev/null; then rsvg-convert -z 2 $$out.svg -o $$out.png; fi; \
+	done
+	for s in "dark 120 40" "light 80 30"; do \
+		set -- $$s; out=specimens/dashboard-$$1-$$2-ansi16-prompt; \
+		target/debug/examples/09_dashboard $$1 ansi16 --frame $$2 $$3 $$out t a b c || exit 1; \
+		if command -v rsvg-convert >/dev/null; then rsvg-convert -z 2 $$out.svg -o $$out.png; fi; \
+		out=specimens/dashboard-$$1-$$2-prompt; \
+		target/debug/examples/09_dashboard $$1 --frame $$2 $$3 $$out t a b c || exit 1; \
 		if command -v rsvg-convert >/dev/null; then rsvg-convert -z 2 $$out.svg -o $$out.png; fi; \
 	done
 
