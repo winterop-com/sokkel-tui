@@ -145,3 +145,32 @@ fn an_expanded_panel_takes_the_window_and_clears_what_stood_there() {
     (&DashboardPanel::new(&look, "Runs")).render(buf.area, &mut buf);
     assert!(!snapshot::text(&buf).contains("leftover"));
 }
+
+#[test]
+fn stacked_series_share_a_column_and_a_step_holds_its_value() {
+    use sokkel_tui::{Series, TimeSeriesPanel};
+    let look = look();
+    let p = TimeSeriesPanel::new(DashboardPanel::new(&look, "Runs"), ["a", "b"])
+        .series([
+            Series::new("succeeded", [6.0, 6.0]).color("good"),
+            Series::new("failed", [2.0, 2.0]).color("critical"),
+        ])
+        .stacked(true)
+        .legend(sokkel_tui::Legend::None);
+    let mut buf = Buffer::empty(Rect::new(0, 0, 40, 14));
+    (&p).render(buf.area, &mut buf);
+    let (good, bad) = (look.token("good"), look.token("critical"));
+    let colors: Vec<_> = (0..14)
+        .flat_map(|y| (0..40).map(move |x| (x, y)))
+        .map(|(x, y)| buf[(x, y)].fg)
+        .collect();
+    assert!(colors.contains(&good) && colors.contains(&bad), "both bands drawn");
+    // Stepped: a held value draws a flat run of dots before its jump.
+    let step = TimeSeriesPanel::new(DashboardPanel::new(&look, "Queue"), ["a", "b", "c"])
+        .series([Series::new("queued", [1.0, 5.0, 1.0])])
+        .fill(sokkel_tui::Fill::None)
+        .step(true)
+        .legend(sokkel_tui::Legend::None);
+    let text = draw(40, 14, &step);
+    assert!(text.chars().any(|c| ('\u{2801}'..='\u{28ff}').contains(&c)));
+}

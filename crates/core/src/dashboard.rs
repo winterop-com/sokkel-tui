@@ -955,6 +955,8 @@ pub struct TimeSeriesPanel<'a> {
     min: Option<f64>,
     max: Option<f64>,
     legend: Legend,
+    stacked: bool,
+    step: bool,
 }
 
 impl<'a> TimeSeriesPanel<'a> {
@@ -971,6 +973,8 @@ impl<'a> TimeSeriesPanel<'a> {
             min: None,
             max: None,
             legend: Legend::List,
+            stacked: false,
+            step: false,
         }
     }
 
@@ -1006,6 +1010,20 @@ impl<'a> TimeSeriesPanel<'a> {
         self
     }
 
+    /// The series stacked, each over the one before: in cells a column of blocks a category, each
+    /// series' share in its color, a boundary inside a cell drawn by the block's ink (the lower
+    /// series) over its ground (the upper one). A dashed reference stays a line.
+    pub fn stacked(mut self, on: bool) -> Self {
+        self.stacked = on;
+        self
+    }
+
+    /// Lines in steps: a value held across to the next, then a jump.
+    pub fn step(mut self, on: bool) -> Self {
+        self.step = on;
+        self
+    }
+
     pub fn legend(mut self, legend: Legend) -> Self {
         self.legend = legend;
         self
@@ -1028,8 +1046,27 @@ impl<'a> TimeSeriesPanel<'a> {
         }
     }
 
+    /// Each category's stacked total of the series that are not references.
+    fn totals(&self) -> Vec<f64> {
+        let m = self.series.iter().map(|s| s.values.len()).max().unwrap_or(0);
+        (0..m)
+            .map(|i| {
+                self.series
+                    .iter()
+                    .filter(|s| !s.dashed)
+                    .filter_map(|s| s.values.get(i).copied().flatten())
+                    .sum()
+            })
+            .collect()
+    }
+
     fn bounds(&self) -> (f64, f64) {
-        let values = self.series.iter().flat_map(|s| s.values.iter().flatten().copied());
+        let totals = if self.stacked { self.totals() } else { Vec::new() };
+        let values = self
+            .series
+            .iter()
+            .flat_map(|s| s.values.iter().flatten().copied())
+            .chain(totals);
         let steps = self.thresholds.iter().filter_map(|t| t.value);
         let (lo, hi) = values
             .chain(steps)
@@ -1155,10 +1192,54 @@ impl Widget for &TimeSeriesPanel<'_> {
             let f = ((hi - v) / (hi - lo).max(f64::EPSILON)).clamp(0.0, 1.0);
             (f * (ph - 1) as f64).round() as usize
         };
+        if self.stacked {
+            // Each cell column: the series' shares of its categories' means, stacked from the base.
+            let solid: Vec<usize> = (0..self.series.len()).filter(|&k| !self.series[k].dashed).collect();
+            let m = self.series.iter().map(|s| s.values.len()).max().unwrap_or(0);
+            let scale = |v: f64| ((v - lo.min(0.0)) / (hi - lo).max(f64::EPSILON)).max(0.0) * plot.height as f64 * 8.0;
+            for cx in 0..plot.width as usize {
+                if m == 0 {
+                    break;
+                }
+                let a = cx * m / plot.width as usize;
+                let b = ((cx + 1) * m / plot.width as usize).max(a + 1).min(m);
+                // The tops of each series' band, in eighths of a cell from the base.
+                let mut tops: Vec<(u16, Rgba)> = Vec::new();
+                let mut sum = 0.0;
+                for &k in &solid {
+                    let vals: Vec<f64> = (a..b)
+                        .filter_map(|i| self.series[k].values.get(i).copied().flatten())
+                        .collect();
+                    if vals.is_empty() {
+                        continue;
+                    }
+                    sum += vals.iter().sum::<f64>() / vals.len() as f64;
+                    tops.push((scale(sum).round() as u16, self.color_of(look, k)));
+                }
+                for r in 0..plot.height {
+                    let (lo8, hi8) = (r * 8, r * 8 + 8);
+                    // The band at the cell's foot, and the next band up if one ends inside it.
+                    let Some(at) = tops.iter().position(|(top, _)| *top > lo8) else {
+                        break;
+                    };
+                    let (top, color) = tops[at];
+                    let y = plot.bottom() - 1 - r;
+                    let cell = &mut buf[(plot.x + cx as u16, y)];
+                    if top >= hi8 {
+                        cell.set_symbol(glyphs.spark[7]).set_fg(t(color)).set_bg(t(ground));
+                    } else {
+                        let above = tops.get(at + 1).map_or(ground, |(_, c)| *c);
+                        cell.set_symbol(glyphs.spark[(top - lo8).max(1) as usize - 1])
+                            .set_fg(t(color))
+                            .set_bg(t(above));
+                    }
+                }
+            }
+        }
         for (k, s) in self.series.iter().enumerate() {
             let color = self.color_of(look, k);
             let m = s.values.len();
-            if m == 0 {
+            if m == 0 || (self.stacked && !s.dashed) {
                 continue;
             }
             let px_x = |i: usize| if m < 2 { 0 } else { i * (pw - 1) / (m - 1) };
@@ -1207,9 +1288,13 @@ impl Widget for &TimeSeriesPanel<'_> {
                     } else {
                         (xx - x0) as f64 / (x - x0) as f64
                     };
-                    let yy = (y0 as f64 + (y as f64 - y0 as f64) * f).round() as usize;
-                    let prev = if xx == x0 {
+                    let yy = if self.step && xx < x {
                         y0
+                    } else {
+                        (y0 as f64 + (y as f64 - y0 as f64) * f).round() as usize
+                    };
+                    let prev = if xx == x0 || self.step {
+                        if self.step && xx == x { y0 } else { yy }
                     } else {
                         (y0 as f64 + (y as f64 - y0 as f64) * ((xx - 1 - x0) as f64 / (x - x0).max(1) as f64)).round()
                             as usize
@@ -1247,7 +1332,17 @@ impl Widget for &TimeSeriesPanel<'_> {
                     "*".to_string()
                 };
                 let cell = &mut buf[(plot.x + cx as u16, plot.y + cy as u16)];
-                cell.set_symbol(&g).set_bg(t(ground));
+                // Over a stacked block the dots take the block's own color as their ground, so
+                // the line reads across the bars without cutting them.
+                if cell.symbol().trim().is_empty() || cell.symbol() == glyphs.dot {
+                    cell.set_bg(t(ground));
+                } else if let ratatui::style::Color::Reset = cell.bg {
+                    cell.set_bg(t(ground));
+                } else {
+                    let under = cell.fg;
+                    cell.set_bg(under);
+                }
+                cell.set_symbol(&g);
                 if let Some(c) = color {
                     cell.set_fg(t(*c));
                 }

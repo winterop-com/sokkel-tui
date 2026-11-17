@@ -17,7 +17,7 @@ use ratatui::widgets::Widget;
 use sokkel_tui::app::{self, Chrome, Cx, Flow, Ran, ShellApp};
 use sokkel_tui::dashboard::grid;
 use sokkel_tui::{
-    BannerTone, Cell, ColorMode, Column, ColumnWidth, Command, CommandGroup, DashboardPanel, Fact, Fill, Key, KeyPress,
+    BannerTone, Cell, ColorMode, Column, ColumnWidth, Command, CommandGroup, DashboardPanel, Fact, Key, KeyPress,
     Legend, Look, NoteTone, PageHeader, PanelRead, PanelTool, Pointer, PointerKind, Prompt, PromptEvent, PromptState,
     Rail, RailEntry, RailFoot, RailGroup, Row, RowTone, Scheme, Series, Span, StatPanel, StatusLine, StatusTone, Table,
     TableState, Threshold, TimeSeriesPanel, TopBar, snapshot,
@@ -102,7 +102,8 @@ impl Overview {
         spans
     }
 
-    /// Runs per hour: two series and yesterday's dashed reference, with a legend table.
+    /// Runs per hour: succeeded and failed stacked, yesterday's total a dashed reference over
+    /// them, with a legend table.
     fn runs_panel<'a>(&self, look: &'a Look) -> TimeSeriesPanel<'a> {
         let hours: Vec<String> = (0..24).map(|h| format!("{h:02}")).collect();
         let ok: Vec<f64> = (0..24)
@@ -125,7 +126,7 @@ impl Overview {
             Series::new("failed", bad).color("critical"),
             Series::new("yesterday", (0..24).map(|h| 48.0 + 2.0 * h as f64)).dashed(),
         ])
-        .fill(Fill::None)
+        .stacked(true)
         .legend(Legend::Table)
     }
 

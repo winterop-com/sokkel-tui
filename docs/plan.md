@@ -45,7 +45,8 @@ the contract say so that it does?
   stale kept apart) and `StatPanel` (value and unit, thresholds inking or filling, the change, a
   sparkline, a meter toward a target, no data) and `TimeSeriesPanel` (lines in braille, one
   series' area in blocks, dashed references, the scale's steps, value and category labels, a legend
-  row or table), as proposal c4 reads them. Not yet: stacked and stepped series, the chart's other
+  row or table), as proposal c4 reads them. Stacked series (a column of bands a category, a boundary
+  inside a cell by the block's ink over its ground) and stepped lines. Not yet: the chart's other
   kinds, the expanded dialog, the panel menu's own menu.
 - Full screen (`ShellState::kiosk`, `ShellApp::kiosk` to start in it): no rail and no top bar, the
   page over the status line, for a wall display; the palette's Full screen and the settings' Frame

@@ -148,7 +148,8 @@ notes yet. sokkel-tui draws this reading of it, and asks for it, or a better one
    since overlapping areas cannot share a cell. The value labels at the plot's start (the middle
    one only with a row of its own), grid lines across in `grid-dot`, the axis line under the plot
    and the category labels under it, as many as fit. The legend a row of swatches (`■`) and names,
-   or a table of min, max, avg and current. Stacked and stepped series are not drawn yet.
+   or a table of min, max, avg and current. Stacked series draw a column of bands a category, a boundary inside a cell drawn by the block's
+   ink (the lower series) over its ground (the upper one); a stepped line holds its value, then jumps.
 6. **The trend's faintness.** The web draws the spark area at low alpha; a cell draws the levels in
    the reading's color (or `muted-foreground` with no reading), opaque.
 
