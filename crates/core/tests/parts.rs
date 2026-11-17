@@ -289,3 +289,48 @@ fn text_is_cut_and_wrapped_in_cells() {
     assert_eq!(wrap("abcdefghij", 4), vec!["abcd", "efgh", "ij"]);
     assert_eq!(wrap("日本語", 4), vec!["日本", "語"]);
 }
+
+#[test]
+fn a_text_area_wraps_grows_and_moves_by_lines() {
+    let look = look();
+    let field = TextField::new(&look, "Note").multiline(3, 5);
+    assert_eq!(field.height(20), 4, "the label and three rows at the fewest");
+    let mut state = FieldState::default().focused(FieldFocus::Control);
+    let mut buf = Buffer::empty(Rect::new(0, 0, 20, 8));
+    ratatui::widgets::StatefulWidget::render(&field, buf.area, &mut buf, &mut state);
+    for c in "nightly-export failed twice".chars() {
+        state.handle(&field, Key::Char(c).into());
+    }
+    assert_eq!(
+        state.handle(&field, Key::Enter.into()),
+        FieldEvent::Edited,
+        "Enter starts a line"
+    );
+    for c in "ask ada".chars() {
+        state.handle(&field, Key::Char(c).into());
+    }
+    let mut buf = Buffer::empty(Rect::new(0, 0, 20, 8));
+    ratatui::widgets::StatefulWidget::render(&field, buf.area, &mut buf, &mut state);
+    let lines: Vec<String> = snapshot::text(&buf).lines().map(String::from).collect();
+    // 18 columns of room: the first paragraph wraps into two lines, the second is a third.
+    assert_eq!(lines[1], "▏nightly-export fai▕");
+    assert_eq!(lines[2], "▏led twice         ▕");
+    assert_eq!(lines[3], "▏ask ada           ▕");
+    assert_eq!(field.height_with(20, &state), 4);
+    assert_eq!(state.cursor_position(), Some(ratatui::layout::Position::new(8, 3)));
+    // Up goes to the line before, at the same column.
+    assert_eq!(state.handle(&field, Key::Up.into()), FieldEvent::Moved);
+    state.handle(&field, Key::Home.into());
+    state.handle(&field, Key::Char('X').into());
+    assert!(
+        state.value().contains("\nask ada") && state.value().contains("Xled"),
+        "{:?}",
+        state.value()
+    );
+    // More lines grow it, up to five rows.
+    for _ in 0..6 {
+        state.handle(&field, Key::End.into());
+        state.handle(&field, Key::Enter.into());
+    }
+    assert_eq!(field.height_with(20, &state), 6, "the label and five rows at the most");
+}

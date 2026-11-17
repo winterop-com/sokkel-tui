@@ -206,6 +206,12 @@ fn draw_controls(f: &mut Frame, look: &Look) {
                 .help("Set when the job is made."),
             FieldState::new("harbor"),
         ),
+        (
+            TextField::new(look, "Note")
+                .multiline(3, 5)
+                .help("Enter starts a line; it grows to five."),
+            FieldState::new("sync-inventory failed twice at 11:58.\nAsk grace before the next run."),
+        ),
     ];
     let mut states = Vec::new();
     let top = y;
@@ -213,7 +219,7 @@ fn draw_controls(f: &mut Frame, look: &Look) {
     for (i, (field, mut state)) in fields.into_iter().enumerate() {
         let c = if two { i % 2 } else { 0 };
         let x = x0 + c as u16 * (col_w + 4);
-        let h = field.height(col_w);
+        let h = field.height_with(col_w, &state);
         let r = Rect::new(x, col_y[c], col_w, h).intersection(area);
         f.render_stateful_widget(&field, r, &mut state);
         col_y[c] += h + 1;
@@ -241,7 +247,7 @@ fn draw_controls(f: &mut Frame, look: &Look) {
 
 /// The sheets, and the rows each takes at a wide and at a narrow width.
 const SHEETS: [(&str, u16, u16); 5] = [
-    ("controls", 40, 52),
+    ("controls", 40, 60),
     ("page", 84, 120),
     ("table", 90, 90),
     ("overlays", 56, 90),

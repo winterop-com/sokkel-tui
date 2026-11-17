@@ -38,7 +38,8 @@ the contract say so that it does?
 - `text_field` (step 1): the frame (label, required star or word, hint or key hint, description,
   control, help, fallback), the issue mark in the control's end with critical and warning tones,
   its popover drawn last, editing with a cursor that scrolls the value, wide glyphs measured, read
-  only and disabled. Not yet: multiline, `inRow`, the proposed busy state.
+  only and disabled; a text area (`multiline(rows, max_rows)`: wrapped at its room, growing with its
+  text, Enter a new line, Up and Down by lines). Not yet: `inRow`, the proposed busy state.
 - `focus` (step 2): stops named each frame in tab order, Tab and Shift+Tab round the top layer, a
   layer that keeps Tab inside and gives focus back on close, a press of the pointer focusing the
   stop under it, the ring on keyboard focus only, and whether the reader is typing.

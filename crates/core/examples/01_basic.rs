@@ -1,7 +1,7 @@
 //! 01: the basics. A look, focus moved by Tab, two text fields and two buttons, and the status
 //! line saying what the focused control would put in a tooltip.
 //!
-//! A "New job" form: type a name and a schedule in cron's five fields. While the schedule is not
+//! A "New job" form: type a name, a schedule in cron's five fields, and a note (a text area). While the schedule is not
 //! five fields its field shows the issue mark, and Create says why it cannot act yet; once it can,
 //! Enter on it is busy a moment and the job is made.
 //!
@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 
 const NAME: &str = "name";
 const SCHEDULE: &str = "schedule";
+const NOTE: &str = "note";
 const CANCEL: &str = "cancel";
 const CREATE: &str = "create";
 
@@ -29,6 +30,7 @@ struct App {
     focus: Focus,
     name: FieldState,
     schedule: FieldState,
+    note: FieldState,
     busy_since: Option<u64>,
     made: Option<String>,
     now: u64,
@@ -83,6 +85,10 @@ impl App {
             let field = TextField::new(&self.look, "Schedule");
             self.schedule.focus = FieldFocus::Control;
             self.schedule.handle(&field, key);
+        } else if self.focus.is(at(NOTE)) {
+            let field = TextField::new(&self.look, "Note").multiline(3, 5);
+            self.note.focus = FieldFocus::Control;
+            self.note.handle(&field, key);
         } else if self.focus.is(at(CANCEL)) && key.is_press() {
             self.quit = true;
         } else if self.focus.is(at(CREATE)) && self.create().presses(key) {
@@ -99,6 +105,7 @@ impl App {
             self.made = Some(self.name.value().to_string());
             self.name.set_value("");
             self.schedule.set_value("");
+            self.note.set_value("");
             self.focus.set(FocusId::new(NAME));
         }
     }
@@ -153,6 +160,21 @@ impl App {
         (&schedule).render(r, f.buffer_mut(), &mut self.schedule);
         y += h + 1;
 
+        // A text area: Enter starts a line; it grows to five.
+        self.note.focus = if self.focus.is(at(NOTE)) {
+            FieldFocus::Control
+        } else {
+            FieldFocus::None
+        };
+        let note = TextField::new(look, "Note")
+            .multiline(3, 5)
+            .help("Optional. Enter starts a line.");
+        let h = note.height_with(w, &self.note);
+        let r = Rect::new(x, y, w, h);
+        self.focus.text_stop(at(NOTE), r);
+        (&note).render(r, f.buffer_mut(), &mut self.note);
+        y += h + 1;
+
         // The buttons: Cancel, then Create, the primary last, a column apart.
         let cancel = Button::new(look, "Cancel")
             .variant(ButtonVariant::Ghost)
@@ -173,7 +195,12 @@ impl App {
             f.buffer_mut().set_string(x, y + 2, format!("Made {made}."), style);
         }
         // The cursor, where a field has focus.
-        if let Some(p) = self.name.cursor_position().or(self.schedule.cursor_position()) {
+        if let Some(p) = self
+            .name
+            .cursor_position()
+            .or(self.schedule.cursor_position())
+            .or(self.note.cursor_position())
+        {
             f.set_cursor_position(p);
         }
 
@@ -210,6 +237,7 @@ fn main() -> std::io::Result<()> {
         focus,
         name: FieldState::default(),
         schedule: FieldState::default(),
+        note: FieldState::default(),
         busy_since: None,
         made: None,
         now: 0,

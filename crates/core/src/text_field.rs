@@ -134,6 +134,49 @@ pub struct FieldState {
     pub issue_open: bool,
     cursor_at: Option<Position>,
     mark_at: Option<Rect>,
+    /// A text area's first line in view, and the columns its lines wrap at (from the last frame).
+    top: usize,
+    wrap: usize,
+}
+
+/// A text area's lines as drawn: each a byte range of the value, a paragraph broken where it
+/// reaches `width` columns. A line ends before its newline.
+fn visual_lines(value: &str, width: usize) -> Vec<(usize, usize)> {
+    let width = width.max(1);
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut used = 0;
+    for (i, c) in value.char_indices() {
+        if c == '\n' {
+            out.push((start, i));
+            start = i + 1;
+            used = 0;
+            continue;
+        }
+        let w = text::char_width(c);
+        if used + w > width {
+            out.push((start, i));
+            start = i;
+            used = 0;
+        }
+        used += w;
+    }
+    out.push((start, value.len()));
+    out
+}
+
+/// The line the cursor at byte `at` stands on: at a wrapped line's end it is the next line's start.
+fn line_of(lines: &[(usize, usize)], at: usize) -> usize {
+    let mut found = 0;
+    for (k, &(a, b)) in lines.iter().enumerate() {
+        if at >= a && (at < b || (at == b && lines.get(k + 1).is_none_or(|n| n.0 > b))) {
+            return k;
+        }
+        if at >= a {
+            found = k;
+        }
+    }
+    found
 }
 
 impl FieldState {
@@ -209,6 +252,7 @@ impl FieldState {
             }
             FieldFocus::Mark => FieldEvent::Ignored,
             FieldFocus::Control if field.disabled || key.ctrl => FieldEvent::Ignored,
+            FieldFocus::Control if field.multiline.is_some() => self.handle_area(field, key),
             FieldFocus::Control => match key.key {
                 Key::Enter => FieldEvent::Enter,
                 Key::Escape => FieldEvent::Escape,
@@ -251,6 +295,78 @@ impl FieldState {
     }
 }
 
+impl FieldState {
+    /// A key in a text area: Enter starts a line, Up and Down move between lines, Home and End go
+    /// to a line's ends; the rest as in a one-line input.
+    fn handle_area(&mut self, field: &TextField, key: KeyPress) -> FieldEvent {
+        let lines = visual_lines(&self.value, self.wrap.max(1));
+        let at = line_of(&lines, self.cursor);
+        let col = text::width(&self.value[lines[at].0..self.cursor]);
+        let to_col = |s: &FieldState, line: (usize, usize), col: usize| {
+            let mut used = 0;
+            for (i, c) in s.value[line.0..line.1].char_indices() {
+                let w = text::char_width(c);
+                if used + w > col {
+                    return line.0 + i;
+                }
+                used += w;
+            }
+            line.1
+        };
+        match key.key {
+            Key::Escape => FieldEvent::Escape,
+            Key::Up if at > 0 => {
+                self.cursor = to_col(self, lines[at - 1], col);
+                FieldEvent::Moved
+            }
+            Key::Down if at + 1 < lines.len() => {
+                self.cursor = to_col(self, lines[at + 1], col);
+                FieldEvent::Moved
+            }
+            Key::Up | Key::Down => FieldEvent::Ignored,
+            Key::Home => {
+                self.cursor = lines[at].0;
+                FieldEvent::Moved
+            }
+            Key::End => {
+                self.cursor = lines[at].1;
+                FieldEvent::Moved
+            }
+            Key::Enter if !field.read_only => {
+                self.value.insert(self.cursor, '\n');
+                self.cursor += 1;
+                FieldEvent::Edited
+            }
+            Key::Left => {
+                self.cursor = self.prev_boundary();
+                FieldEvent::Moved
+            }
+            Key::Right => {
+                self.cursor = self.next_boundary();
+                FieldEvent::Moved
+            }
+            _ if field.read_only => FieldEvent::Ignored,
+            Key::Char(c) => {
+                self.value.insert(self.cursor, c);
+                self.cursor += c.len_utf8();
+                FieldEvent::Edited
+            }
+            Key::Backspace if self.cursor > 0 => {
+                let from = self.prev_boundary();
+                self.value.replace_range(from..self.cursor, "");
+                self.cursor = from;
+                FieldEvent::Edited
+            }
+            Key::Delete if self.cursor < self.value.len() => {
+                let to = self.next_boundary();
+                self.value.replace_range(self.cursor..to, "");
+                FieldEvent::Edited
+            }
+            _ => FieldEvent::Ignored,
+        }
+    }
+}
+
 /// A labeled text input. Build it each frame and draw it with its [`FieldState`].
 #[derive(Debug, Clone)]
 pub struct TextField<'a> {
@@ -268,6 +384,7 @@ pub struct TextField<'a> {
     read_only: bool,
     disabled: bool,
     words: FieldWords,
+    multiline: Option<(u16, u16)>,
 }
 
 impl<'a> TextField<'a> {
@@ -287,6 +404,7 @@ impl<'a> TextField<'a> {
             read_only: false,
             disabled: false,
             words: FieldWords::default(),
+            multiline: None,
         }
     }
 
@@ -357,6 +475,13 @@ impl<'a> TextField<'a> {
         self
     }
 
+    /// A text area: at least `rows` lines, growing with its text up to `max_rows`, then
+    /// scrolling. Enter starts a new line.
+    pub fn multiline(mut self, rows: u16, max_rows: u16) -> Self {
+        self.multiline = Some((rows.max(1), max_rows.max(rows.max(1))));
+        self
+    }
+
     pub fn words(mut self, words: FieldWords) -> Self {
         self.words = words;
         self
@@ -405,11 +530,31 @@ impl<'a> TextField<'a> {
         (state.focus != FieldFocus::None).then(|| self.mark_name()).flatten()
     }
 
-    /// The rows it takes at `width` columns.
+    /// The rows it takes at `width` columns, a text area at its fewest.
     pub fn height(&self, width: u16) -> u16 {
         let w = width as usize;
         let lines = |t: &Option<String>| t.as_ref().map_or(0, |t| text::wrap(t, w).len());
-        (2 + lines(&self.description) + lines(&self.help) + lines(&self.fallback)) as u16
+        let control = self.multiline.map_or(1, |(rows, _)| rows);
+        (1 + control as usize + lines(&self.description) + lines(&self.help) + lines(&self.fallback)) as u16
+    }
+
+    /// The rows it takes at `width` columns holding `state`'s value: a text area grows with it.
+    pub fn height_with(&self, width: u16, state: &FieldState) -> u16 {
+        self.height(width) - self.multiline.map_or(1, |(r, _)| r) + self.control_rows(width, state)
+    }
+
+    fn area_room(&self, width: u16) -> usize {
+        width.saturating_sub(2 + if self.has_issues() { 2 } else { 0 }) as usize
+    }
+
+    fn control_rows(&self, width: u16, state: &FieldState) -> u16 {
+        match self.multiline {
+            None => 1,
+            Some((rows, max)) => {
+                let n = visual_lines(&state.value, self.area_room(width)).len() as u16;
+                n.clamp(rows, max)
+            }
+        }
     }
 
     /// The issue popover, while it is open: draw it after everything else.
@@ -441,6 +586,76 @@ impl<'a> TextField<'a> {
             self.look.paint(&key, field)
         };
         c.unwrap_or_else(|| panic!("the contract paints no {field} for the text field's {piece}"))
+    }
+
+    /// A text area: each row with the edge at its ends, the value's lines wrapped at its room, the
+    /// cursor's line kept in view.
+    fn draw_area(
+        &self,
+        buf: &mut Buffer,
+        rect: Rect,
+        state: &mut FieldState,
+        focus: bool,
+        c: (Rgba, Rgba, Rgba, Rgba),
+    ) {
+        let look = self.look;
+        let glyphs = look.glyphs();
+        let t = |c: Rgba| look.terminal(c);
+        let (ground, edge, ink, quiet) = c;
+        buf.set_style(rect, Style::new().bg(t(ground)));
+        let edge_style = Style::new().bg(t(ground)).fg(t(edge));
+        for y in rect.y..rect.bottom() {
+            buf[(rect.x, y)].set_symbol(glyphs.edge_start).set_style(edge_style);
+            buf[(rect.right() - 1, y)]
+                .set_symbol(glyphs.edge_end)
+                .set_style(edge_style);
+        }
+        let room = self.area_room(rect.width);
+        state.wrap = room;
+        let body = TextRole::Body.style(look);
+        let start = rect.x + 1;
+        if state.value.is_empty() {
+            if let Some(p) = &self.placeholder {
+                for (k, line) in text::wrap(p, room).into_iter().take(rect.height as usize).enumerate() {
+                    buf.set_stringn(start, rect.y + k as u16, line, room, body.fg(t(quiet)));
+                }
+            }
+            state.top = 0;
+        }
+        let lines = visual_lines(&state.value, room);
+        let at = line_of(&lines, state.cursor);
+        let view = rect.height as usize;
+        if at < state.top {
+            state.top = at;
+        } else if at >= state.top + view {
+            state.top = at + 1 - view;
+        }
+        if !state.value.is_empty() {
+            for (k, &(a, b)) in lines.iter().enumerate().skip(state.top).take(view) {
+                let y = rect.y + (k - state.top) as u16;
+                buf.set_stringn(start, y, &state.value[a..b], room, body.fg(t(ink)));
+            }
+        }
+        if focus {
+            let col = text::width(&state.value[lines[at].0..state.cursor]) as u16;
+            state.cursor_at = Some(Position::new(start + col, rect.y + (at - state.top) as u16));
+        }
+        // The issue mark, in the first row's end.
+        if let Some(worst) = self.worst() {
+            let mx = rect.right() - 3;
+            let key = if worst == Tone::Warning { "warning" } else { "rest" };
+            let mi = look
+                .paint(&format!("text-field.base.{key}.issueMark"), "ink")
+                .unwrap_or(ink);
+            let g = match worst {
+                Tone::Critical => glyphs.issue_critical,
+                Tone::Warning => glyphs.issue_warning,
+            };
+            buf[(mx + 1, rect.y)]
+                .set_symbol(g)
+                .set_style(Style::new().fg(t(mi)).bg(t(ground)).add_modifier(Modifier::BOLD));
+            state.mark_at = Some(Rect::new(mx, rect.y, 3, 1));
+        }
     }
 
     fn put_lines(
@@ -519,6 +734,19 @@ impl StatefulWidget for &TextField<'_> {
                 c.unwrap_or(page)
             };
             let (ground, edge, ink, quiet) = (field("ground"), field("edge"), field("ink"), field("placeholder"));
+            if self.multiline.is_some() {
+                let rows = self.control_rows(area.width, state).min(area.bottom() - y);
+                let rect = Rect {
+                    y,
+                    height: rows,
+                    ..area
+                };
+                self.draw_area(buf, rect, state, focus, (ground, edge, ink, quiet));
+                y += rows;
+                self.put_lines(buf, area, &mut y, &self.help, "help", TextRole::Help);
+                self.put_lines(buf, area, &mut y, &self.fallback, "fallback", TextRole::Help);
+                return;
+            }
             let row = Rect { y, height: 1, ..area };
             buf.set_style(row, Style::new().bg(t(ground)));
             let edge_style = Style::new().bg(t(ground)).fg(t(edge));
