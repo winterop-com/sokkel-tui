@@ -7,7 +7,8 @@
 //!
 //! Keys: Tab moves through the rail, the search, the palette button, the page and the account;
 //! Ctrl+K the palette; ? the shortcuts; / the search (it narrows the runs by job); G then R and G
-//! then J go to a page, Escape back; Ctrl+K searches the runs too (the app's search, answering after
+//! then J go to a page, Escape back; on Jobs, Left and Right choose a cell and Enter or typing edits a
+//! Schedule (Enter saves, Tab saves and moves on, Escape drops it); Ctrl+K searches the runs too (the app's search, answering after
 //! 400 ms), a run chosen there opening its detail beside the page; `m` (or a press on a row's ⋯) opens a run's actions; in the table Up, Down, Home, End, PageUp, PageDown, Space selects. The
 //! mouse works on every row, button, entry and menu row; the wheel scrolls. Ctrl+Q quits.
 //!
@@ -150,6 +151,8 @@ struct Runs {
     row_menu: Option<(usize, MenuState, Rect)>,
     /// What the last action did, for the status line.
     said: Option<String>,
+    /// Schedules edited in the jobs table, by (row, column).
+    job_edits: std::collections::BTreeMap<(usize, usize), String>,
     /// Where the side panel's detail pane stood, for its verbs.
     panel_at: Rect,
     dialog: Option<DialogFocus>,
@@ -178,6 +181,7 @@ impl Runs {
             menu: MenuState::default(),
             row_menu: None,
             said: None,
+            job_edits: Default::default(),
             panel_at: Rect::default(),
             dialog: None,
             busy_since: None,
@@ -276,6 +280,31 @@ impl Runs {
                 self.row_menu = None;
             }
             _ => {}
+        }
+    }
+
+    /// The jobs, a schedule edited in the table kept over the one given.
+    fn job_rows(&self) -> (Vec<Column>, Vec<Row>) {
+        let (c, mut r) = jobs();
+        for (&(row, column), value) in &self.job_edits {
+            if let Some(cell) = r.get_mut(row).and_then(|r| r.cells.get_mut(column)) {
+                *cell = Cell::text(value.clone());
+            }
+        }
+        (c, r)
+    }
+
+    /// A cell's edit saved: kept, and said in the status line.
+    fn edited(&mut self, event: TableEvent) {
+        if let TableEvent::Edited { row, column } = event
+            && let Some(value) = self.jobs.saved.take()
+        {
+            let job = jobs()
+                .1
+                .get(row)
+                .map_or(String::new(), |r| r.cells[0].words().to_string());
+            self.said = Some(format!("{job} runs {value}"));
+            self.job_edits.insert((row, column), value);
         }
     }
 
@@ -398,8 +427,8 @@ impl ShellApp for Runs {
                 f.render_stateful_widget(&table.hovered(hovered), area, &mut self.table);
             }
             Page::Jobs => {
-                let (jc, jr) = jobs();
-                let table = Table::new(look, &jc, &jr).focused(focused);
+                let (jc, jr) = self.job_rows();
+                let table = Table::new(look, &jc, &jr).focused(focused).editing(true);
                 let hovered = hover
                     .and_then(|p| table.hit(area, p, &self.jobs))
                     .and_then(|h| match h {
@@ -407,6 +436,9 @@ impl ShellApp for Runs {
                         _ => None,
                     });
                 f.render_stateful_widget(&table.hovered(hovered), area, &mut self.jobs);
+                if let Some(at) = self.jobs.cursor_position() {
+                    f.set_cursor_position(at);
+                }
             }
         }
     }
@@ -485,6 +517,11 @@ impl ShellApp for Runs {
         let h = pane.height(area.width).min(area.height);
         self.panel_at = Rect { height: h, ..area };
         f.render_widget(&pane, self.panel_at);
+    }
+
+    /// While a cell is edited, typed characters are its, not the shortcuts'.
+    fn typing(&self) -> bool {
+        self.jobs.edit.is_some()
     }
 
     fn layer_open(&self) -> bool {
@@ -593,8 +630,10 @@ impl ShellApp for Runs {
                 self.table
                     .handle(&Table::new(look, &c, &r).selectable(true).row_actions(true), key)
             } else {
-                let (c, r) = jobs();
-                self.jobs.handle(&Table::new(look, &c, &r), key)
+                let (c, r) = self.job_rows();
+                let event = self.jobs.handle(&Table::new(look, &c, &r).editing(true), key);
+                self.edited(event);
+                event
             };
             return if event == TableEvent::Ignored {
                 Flow::Ignored
@@ -676,8 +715,8 @@ impl ShellApp for Runs {
                         table.scroll(&mut self.table, by);
                     }
                 } else {
-                    let (c, r) = jobs();
-                    let table = Table::new(look, &c, &r);
+                    let (c, r) = self.job_rows();
+                    let table = Table::new(look, &c, &r).editing(true);
                     if p.kind == PointerKind::Press {
                         if let Some(hit) = table.hit(self.table_at, p.at, &self.jobs) {
                             table.press(&mut self.jobs, hit);
@@ -818,7 +857,7 @@ fn jobs() -> (Vec<Column>, Vec<Row>) {
     let columns = vec![
         Column::new("Job").width(ColumnWidth::Fill(2)).sortable(),
         Column::new("Project").sortable(),
-        Column::new("Schedule").width(ColumnWidth::Fill(1)),
+        Column::new("Schedule").width(ColumnWidth::Fill(1)).editable(),
         Column::new("Last run").sortable(),
     ];
     let job = |name: &str, project: &str, schedule: &str, last: &str| {

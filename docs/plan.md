@@ -109,7 +109,11 @@ the contract say so that it does?
   opened under the row by Enter, Right or a press, closed by Left, `TableEvent::Detail`; a quiet
   disclosure chevron before such rows). Trees (`Row::child`/`depth`: a
   parent's children under it while open, set in under its first cell, kept with it when sorted;
-  the keys pass closed ones, Left from a child goes to its parent). Not yet: editing, resizing, reordering, the grid.
+  the keys pass closed ones, Left from a child goes to its parent). Editing (`Table::editing`, `Column::editable`:
+  the active cell in the ring's edges, Left and Right across the columns, Enter or a typed
+  character opening it in place, Enter saving and moving down, Tab on, Escape dropping it;
+  `TableEvent::Edited` with the value in `TableState::saved`; text only, no F2 yet: `Key` has no
+  function keys). Not yet: date and select editors, resizing, reordering, the grid.
 - `rail`, `top_bar`, `status_line`, `shell` (step 5): the rail's head, groups, entries (icon,
   label, count, unread dot, the active bar, a description under it, parents folding their
   children under their labels, a status dot in a tone; collapsed, a parent's children in a flyout beside the rail, which

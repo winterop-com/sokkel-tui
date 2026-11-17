@@ -454,3 +454,48 @@ fn a_trees_children_show_under_an_open_parent_and_keys_pass_closed_ones() {
     s.sort = Some((0, sokkel_tui::SortDir::Ascending));
     assert_eq!(s.order(&r), vec![2, 3, 0, 1]);
 }
+
+#[test]
+fn an_editable_cell_opens_saves_and_moves_on() {
+    use sokkel_tui::{Key, KeyPress, TableEvent};
+    let look = look();
+    let c = vec![
+        Column::new("Job"),
+        Column::new("Schedule").editable(),
+        Column::new("Note").editable(),
+    ];
+    let row = |job: &str, s: &str| Row::new([Cell::text(job), Cell::text(s), Cell::missing()]);
+    let r = vec![row("sync-inventory", "every hour"), row("send-digest", "every morning")];
+    let table = Table::new(&look, &c, &r).editing(true).focused(true);
+    let mut s = TableState::default();
+    let key = |k| KeyPress::new(k);
+    // The Job column does not edit: a typed character is left to the rows.
+    s.handle(&table, key(Key::Char('x')));
+    assert!(s.edit.is_none());
+    s.handle(&table, key(Key::Right));
+    assert_eq!(s.cell, 1);
+    // Enter opens it holding its value; typing goes to it; Enter saves and moves down.
+    s.handle(&table, key(Key::Enter));
+    assert_eq!(s.edit.as_ref().unwrap().value(), "every hour");
+    s.handle(&table, key(Key::Char('!')));
+    let (_, lines) = draw(&table, 80, 8, &mut s);
+    assert!(lines.iter().any(|l| l.contains("every hour!")), "{lines:?}");
+    assert!(s.cursor_position().is_some(), "the cursor in the cell");
+    assert_eq!(
+        s.handle(&table, key(Key::Enter)),
+        TableEvent::Edited { row: 0, column: 1 }
+    );
+    assert_eq!(s.saved.as_deref(), Some("every hour!"));
+    assert_eq!(s.active_row(&r), Some(1), "down a row");
+    // A typed character starts afresh; Tab saves and moves on; Escape drops an edit.
+    s.handle(&table, key(Key::Char('w')));
+    assert_eq!(s.edit.as_ref().unwrap().value(), "w");
+    assert_eq!(
+        s.handle(&table, key(Key::Tab)),
+        TableEvent::Edited { row: 1, column: 1 }
+    );
+    assert_eq!(s.cell, 2);
+    s.handle(&table, key(Key::Char('z')));
+    s.handle(&table, key(Key::Escape));
+    assert!(s.edit.is_none());
+}

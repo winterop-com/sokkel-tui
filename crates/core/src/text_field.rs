@@ -194,6 +194,11 @@ impl FieldState {
         &self.value
     }
 
+    /// The cursor, a byte offset into the value on a char boundary.
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+
     pub fn set_value(&mut self, value: impl Into<String>) {
         self.value = value.into();
         self.cursor = self.value.len();

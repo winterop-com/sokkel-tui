@@ -298,7 +298,7 @@ fn draw_controls(f: &mut Frame, look: &Look) {
 const SHEETS: [(&str, u16, u16); 5] = [
     ("controls", 48, 70),
     ("page", 92, 142),
-    ("table", 141, 141),
+    ("table", 149, 149),
     ("overlays", 56, 90),
     ("palette", 81, 134),
 ];

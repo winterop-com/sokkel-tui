@@ -52,6 +52,8 @@ pub struct Column {
     pub width: ColumnWidth,
     pub align: Align,
     pub sortable: bool,
+    /// Its cells edit as text in a table with [`Table::editing`] (`edit`).
+    pub editable: bool,
 }
 
 impl Column {
@@ -61,6 +63,7 @@ impl Column {
             width: ColumnWidth::Content,
             align: Align::Start,
             sortable: false,
+            editable: false,
         }
     }
 
@@ -76,6 +79,12 @@ impl Column {
 
     pub fn sortable(mut self) -> Self {
         self.sortable = true;
+        self
+    }
+
+    /// Its cells edit as text, in a table with [`Table::editing`].
+    pub fn editable(mut self) -> Self {
+        self.editable = true;
         self
     }
 }
@@ -178,7 +187,8 @@ impl Cell {
         self
     }
 
-    fn words(&self) -> &str {
+    /// The words the cell shows (a missing value's are empty).
+    pub fn words(&self) -> &str {
         match &self.value {
             CellValue::Text(s) | CellValue::Status(s) | CellValue::Toned(s, _) => s,
             CellValue::Missing => "",
@@ -319,6 +329,12 @@ pub enum TableEvent {
     Selected,
     /// A row was picked (Enter, or Space where the table does not select): its index among the rows.
     Opened(usize),
+    /// A cell's edit was saved (Enter or Tab): the row's index among the rows and the column; the
+    /// value typed is in [`TableState::saved`]. The app keeps it, or turns it down and says why.
+    Edited {
+        row: usize,
+        column: usize,
+    },
     /// A row's actions were asked for (its menu button pressed): its index among the rows. The
     /// app opens its menu at [`Table::actions_area`].
     Actions(usize),
@@ -386,6 +402,14 @@ pub struct TableState {
     pub opened: Option<usize>,
     /// The rows whose detail is open, by their index among the rows.
     pub expanded: BTreeSet<usize>,
+    /// The active cell's column, in a table that edits.
+    pub cell: usize,
+    /// The cell being edited, while it is: its text and cursor.
+    pub edit: Option<crate::text_field::FieldState>,
+    /// The value the last [`TableEvent::Edited`] saved.
+    pub saved: Option<String>,
+    /// Where the terminal's cursor goes while a cell is edited.
+    edit_cursor: Option<ratatui::layout::Position>,
     /// Rows grouped by this column's value (`groupBy`), each group under its head, the groups in
     /// the order they first come, sorted within.
     pub group: Option<usize>,
@@ -487,6 +511,79 @@ impl TableState {
         order
     }
 
+    /// A key in a table that edits: while a cell is open it goes to the cell; else Left and Right
+    /// move the active cell, and Enter or a typed character opens an editable one. `None` leaves
+    /// the key to the rows.
+    fn edit_key(&mut self, table: &Table, key: KeyPress) -> Option<TableEvent> {
+        let n = table.columns.len();
+        if let Some(mut field) = self.edit.take() {
+            let row = self.active_row(table.rows)?;
+            let column = self.cell;
+            let value = field.value().to_string();
+            let saved = TableEvent::Edited { row, column };
+            return Some(match key.key {
+                Key::Escape => TableEvent::Moved,
+                Key::Enter => {
+                    let event = saved;
+                    self.saved = Some(value);
+                    // Down a row, as a sheet moves.
+                    let vis = self.visible(table.rows);
+                    let at = vis.iter().position(|&p| p == self.active).unwrap_or(0);
+                    self.active = vis.get(at + 1).copied().unwrap_or(self.active);
+                    event
+                }
+                Key::Tab => {
+                    let event = saved;
+                    self.saved = Some(value);
+                    // On to the next editable column.
+                    if let Some(c) = (column + 1..n).find(|&c| table.columns[c].editable) {
+                        self.cell = c;
+                    }
+                    event
+                }
+                _ => {
+                    let input = crate::text_field::TextField::new(table.look, "");
+                    field.focus = crate::text_field::FieldFocus::Control;
+                    field.handle(&input, key);
+                    self.edit = Some(field);
+                    TableEvent::Moved
+                }
+            });
+        }
+        match key.key {
+            Key::Left if self.cell > 0 => {
+                self.cell -= 1;
+                Some(TableEvent::Moved)
+            }
+            Key::Right if self.cell + 1 < n => {
+                self.cell += 1;
+                Some(TableEvent::Moved)
+            }
+            Key::Left | Key::Right => Some(TableEvent::Ignored),
+            Key::Enter | Key::Char(_) if table.columns.get(self.cell).is_some_and(|c| c.editable) => {
+                let row = self.active_row(table.rows)?;
+                // Enter opens it holding its value; a typed character starts it afresh.
+                let start = match key.key {
+                    Key::Char(c) => c.to_string(),
+                    _ => table.rows[row]
+                        .cells
+                        .get(self.cell)
+                        .map_or(String::new(), |c| c.words().to_string()),
+                };
+                let mut field = crate::text_field::FieldState::new(start);
+                field.focus = crate::text_field::FieldFocus::Control;
+                self.edit = Some(field);
+                Some(TableEvent::Moved)
+            }
+            _ => None,
+        }
+    }
+
+    /// Where the terminal's cursor goes: in the cell being edited.
+    pub fn cursor_position(&self) -> Option<ratatui::layout::Position> {
+        self.edit.as_ref().and(self.edit_cursor)
+    }
+
     /// The places drawn, in order: every row but those under a closed parent.
     fn visible(&self, rows: &[Row]) -> Vec<usize> {
         self.lines(rows)
@@ -535,6 +632,11 @@ impl TableState {
                 }
                 _ => TableEvent::Ignored,
             };
+        }
+        if table.editing
+            && let Some(event) = self.edit_key(table, key)
+        {
+            return event;
         }
         // The keys move over the rows shown: a closed parent's children are passed over.
         let vis = self.visible(table.rows);
@@ -663,6 +765,7 @@ pub struct Table<'a> {
     variant: TableVariant,
     framed: bool,
     row_actions: bool,
+    editing: bool,
     /// The pager: this page and how many there are (counted from 1).
     paging: Option<(usize, usize)>,
     load_more: bool,
@@ -687,6 +790,7 @@ impl<'a> Table<'a> {
             variant: TableVariant::Table,
             framed: true,
             row_actions: false,
+            editing: false,
             paging: None,
             load_more: false,
             before: 0,
@@ -744,6 +848,14 @@ impl<'a> Table<'a> {
     /// where the app opens the row's menu.
     pub fn row_actions(mut self, on: bool) -> Self {
         self.row_actions = on;
+        self
+    }
+
+    /// Its cells edit (`editing`): Left and Right move the active cell across the columns; Enter
+    /// or a typed character opens an editable one ([`Column::editable`]) in place; Enter saves
+    /// and moves down, Tab saves and moves on, Escape drops the edit ([`TableEvent::Edited`]).
+    pub fn editing(mut self, on: bool) -> Self {
+        self.editing = on;
         self
     }
 
@@ -1045,6 +1157,8 @@ pub enum TableHit {
     Clear,
     /// A row's menu button, by its place.
     Actions(usize),
+    /// A cell, by its row's place and its column, in a table with [`Table::editing`].
+    Cell(usize, usize),
     /// The pager's previous and next arrows, and Load more, in the foot.
     PagePrev,
     PageNext,
@@ -1135,6 +1249,17 @@ impl Table<'_> {
         if self.row_actions && at.x + 3 + g.pad > inner.right() {
             return Some(TableHit::Actions(place));
         }
+        // In a table that edits, a press lands on a cell.
+        if self.editing && !in_box {
+            let widths = self.widths(inner.width);
+            let mut x = inner.x + g.pad + self.select_w();
+            for (c, w) in widths.iter().enumerate() {
+                if (x..x + w + 2).contains(&at.x) {
+                    return Some(TableHit::Cell(place, c));
+                }
+                x += w + 2;
+            }
+        }
         Some(if in_box {
             TableHit::SelectBox(place)
         } else {
@@ -1211,6 +1336,27 @@ impl Table<'_> {
                     Some(r) => TableEvent::Actions(r),
                     None => TableEvent::Ignored,
                 }
+            }
+            // A press on the active cell opens it, where it edits; elsewhere it becomes active.
+            TableHit::Cell(p, c) => {
+                let again = state.active == p && state.cell == c && state.edit.is_none();
+                state.active = p;
+                state.cell = c;
+                state.edit = None;
+                if again
+                    && self.columns.get(c).is_some_and(|col| col.editable)
+                    && let Some(r) = state.row_at(self.rows, p)
+                {
+                    let mut field = crate::text_field::FieldState::new(
+                        self.rows[r]
+                            .cells
+                            .get(c)
+                            .map_or(String::new(), |cell| cell.words().to_string()),
+                    );
+                    field.focus = crate::text_field::FieldFocus::Control;
+                    state.edit = Some(field);
+                }
+                TableEvent::Moved
             }
             TableHit::PagePrev => match self.paging {
                 Some((page, _)) if page > 1 => TableEvent::Page(page - 1),
@@ -1447,6 +1593,7 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
         }
     }
     state.offset = state.offset.min(lines.len().saturating_sub(view));
+    let mut edit_cursor = None;
     for (li, line) in lines.iter().enumerate().skip(state.offset).take(view) {
         let y = body.y + (li - state.offset) as u16;
         let k = match line {
@@ -1535,6 +1682,35 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
             let inset = if i == 0 { indent.min(widths[i]) } else { 0 };
             let (sx, sw) = (x + inset, widths[i] - inset);
             let cell = table.rows[row].cells.get(i).cloned().unwrap_or_else(Cell::missing);
+            // In a table that edits, the active cell wears the focus ring's edges in the gaps
+            // beside it; open, it is a field: its ground, the text typed, the cursor.
+            let here = table.editing && table.focused && k == state.active && i == state.cell;
+            if here {
+                let ring = Style::new().fg(look.token("ring")).bg(t(ground));
+                if sx > 0 {
+                    buf.set_string(sx - 1, y, glyphs.edge_start, ring);
+                }
+                buf.set_string(sx + sw, y, glyphs.edge_end, ring);
+            }
+            if let Some(field) = state.edit.as_ref().filter(|_| here) {
+                let fg = look.color("field");
+                buf.set_style(Rect::new(sx, y, sw, 1), Style::new().bg(t(fg)));
+                let value = field.value();
+                let at = text::width(&value[..field.cursor()]) as u16;
+                // The window follows the cursor.
+                let skip = (at + 1).saturating_sub(sw) as usize;
+                let shown: String = value.chars().skip(skip).collect();
+                buf.set_stringn(
+                    sx,
+                    y,
+                    &shown,
+                    sw as usize,
+                    TextRole::Body.style(look).fg(look.token("foreground")).bg(t(fg)),
+                );
+                edit_cursor = Some(ratatui::layout::Position::new(sx + at - skip as u16, y));
+                x += widths[i] + 2;
+                continue;
+            }
             let spans = table.cell_spans(&cell, sw, ground, ink);
             let cw: u16 = spans.iter().map(|(s, _)| text::width(s) as u16).sum();
             let mut cx = if c.align == Align::End {
@@ -1556,6 +1732,8 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
             buf.set_string(bx, y, glyphs.more, Style::new().fg(t(ink)).bg(t(ground)));
         }
     }
+
+    state.edit_cursor = edit_cursor;
 
     // The foot: the range at the end of the frame's bottom line.
     let range = format!(" {} ", table.range());

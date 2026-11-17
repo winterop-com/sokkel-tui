@@ -162,6 +162,27 @@ pub fn draw(f: &mut Frame, look: &Look) {
         &mut y,
     );
 
+    // A table that edits: the active cell in the ring's edges, one open as a field.
+    let editable = [
+        Column::new("Job").width(ColumnWidth::Fill(1)),
+        Column::new("State"),
+        Column::new("Started by").editable(),
+        Column::new("Took").align(Align::End),
+    ];
+    let table = Table::new(look, &editable, &rows[..3]).editing(true).focused(true);
+    let mut state = TableState::default();
+    state.active = 1;
+    state.cell = 2;
+    state.edit = Some(sokkel_tui::FieldState::new("grace and linus"));
+    place(
+        f,
+        "a cell being edited (Enter saves, Tab moves on, Escape drops it)",
+        7,
+        &table,
+        &mut state,
+        &mut y,
+    );
+
     // A pager at the foot: the second page of three, the range counted from it.
     let table = Table::new(look, &columns, &rows)
         .paging(2, 3)
