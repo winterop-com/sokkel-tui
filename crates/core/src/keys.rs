@@ -71,6 +71,29 @@ impl From<Key> for KeyPress {
 }
 
 impl KeyPress {
+    /// A key a script names: `tab`, `shift-tab`, `up`, `down`, `left`, `right`, `home`, `end`,
+    /// `enter`, `esc`, `space`, `backspace`, `ctrl-` and a character, or one character.
+    pub fn named(name: &str) -> Option<KeyPress> {
+        let key = |k| Some(KeyPress::new(k));
+        match name {
+            "tab" => key(Key::Tab),
+            "shift-tab" => key(Key::BackTab),
+            "up" => key(Key::Up),
+            "down" => key(Key::Down),
+            "left" => key(Key::Left),
+            "right" => key(Key::Right),
+            "home" => key(Key::Home),
+            "end" => key(Key::End),
+            "enter" => key(Key::Enter),
+            "esc" => key(Key::Escape),
+            "space" => key(Key::Char(' ')),
+            "backspace" => key(Key::Backspace),
+            s if s.starts_with("ctrl-") => s.chars().nth(5).map(|c| KeyPress::ctrl(Key::Char(c))),
+            s if s.chars().count() == 1 => s.chars().next().map(|c| KeyPress::new(Key::Char(c))),
+            _ => None,
+        }
+    }
+
     /// A crossterm key event as the parts read it; `None` for a release, a repeat the terminal
     /// reports apart, or a key no part answers.
     pub fn from_crossterm(ev: &ratatui::crossterm::event::KeyEvent) -> Option<KeyPress> {

@@ -15,6 +15,12 @@ That is the `07_runs` example: `cargo run --example 07_runs`, then Ctrl+K for th
   and the breakpoints in columns (`md` about 90, `lg` about 120); a buffer as SVG and as text.
 - Focus and keys: tab order, layers, the ring on keyboard focus, a shortcuts registry by typed
   character.
+- The runtime (`app`): `app::run` drives one screen; `app::run_shell` runs an app in sokkel's frame
+  and does what every app does: the rail collapsing and its drawer below md, the command palette
+  (Ctrl+K), the settings dialog with the look and the frame, the account menu, the shortcuts
+  dialog (`?`), the search (`/`), Tab through the frame and the page, the mouse switched on and
+  off, and the look kept between runs. An app gives its parts, its page, its commands and its own
+  layers; `app::shot` draws a frame after scripted keys, for tests and specimens.
 - The parts, each from its spec in sokkel-design: `Button`, `TextField`, `PageState`, `PageHeader`,
   `Section`, `Table`, the frame (`Rail`, `TopBar`, `StatusLine`), and the overlays `Dialog`,
   `DropdownMenu`, `Select`, `CommandPalette` and `SettingsDialog`.
@@ -25,8 +31,8 @@ That is the `07_runs` example: `cargo run --example 07_runs`, then Ctrl+K for th
   - `03_table`: the one table, by keys and mouse; narrow the terminal for cards.
   - `04_overlays`: a menu with a submenu, a select, a confirm dialog that holds.
   - `05_palette`: the command palette (Ctrl+K, every theme) and the settings dialog.
-  - `06_shell`: the frame drawn to SVG and text.
-  - `07_runs`: Tidevann's runs, every part together.
+  - `06_shell`: the frame on the runtime, around one page.
+  - `07_runs`: Tidevann's runs on the runtime: two pages, its commands, a menu and a dialog.
   - `08_gallery`: every part's sheet, browsed (t theme, s scheme, a ASCII, c no color).
 
 ![Button and TextField in tidevann dark at 120 columns](docs/assets/controls-tidevann-dark-120.png)

@@ -12,13 +12,12 @@
 //! With arguments it writes one frame out as SVG and text, cell for cell, for `make specimens`:
 //! cargo run --example 06_shell -- <theme> <light|dark> <cols> <rows> <out-without-extension> [collapsed] [drawer] [compact]
 
-use ratatui::{Frame, Terminal, backend::TestBackend, layout::Rect};
-use sokkel_tui::app::{self, Chrome, ShellApp};
+use ratatui::{Frame, layout::Rect};
+use sokkel_tui::app::{self, Chrome, Cx, ShellApp};
 use sokkel_tui::cells::Width;
 use sokkel_tui::{
     Align, Button, ButtonVariant, Cell, Column, ColumnWidth, Density, Fact, Look, NoteTone, PageHeader, Rail,
-    RailEntry, RailFoot, RailGroup, Row, RowTone, Scheme, ShellState, SortDir, StatusLine, Table, TableState, TopBar,
-    snapshot,
+    RailEntry, RailFoot, RailGroup, Row, RowTone, Scheme, SortDir, StatusLine, Table, TableState, TopBar, snapshot,
 };
 
 struct RunRow {
@@ -100,7 +99,8 @@ impl ShellApp for Runs {
         }
     }
 
-    fn page(&mut self, look: &Look, f: &mut Frame, page: Rect, _active: bool) {
+    fn page(&mut self, f: &mut Frame, page: Rect, cx: &mut Cx) {
+        let look = cx.look;
         let narrow = Width::of(f.area()) == Width::Narrow;
         let header = PageHeader::new(look, "Runs").count("1,200 runs").actions([
             Button::new(look, "Filter").variant(ButtonVariant::Secondary),
@@ -175,14 +175,18 @@ fn main() -> std::io::Result<()> {
     if flag("compact") {
         look = look.with_density(Density::Compact);
     }
-    let mut shell = ShellState::default();
-    shell.collapsed = flag("collapsed");
-    shell.drawer = flag("drawer");
     let (cols, rows): (u16, u16) = (args[3].parse().unwrap(), args[4].parse().unwrap());
-    let mut term = Terminal::new(TestBackend::new(cols, rows)).unwrap();
-    term.draw(|f| app::draw_shell(&mut Runs::default(), &look, f, &mut shell, true))
-        .unwrap();
-    let buffer = term.backend().buffer();
+    let (collapsed, drawer) = (flag("collapsed"), flag("drawer"));
+    let buffer = &app::shot(
+        Runs::default(),
+        look.clone(),
+        (cols, rows),
+        |shell| {
+            shell.collapsed = collapsed;
+            shell.drawer = drawer;
+        },
+        &[],
+    );
     std::fs::write(
         format!("{}.svg", args[5]),
         snapshot::svg(buffer, look.token("background"), look.token("foreground")),

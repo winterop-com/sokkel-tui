@@ -10,7 +10,7 @@ use crate::cells::{Width, by_density, page_inset};
 use crate::keys::{Key, KeyPress, Pointer, PointerKind};
 use crate::look::Look;
 use crate::rail::Rail;
-use crate::status_line::StatusLine;
+use crate::status_line::{NoteTone, StatusLine};
 use crate::text;
 use crate::top_bar::{TopBar, TopBarFocus};
 use ratatui::buffer::Buffer;
@@ -108,6 +108,13 @@ pub struct ShellState {
     /// The top bar's search: what it holds, and whether it is being typed in (`/` or a press).
     pub query: String,
     pub searching: bool,
+    /// Keyboard focus on the frame's controls, as the runtime's focus says: the ring is drawn on
+    /// them.
+    pub rail_focus: Option<(usize, usize)>,
+    pub top_focus: TopBarFocus,
+    /// What the status line says in place of the app's note (a sequence waiting for its second
+    /// key).
+    pub note: Option<String>,
     cursor: Option<Position>,
     window: Rect,
     narrow: bool,
@@ -151,7 +158,11 @@ impl<'a> Shell<'a> {
             window,
             Style::new().bg(look.token("background")).fg(look.token("foreground")),
         );
-        let rail = self.rail.clone().collapsed(state.collapsed, true);
+        let rail = self
+            .rail
+            .clone()
+            .collapsed(state.collapsed, true)
+            .focused(state.rail_focus);
         let shell = ShellLayout::new(look, window, rail.width());
         state.window = window;
         state.narrow = shell.width == Width::Narrow;
@@ -173,9 +184,11 @@ impl<'a> Shell<'a> {
         if top.has_search() {
             top = top.search(state.query.clone());
         }
-        if state.searching {
-            top = top.focus(TopBarFocus::Search);
-        }
+        top = top.focus(if state.searching {
+            TopBarFocus::Search
+        } else {
+            state.top_focus
+        });
         let l = top.layout(shell.top);
         (state.menu, state.search, state.palette) = (l.menu, l.search, l.palette);
         if l.search.is_none() {
@@ -186,7 +199,10 @@ impl<'a> Shell<'a> {
             Position::new(r.x + 3 + text::width(&state.query).min(room) as u16, r.y)
         });
         (&top).render(shell.top, buf);
-        (&self.foot).render(shell.foot, buf);
+        match &state.note {
+            Some(note) => (&self.foot.clone().note(note.clone(), NoteTone::Plain)).render(shell.foot, buf),
+            None => (&self.foot).render(shell.foot, buf),
+        }
         shell.page(look)
     }
 
@@ -195,7 +211,7 @@ impl<'a> Shell<'a> {
         if !(state.drawer && state.narrow) {
             return;
         }
-        let rail = self.rail.clone().collapsed(false, false);
+        let rail = self.rail.clone().collapsed(false, false).focused(state.rail_focus);
         let r = ShellLayout::drawer(state.window, rail.width());
         Clear.render(r, buf);
         (&rail).render(r, buf);
@@ -295,6 +311,20 @@ impl ShellState {
             return ShellEvent::Palette;
         }
         ShellEvent::Ignored
+    }
+
+    /// The rail's entries as drawn, by (group, entry), in the frame or in the open drawer.
+    pub fn entries(&self) -> &[((usize, usize), Rect)] {
+        &self.entries
+    }
+
+    /// The top bar's search field and palette button as drawn.
+    pub fn search_area(&self) -> Option<Rect> {
+        self.search
+    }
+
+    pub fn palette_area(&self) -> Option<Rect> {
+        self.palette
     }
 
     /// Where the account control was drawn: the account menu opens over it.

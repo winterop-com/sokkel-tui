@@ -31,6 +31,12 @@ the contract say so that it does?
 - `glyphs`: glyphs.json's glyphs, icons and boxes in Unicode or ASCII; sokkel-tui's own only where
   the contract is open (the one-row edge, T3; the focus ring, T4).
 - `keys`: keys as the parts read them, matched by the typed character; Mod is Ctrl, no Alt.
+- `app`: the runtime. `run` drives a screen (the terminal taken and given back, a frame each
+  `motion-fast`, the mouse captured while wanted); `run_shell` runs an app in the frame with the
+  palette, the settings (choices it draws itself), the account menu, the shortcuts dialog, the
+  search, one focus through the frame and the page, the app's own layers, and the look kept under
+  the web's keys; `shot` draws a frame after scripted keys. Not yet: a back stack with settings
+  as a route, the rail's resize, focus moved to a new page's heading.
 - `button` (step 1): every variant in rest, hover, focus, busy, reason, disabled, invalid and open;
   icon buttons with `pressed`, `destructiveHover`, an icon at either end. One row at every size; the
   edge in the pad cells; the focus ring in the cell beside each end; the tip for the status line.

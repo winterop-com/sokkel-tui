@@ -11,6 +11,7 @@
 
 use crate::cells::Width;
 use crate::dialog::{Dialog, DialogFocus, DialogWidth};
+use crate::focus::{Focus, FocusId};
 use crate::glyphs::Charset;
 use crate::keys::{Key, KeyPress, Pointer, PointerKind};
 use crate::look::{Depth, Look};
@@ -28,9 +29,10 @@ use crate::text::TextRole;
 use crate::tokens::{self, Density, Scheme};
 use crate::top_bar::TopBar;
 use ratatui::Frame;
+use ratatui::buffer::Buffer;
 use ratatui::crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event};
 use ratatui::crossterm::execute;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::widgets::Widget;
 use std::time::{Duration, Instant};
 
@@ -156,6 +158,18 @@ impl Default for AccountWords {
     }
 }
 
+/// What the runtime hands the app with each frame and event: the look, the window, the one
+/// keyboard focus the frame and the page share (the page names its stops in it while it draws),
+/// where the pointer is, whether the page has the reader (no layer over it), and the time.
+pub struct Cx<'a> {
+    pub look: &'a Look,
+    pub window: Rect,
+    pub focus: &'a mut Focus,
+    pub hover: Option<Position>,
+    pub active: bool,
+    pub now: u64,
+}
+
 /// What an app's key did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Flow {
@@ -174,9 +188,16 @@ pub trait ShellApp {
     }
     /// The rail, the top bar and the status line, this frame.
     fn chrome<'a>(&'a self, look: &'a Look) -> Chrome<'a>;
-    /// Draw the page in `area`. `active` is false while a layer (the palette, the settings, the
-    /// drawer) stands over it: keyboard focus is there.
-    fn page(&mut self, look: &Look, f: &mut Frame, area: Rect, active: bool);
+    /// Draw the page in `area`, naming its stops in `cx.focus` as it draws them (after the
+    /// frame's: the rail's entries, the search, the palette button).
+    fn page(&mut self, f: &mut Frame, area: Rect, cx: &mut Cx);
+    /// Whether the app has a layer of its own open (a dialog, a menu): keys and presses go to
+    /// it first, and the frame's shortcuts keep quiet.
+    fn layer_open(&self) -> bool {
+        false
+    }
+    /// Draw the app's open layer, over the frame and the drawer.
+    fn layer(&mut self, _f: &mut Frame, _cx: &mut Cx) {}
     /// The app's commands, shown in the palette before the runtime's own.
     fn commands(&self) -> Vec<CommandGroup> {
         Vec::new()
@@ -206,12 +227,14 @@ pub trait ShellApp {
     fn account(&self) -> Account {
         Account::default()
     }
-    /// A key while no layer is open.
-    fn key(&mut self, _key: KeyPress) -> Flow {
+    /// A key for the page, or for the app's open layer: `cx.focus` says which of its stops has
+    /// focus. Tab and the frame's own keys are the runtime's.
+    fn key(&mut self, _key: KeyPress, _cx: &mut Cx) -> Flow {
         Flow::Ignored
     }
-    /// A pointer event on the page.
-    fn pointer(&mut self, _p: Pointer) {}
+    /// A pointer event on the page or on the app's open layer; a press has already focused the
+    /// stop under it.
+    fn pointer(&mut self, _p: Pointer, _cx: &mut Cx) {}
     fn tick(&mut self, _now_ms: u64) {}
 }
 
@@ -261,18 +284,18 @@ const RAIL: &str = "sokkel.rail";
 const MOUSE: &str = "sokkel.mouse";
 const THEME: &str = "sokkel.theme:";
 
-/// Draw `app` in its frame once: the shell, the page, the drawer over it. [`run_shell`] does this
-/// each frame; a program that writes a frame out (a specimen) calls it on a test backend.
-pub fn draw_shell(app: &mut impl ShellApp, look: &Look, f: &mut Frame, shell: &mut ShellState, active: bool) {
-    let window = f.area();
-    let page = {
-        let chrome = app.chrome(look);
-        Shell::new(look, chrome.rail, chrome.top, chrome.foot).render(window, f.buffer_mut(), shell)
-    };
-    let drawer = shell.drawer;
-    app.page(look, f, page, active && !drawer);
-    let chrome = app.chrome(look);
-    Shell::new(look, chrome.rail, chrome.top, chrome.foot).render_drawer(f.buffer_mut(), shell);
+/// The frame's own stops.
+fn search_stop() -> FocusId {
+    FocusId::new("sokkel.search")
+}
+fn palette_stop() -> FocusId {
+    FocusId::new("sokkel.palette")
+}
+fn account_stop() -> FocusId {
+    FocusId::new("sokkel.account")
+}
+fn entry_stop(g: usize, e: usize) -> FocusId {
+    FocusId::new("sokkel.rail").child((g as u64) << 32 | e as u64)
 }
 
 /// A [`ShellApp`] with the frame the runtime keeps for it.
@@ -294,6 +317,8 @@ struct Host<A> {
     /// Where the look is kept, and the look last kept there.
     kept: Option<std::path::PathBuf>,
     worn: (String, Scheme, Density),
+    focus: Focus,
+    hover: Option<Position>,
 }
 
 /// Run `app` in sokkel's frame, starting in `look`, or in the look it kept when it has an
@@ -305,29 +330,174 @@ pub fn run_shell(app: impl ShellApp, look: Look) -> std::io::Result<()> {
         Some(path) if !asked => read_look(path, &look).unwrap_or(look),
         _ => look,
     };
-    let mut host = Host {
-        kept,
-        worn: (look.theme().to_string(), look.scheme(), look.density()),
-        app,
-        look,
-        shell: ShellState::default(),
-        layer: Layer::None,
-        palette: PaletteState::default(),
-        palette_at: None,
-        settings: SettingsState::default(),
-        settings_at: None,
-        width: Width::Wide,
-        mouse: true,
-        account: MenuState::default(),
-        window: Rect::default(),
-        keys: Shortcuts::new(),
-        now: 0,
-    };
-    host.keys = host.registry();
+    let mut host = Host::new(app, look, kept);
     run(&mut host)
 }
 
+/// One frame of `app` in a `cols` by `rows` window, after `setup` (the rail collapsed, the
+/// drawer open) and the `keys` given, a tenth of a second apart: what a test or a specimen looks
+/// at, with nothing kept.
+pub fn shot(
+    app: impl ShellApp,
+    look: Look,
+    (cols, rows): (u16, u16),
+    setup: impl FnOnce(&mut ShellState),
+    keys: &[KeyPress],
+) -> Buffer {
+    let mut host = Host::new(app, look, None);
+    setup(&mut host.shell);
+    let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(cols, rows)).expect("a test terminal");
+    term.draw(|f| host.draw(f)).expect("a frame");
+    for (n, key) in keys.iter().enumerate() {
+        host.tick(n as u64 * 100);
+        host.key(*key);
+        term.draw(|f| host.draw(f)).expect("a frame");
+    }
+    term.backend().buffer().clone()
+}
+
 impl<A: ShellApp> Host<A> {
+    fn new(app: A, look: Look, kept: Option<std::path::PathBuf>) -> Host<A> {
+        let mut host = Host {
+            kept,
+            worn: (look.theme().to_string(), look.scheme(), look.density()),
+            app,
+            look,
+            shell: ShellState::default(),
+            layer: Layer::None,
+            palette: PaletteState::default(),
+            palette_at: None,
+            settings: SettingsState::default(),
+            settings_at: None,
+            width: Width::Wide,
+            mouse: true,
+            account: MenuState::default(),
+            window: Rect::default(),
+            keys: Shortcuts::new(),
+            now: 0,
+            focus: Focus::new(),
+            hover: None,
+        };
+        host.keys = host.registry();
+        host
+    }
+
+    /// The frame and the page, once: the shell, the frame's stops, the page with its own, the
+    /// account last, the drawer, the app's layer.
+    fn draw_frame(&mut self, f: &mut Frame) {
+        let look = &self.look;
+        let window = f.area();
+        // The ring goes where the keyboard left focus, from the last frame's stops.
+        self.shell.rail_focus = self
+            .shell
+            .entries()
+            .iter()
+            .map(|(e, _)| *e)
+            .find(|&(g, e)| self.focus.ring(entry_stop(g, e)));
+        self.shell.top_focus = if self.focus.ring(palette_stop()) {
+            crate::top_bar::TopBarFocus::Palette
+        } else {
+            crate::top_bar::TopBarFocus::None
+        };
+        self.shell.note = self
+            .keys
+            .pending()
+            .map(|c| format!("{} {} …", c.to_uppercase(), ShortcutWords::default().then));
+        let page = {
+            let chrome = self.app.chrome(look);
+            Shell::new(look, chrome.rail, chrome.top, chrome.foot).render(window, f.buffer_mut(), &mut self.shell)
+        };
+        self.focus.begin();
+        if !self.shell.drawer {
+            for &((g, e), r) in self.shell.entries() {
+                self.focus.stop(entry_stop(g, e), r);
+            }
+        }
+        if let Some(r) = self.shell.search_area() {
+            self.focus.text_stop(search_stop(), r);
+        }
+        if let Some(r) = self.shell.palette_area() {
+            self.focus.stop(palette_stop(), r);
+        }
+        let active = self.layer == Layer::None && !self.shell.searching && !self.shell.drawer;
+        let mut cx = Cx {
+            look,
+            window,
+            focus: &mut self.focus,
+            hover: self.hover.filter(|_| active),
+            active,
+            now: self.now,
+        };
+        self.app.page(f, page, &mut cx);
+        if let Some(r) = self.shell.account() {
+            self.focus.stop(account_stop(), r);
+            if self.focus.ring(account_stop()) {
+                let ring = look.color("ring");
+                f.buffer_mut()[(r.x, r.y)]
+                    .set_symbol(look.glyphs().focus_mark)
+                    .set_fg(look.terminal(ring));
+            }
+        }
+        {
+            let chrome = self.app.chrome(look);
+            Shell::new(look, chrome.rail, chrome.top, chrome.foot).render_drawer(f.buffer_mut(), &mut self.shell);
+        }
+        if self.shell.drawer {
+            for &((g, e), r) in self.shell.entries() {
+                self.focus.stop(entry_stop(g, e), r);
+            }
+        }
+        self.focus.end();
+        if self.app.layer_open() {
+            let mut cx = Cx {
+                look,
+                window,
+                focus: &mut self.focus,
+                hover: self.hover,
+                active: self.layer == Layer::None,
+                now: self.now,
+            };
+            self.app.layer(f, &mut cx);
+        }
+    }
+
+    /// A key on one of the frame's own stops: Enter or Space acts, the arrows move along the
+    /// rail. True when the frame took it.
+    fn frame_key(&mut self, key: KeyPress) -> bool {
+        let entries: Vec<(usize, usize)> = self.shell.entries().iter().map(|(e, _)| *e).collect();
+        let on = entries.iter().position(|&(g, e)| self.focus.is(entry_stop(g, e)));
+        if let Some(i) = on {
+            let to = match key.key {
+                Key::Down => Some((i + 1).min(entries.len() - 1)),
+                Key::Up => Some(i.saturating_sub(1)),
+                Key::Home => Some(0),
+                Key::End => Some(entries.len() - 1),
+                _ => None,
+            };
+            if let Some(to) = to {
+                self.focus.saw_key();
+                let (g, e) = entries[to];
+                self.focus.set(entry_stop(g, e));
+                return true;
+            }
+            if key.is_press() {
+                let (g, e) = entries[i];
+                self.shell.drawer = false;
+                self.app.entry(g, e);
+                return true;
+            }
+        }
+        if key.is_press() && self.focus.is(palette_stop()) {
+            self.open(Layer::Palette);
+            return true;
+        }
+        if key.is_press() && self.focus.is(account_stop()) {
+            self.open(Layer::Account);
+            return true;
+        }
+        false
+    }
+
     /// The runtime's shortcuts, then the app's.
     fn registry(&self) -> Shortcuts<Act> {
         let mut keys = Shortcuts::new()
@@ -351,6 +521,8 @@ impl<A: ShellApp> Host<A> {
             Act::Settings => self.open(Layer::Settings),
             Act::Search => {
                 if self.shell.focus_search() {
+                    self.focus.saw_key();
+                    self.focus.set(search_stop());
                     self.app.search(&self.shell.query.clone());
                 } else {
                     // Below md the search gives way to the palette's button.
@@ -677,6 +849,17 @@ impl<A: ShellApp> Program for Host<A> {
             }
             Layer::None => {}
         }
+        if self.app.layer_open() {
+            let mut cx = Cx {
+                look: &self.look,
+                window: self.window,
+                focus: &mut self.focus,
+                hover: self.hover,
+                active: true,
+                now: self.now,
+            };
+            return self.app.key(key, &mut cx) == Flow::Quit;
+        }
         match self.shell.key(key) {
             ShellEvent::Search => {
                 let query = self.shell.query.clone();
@@ -684,10 +867,16 @@ impl<A: ShellApp> Program for Host<A> {
                 return false;
             }
             ShellEvent::Ignored if !self.shell.searching => {}
-            _ => return false,
+            _ => {
+                // Left the search: Tab goes on from it, Enter and Escape stay on it.
+                if matches!(key.key, Key::Tab | Key::BackTab) {
+                    self.focus.handle(key);
+                }
+                return false;
+            }
         }
         let cx = KeyContext {
-            typing: self.app.typing(),
+            typing: self.focus.typing() || self.app.typing(),
             under_layer: false,
             now_ms: self.now,
         };
@@ -698,8 +887,26 @@ impl<A: ShellApp> Program for Host<A> {
         if self.keys.pending().is_some() {
             return false;
         }
+        if self.focus.handle(key) {
+            // Tab onto the search starts typing in it.
+            if self.focus.is(search_stop()) {
+                self.shell.focus_search();
+            }
+            return false;
+        }
+        if self.frame_key(key) {
+            return false;
+        }
+        let mut cx = Cx {
+            look: &self.look,
+            window: self.window,
+            focus: &mut self.focus,
+            hover: self.hover,
+            active: true,
+            now: self.now,
+        };
         // Escape closes the layer on top and never quits (patterns/shell): Ctrl+Q quits.
-        self.app.key(key) == Flow::Quit
+        self.app.key(key, &mut cx) == Flow::Quit
     }
 
     fn pointer(&mut self, p: Pointer) {
@@ -764,18 +971,41 @@ impl<A: ShellApp> Program for Host<A> {
                 self.account = st;
                 self.account_event(event, &acts);
             }
-            Layer::None => match self.shell.pointer(p) {
-                ShellEvent::Account => self.open(Layer::Account),
-                ShellEvent::Entry(g, e) => self.app.entry(g, e),
-                ShellEvent::Palette => self.open(Layer::Palette),
-                ShellEvent::Search => {
-                    let query = self.shell.query.clone();
-                    self.app.search(&query);
+            Layer::None => {
+                if matches!(p.kind, PointerKind::Move) {
+                    self.hover = Some(p.at);
                 }
-                ShellEvent::Changed => {}
-                ShellEvent::Ignored if self.shell.covers(p.at) => {}
-                ShellEvent::Ignored => self.app.pointer(p),
-            },
+                let mut cx = Cx {
+                    look: &self.look,
+                    window: self.window,
+                    focus: &mut self.focus,
+                    hover: self.hover,
+                    active: true,
+                    now: self.now,
+                };
+                if self.app.layer_open() {
+                    self.app.pointer(p, &mut cx);
+                    return;
+                }
+                match self.shell.pointer(p) {
+                    ShellEvent::Account => self.open(Layer::Account),
+                    ShellEvent::Entry(g, e) => self.app.entry(g, e),
+                    ShellEvent::Palette => self.open(Layer::Palette),
+                    ShellEvent::Search => {
+                        self.focus.press(p.at);
+                        let query = self.shell.query.clone();
+                        self.app.search(&query);
+                    }
+                    ShellEvent::Changed => {}
+                    ShellEvent::Ignored if self.shell.covers(p.at) => {}
+                    ShellEvent::Ignored => {
+                        if p.kind == PointerKind::Press {
+                            cx.focus.press(p.at);
+                        }
+                        self.app.pointer(p, &mut cx);
+                    }
+                }
+            }
         }
     }
 
@@ -791,8 +1021,7 @@ impl<A: ShellApp> Program for Host<A> {
             }
             self.worn = worn;
         }
-        let active = self.layer == Layer::None && !self.shell.searching;
-        draw_shell(&mut self.app, &self.look, f, &mut self.shell, active);
+        self.draw_frame(f);
         if let Some(pos) = self.shell.cursor_position() {
             f.set_cursor_position(pos);
         }

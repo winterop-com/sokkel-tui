@@ -307,118 +307,138 @@ fn draw_sheet(f: &mut Frame, sheet: &str, look: &Look) {
     }
 }
 
-/// The sheets in the terminal, scrolled when taller than it.
-fn view() -> std::io::Result<()> {
-    use ratatui::crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, MouseEventKind};
-    use ratatui::crossterm::execute;
-    use sokkel_tui::{Fact, Key, KeyPress, NoteTone, StatusLine, tokens};
+/// The sheets in the terminal, scrolled when taller than it, on the library's runtime.
+struct Gallery {
+    look: Look,
+    sheet: usize,
+    theme: usize,
+    scheme: Scheme,
+    ascii: bool,
+    nocolor: bool,
+    mouse: bool,
+    scroll: u16,
+    /// The scroll's end and a page's rows, from the last frame.
+    max_scroll: u16,
+    page: u16,
+}
 
-    let themes = tokens::themes();
-    let (mut sheet, mut theme, mut scheme, mut ascii, mut nocolor) = (0usize, 0usize, Scheme::Dark, false, false);
-    let mut scroll: u16 = 0;
-    let mut mouse = true;
-    let mut terminal = ratatui::init();
-    execute!(std::io::stdout(), EnableMouseCapture)?;
-    let result = (|| -> std::io::Result<()> {
-        loop {
-            let mut look = Look::new(themes[theme], scheme).expect("a theme the contract has");
-            if ascii {
-                look = look.with_charset(Charset::Ascii);
-            }
-            if nocolor {
-                look = look.with_depth(Depth::None);
-            }
-            let (name, tall, narrow) = SHEETS[sheet];
-            let mut max_scroll = 0;
-            terminal.draw(|f| {
-                let area = f.area();
-                let rows = if area.width >= 100 { tall } else { narrow };
-                // The sheet, drawn whole off screen at the terminal's width.
-                let mut off = Terminal::new(TestBackend::new(area.width, rows)).expect("a buffer");
-                off.draw(|g| draw_sheet(g, name, &look)).expect("a sheet");
-                let src = off.backend().buffer();
-                let view = area.height.saturating_sub(1);
-                max_scroll = rows.saturating_sub(view);
-                scroll = scroll.min(max_scroll);
-                for y in 0..view.min(rows) {
-                    for x in 0..area.width {
-                        f.buffer_mut()[(x, y)] = src[(x, y + scroll)].clone();
-                    }
-                }
-                let foot = StatusLine::new(&look)
-                    .note(
-                        "← → sheets  t theme  s scheme  a ascii  c no color  m mouse  q quit",
-                        NoteTone::Plain,
-                    )
-                    .facts([
-                        Fact::labeled("mouse", if mouse { "on" } else { "off" }),
-                        Fact::labeled("sheet", name).code(),
-                        Fact::labeled("theme", themes[theme]).code(),
-                        Fact::new(match scheme {
-                            Scheme::Dark => "dark",
-                            Scheme::Light => "light",
-                        }),
-                    ]);
-                f.render_widget(&foot, Rect::new(0, area.height.saturating_sub(1), area.width, 1));
-            })?;
-            let page = terminal.size()?.height.saturating_sub(2).max(1);
-            match event::read()? {
-                Event::Key(k) => {
-                    let Some(key) = KeyPress::from_crossterm(&k) else {
-                        continue;
-                    };
-                    if key.ctrl && key.key == Key::Char('c') {
-                        return Ok(());
-                    }
-                    match key.key {
-                        Key::Char('q') | Key::Escape => return Ok(()),
-                        Key::Right | Key::Tab => {
-                            sheet = (sheet + 1) % SHEETS.len();
-                            scroll = 0;
-                        }
-                        Key::Left | Key::BackTab => {
-                            sheet = (sheet + SHEETS.len() - 1) % SHEETS.len();
-                            scroll = 0;
-                        }
-                        Key::Char('t') => theme = (theme + 1) % themes.len(),
-                        Key::Char('T') => theme = (theme + themes.len() - 1) % themes.len(),
-                        Key::Char('s') => {
-                            scheme = match scheme {
-                                Scheme::Dark => Scheme::Light,
-                                Scheme::Light => Scheme::Dark,
-                            }
-                        }
-                        Key::Char('a') => ascii = !ascii,
-                        Key::Char('c') => nocolor = !nocolor,
-                        Key::Char('m') => {
-                            mouse = !mouse;
-                            if mouse {
-                                execute!(std::io::stdout(), EnableMouseCapture)?;
-                            } else {
-                                execute!(std::io::stdout(), DisableMouseCapture)?;
-                            }
-                        }
-                        Key::Down => scroll = (scroll + 1).min(max_scroll),
-                        Key::Up => scroll = scroll.saturating_sub(1),
-                        Key::PageDown | Key::Char(' ') => scroll = (scroll + page).min(max_scroll),
-                        Key::PageUp => scroll = scroll.saturating_sub(page),
-                        Key::Home => scroll = 0,
-                        Key::End => scroll = max_scroll,
-                        _ => {}
-                    }
-                }
-                Event::Mouse(m) => match m.kind {
-                    MouseEventKind::ScrollDown => scroll = (scroll + 3).min(max_scroll),
-                    MouseEventKind::ScrollUp => scroll = scroll.saturating_sub(3),
-                    _ => {}
-                },
-                _ => {}
+impl Gallery {
+    fn relook(&mut self) {
+        let mut look =
+            Look::new(sokkel_tui::tokens::themes()[self.theme], self.scheme).expect("a theme the contract has");
+        if self.ascii {
+            look = look.with_charset(Charset::Ascii);
+        }
+        if self.nocolor {
+            look = look.with_depth(Depth::None);
+        }
+        self.look = look;
+    }
+}
+
+impl sokkel_tui::app::Program for Gallery {
+    fn look(&self) -> &Look {
+        &self.look
+    }
+
+    fn mouse(&self) -> bool {
+        self.mouse
+    }
+
+    fn draw(&mut self, f: &mut Frame) {
+        use sokkel_tui::{Fact, NoteTone, StatusLine};
+        let area = f.area();
+        let (name, tall, narrow) = SHEETS[self.sheet];
+        let rows = if area.width >= 100 { tall } else { narrow };
+        // The sheet, drawn whole off screen at the terminal's width.
+        let mut off = Terminal::new(TestBackend::new(area.width, rows)).expect("a buffer");
+        off.draw(|g| draw_sheet(g, name, &self.look)).expect("a sheet");
+        let src = off.backend().buffer();
+        let view = area.height.saturating_sub(1);
+        self.max_scroll = rows.saturating_sub(view);
+        self.page = area.height.saturating_sub(2).max(1);
+        self.scroll = self.scroll.min(self.max_scroll);
+        for y in 0..view.min(rows) {
+            for x in 0..area.width {
+                f.buffer_mut()[(x, y)] = src[(x, y + self.scroll)].clone();
             }
         }
-    })();
-    execute!(std::io::stdout(), DisableMouseCapture)?;
-    ratatui::restore();
-    result
+        let foot = StatusLine::new(&self.look)
+            .note(
+                "← → sheets  t theme  s scheme  a ascii  c no color  m mouse  q quit",
+                NoteTone::Plain,
+            )
+            .facts([
+                Fact::labeled("mouse", if self.mouse { "on" } else { "off" }),
+                Fact::labeled("sheet", name).code(),
+                Fact::labeled("theme", self.look.theme()).code(),
+                Fact::new(if self.scheme == Scheme::Dark { "dark" } else { "light" }),
+            ]);
+        f.render_widget(&foot, Rect::new(0, area.height.saturating_sub(1), area.width, 1));
+    }
+
+    fn key(&mut self, key: sokkel_tui::KeyPress) -> bool {
+        use sokkel_tui::Key;
+        let themes = sokkel_tui::tokens::themes().len();
+        match key.key {
+            Key::Char('q') | Key::Escape => return true,
+            Key::Right | Key::Tab => {
+                self.sheet = (self.sheet + 1) % SHEETS.len();
+                self.scroll = 0;
+            }
+            Key::Left | Key::BackTab => {
+                self.sheet = (self.sheet + SHEETS.len() - 1) % SHEETS.len();
+                self.scroll = 0;
+            }
+            Key::Char('t') => self.theme = (self.theme + 1) % themes,
+            Key::Char('T') => self.theme = (self.theme + themes - 1) % themes,
+            Key::Char('s') => {
+                self.scheme = if self.scheme == Scheme::Dark {
+                    Scheme::Light
+                } else {
+                    Scheme::Dark
+                }
+            }
+            Key::Char('a') => self.ascii = !self.ascii,
+            Key::Char('c') => self.nocolor = !self.nocolor,
+            Key::Char('m') => self.mouse = !self.mouse,
+            Key::Down => self.scroll = (self.scroll + 1).min(self.max_scroll),
+            Key::Up => self.scroll = self.scroll.saturating_sub(1),
+            Key::PageDown | Key::Char(' ') => self.scroll = (self.scroll + self.page).min(self.max_scroll),
+            Key::PageUp => self.scroll = self.scroll.saturating_sub(self.page),
+            Key::Home => self.scroll = 0,
+            Key::End => self.scroll = self.max_scroll,
+            _ => {}
+        }
+        self.relook();
+        false
+    }
+
+    fn pointer(&mut self, p: sokkel_tui::Pointer) {
+        use sokkel_tui::PointerKind;
+        match p.kind {
+            PointerKind::ScrollDown => self.scroll = (self.scroll + 3).min(self.max_scroll),
+            PointerKind::ScrollUp => self.scroll = self.scroll.saturating_sub(3),
+            _ => {}
+        }
+    }
+}
+
+fn view() -> std::io::Result<()> {
+    let mut gallery = Gallery {
+        look: Look::new("tidevann", Scheme::Dark).expect("tidevann"),
+        sheet: 0,
+        theme: 0,
+        scheme: Scheme::Dark,
+        ascii: false,
+        nocolor: false,
+        mouse: true,
+        scroll: 0,
+        max_scroll: 0,
+        page: 1,
+    };
+    gallery.relook();
+    sokkel_tui::app::run(&mut gallery)
 }
 
 fn main() {
