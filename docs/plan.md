@@ -70,12 +70,18 @@ the contract say so that it does?
   waiting, the corner close, Escape held while busy, a sheet below md); the dropdown menu (items
   with icon and keys, labels, separators, check rows in a gutter, destructive and disabled rows,
   one level of submenu, typeahead); the select (field and quiet triggers, its list with details
-  and the chosen row's check, typeahead while closed, read only, disabled). Not yet: the command
-  palette, the settings dialog, radio groups, a dialog's header bar and status, the nested shade,
-  and what lies under a layer (T2).
+  and the chosen row's check, typeahead while closed, read only, disabled).
+- `palette`, `settings` (step 6, second half): the command palette (groups of commands with icon,
+  hint or code, meta in its tone, kind and key caps, a disabled command's reason; a fuzzy filter
+  over labels and keywords; a command that answers later holding it open until `busy-release`, then
+  Stop waiting; the refusal; Ctrl+K and Escape closing it, not while a command runs) and the
+  settings dialog (the column with its search and groups, the pane with each setting's control
+  where the layout puts it, Reset to defaults asking first, below md a list then a section with
+  Back). Not yet: the palette's app search and two-line rows and foot, radio groups, a dialog's
+  header bar and status, the nested shade, and what lies under a layer (T2).
 - `crates/core/examples/spike.rs`: the shell and the runs page, every part from the core, in every theme and
   scheme, below and above the md line, collapsed and as a drawer.
-- `crates/core/examples/parts/`: the parts sheets (`controls`, `page`, `table`, `overlays`), every part in its variants and states, in
+- `crates/core/examples/parts/`: the parts sheets (`controls`, `page`, `table`, `overlays`, `palette`), every part in its variants and states, in
   color, in ASCII and without color.
 
 ## What comes next, in order
@@ -90,7 +96,7 @@ then drawn by the spike in place of its hand-drawn copy.
 | 3 | PageState, PageHeader, Section (built) | Loading, failed (headed by what the server answered), empty, the content |
 | 4 | Table (built, the table variant) | The one table: head, sort by keys, selection, tones, the quiet dash, the foot's range, drawing only the visible rows, cards below its own stack width |
 | 5 | Shell: Rail, TopBar, StatusLine (built) | The drawer below about 90 columns, the trail in the top bar only, the account level with the foot |
-| 6 | Overlays: Dialog, CommandPalette, Select, DropdownMenu, SettingsDialog (Dialog, Select, DropdownMenu built) | A back stack for settings; focus returned on close; the palette on Ctrl+K, busy release after `busy-release` |
+| 6 | Overlays: Dialog, CommandPalette, Select, DropdownMenu, SettingsDialog (built) | A back stack for settings; focus returned on close; the palette on Ctrl+K, busy release after `busy-release` |
 | 7 | An interactive example | Tidevann's runs on the shell, run in a real terminal |
 
 Tooltip has no floating box here: its words are said in the status line (proposal, point 7).

@@ -21,6 +21,7 @@
 //! - [`table`]: [`Table`], the one table.
 //! - [`rail`], [`top_bar`], [`status_line`]: the frame's parts, and [`shell`] where they go.
 //! - [`dialog`], [`menu`], [`select`]: the overlays, over the popup [`popup`] they share.
+//! - [`palette`]: the command palette; [`settings`]: the settings dialog.
 
 pub mod button;
 pub mod cells;
@@ -32,10 +33,12 @@ pub mod look;
 pub mod menu;
 pub mod page_header;
 pub mod page_state;
+pub mod palette;
 pub mod popup;
 pub mod rail;
 pub mod section;
 pub mod select;
+pub mod settings;
 pub mod shell;
 pub mod shortcuts;
 pub mod snapshot;
@@ -55,10 +58,15 @@ pub use look::{Depth, Look, Rgba};
 pub use menu::{DropdownMenu, MenuEvent, MenuState};
 pub use page_header::{HeaderLayout, PageHeader, PageHeaderWords};
 pub use page_state::{Outcome, PageState, PageStateWords, StateTone};
+pub use palette::{Command, CommandGroup, CommandPalette, CommandTone, PaletteEvent, PaletteState, PaletteWords};
 pub use popup::{Item, PopupRow};
 pub use rail::{Rail, RailEntry, RailFoot, RailGroup, RailLayout, RailWords};
 pub use section::{Section, SectionTone, SectionVariant};
 pub use select::{Select, SelectEvent, SelectOption, SelectState, SelectVariant};
+pub use settings::{
+    Setting, SettingsDialog, SettingsEvent, SettingsFocus, SettingsGroup, SettingsLayout, SettingsSection,
+    SettingsState, SettingsWords,
+};
 pub use shell::ShellLayout;
 pub use shortcuts::{Binding, KeyContext, Keys, ShortcutWords, Shortcuts};
 pub use status_line::{Fact, NoteTone, StatusLine};

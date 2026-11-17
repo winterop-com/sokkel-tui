@@ -95,7 +95,8 @@ From building Button, TextField, PageState, PageHeader and Section on it:
 
 ## (c3) The overlays in cells
 
-dialog, dropdown-menu and select carry no `cells` note at 0cd3072. How sokkel-tui reads them, for
+dialog, dropdown-menu, select, command-palette and settings-dialog carry no `cells` note at
+0cd3072. How sokkel-tui reads them, for
 the notes they could take:
 
 - **A popup** (a menu, a select's list) is a box whose border is its edge; its 4 px padding is no
@@ -107,6 +108,15 @@ the notes they could take:
   at most the window less 4 across and 2 down. Its 16 px padding is two columns across and a row
   down at regular; its pieces a blank row apart at regular. The footer is a rule row and a row of
   verbs on the footer's ground. Below md it is a sheet filling the window, no edge.
+- **The command palette** is the dialog's box, 46 columns (384 px) a third of the way down; below
+  md the window's width less 4, a row from the top. The search is a row on its tint; a group's title
+  a row; each command one row, its keys as caps (a sequence as `G then R`); the list at most 60
+  percent of the window.
+- **The settings dialog** is 107 by 39 cells (896 by 704 px), at most the window less 4 across and
+  2 down: a head row over a rule, a 27-column column (224 px) under a rule at its end, the pane
+  padded two columns, settings ruled apart, a control at the row's end from 61 columns of pane
+  (512 px) and under its words below that, the dialog's footer. Below md a list, then a section
+  with Back, each filling the window.
 - **What lies under them** is drawn as it is, waiting on T2.
 - **A select's focus.** The field variant shows focus by its focus edge, as a text field does; the
   quiet one, which draws no edge, by the bars beside it (T4).

@@ -1,10 +1,11 @@
 //! The parts sheet: every part the core holds, in its variants and states, drawn from the library
 //! alone and written out as SVG and text, cell for cell.
 //!
-//! Usage: cargo run --example parts -- <controls|page|table|overlays> <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]
+//! Usage: cargo run --example parts -- <controls|page|table|overlays|palette> <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]
 //!
 //! `controls` is Button and TextField; `page` is PageState, PageHeader and Section; `table` is the
-//! table; `overlays` the dialog, the dropdown menu and the select.
+//! table; `overlays` the dialog, the dropdown menu and the select; `palette` the command
+//! palette and the settings dialog.
 
 use ratatui::{
     Frame, Terminal,
@@ -20,6 +21,7 @@ use sokkel_tui::{
 
 mod overlays;
 mod page;
+mod palette;
 mod table;
 
 const STATES: [&str; 7] = ["rest", "focus", "hover", "busy", "reason", "invalid", "open"];
@@ -235,7 +237,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 7 {
         eprintln!(
-            "usage: cargo run --example parts -- <controls|page|table|overlays> <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]"
+            "usage: cargo run --example parts -- <controls|page|table|overlays|palette> <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]"
         );
         std::process::exit(2);
     }
@@ -258,6 +260,7 @@ fn main() {
         "page" => page::draw(f, &look),
         "table" => table::draw(f, &look),
         "overlays" => overlays::draw(f, &look),
+        "palette" => palette::draw(f, &look),
         _ => draw_controls(f, &look),
     })
     .unwrap();

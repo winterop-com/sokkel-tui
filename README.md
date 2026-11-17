@@ -15,7 +15,7 @@ parts and the shell), drawn in cells.
   character.
 - The parts, each from its spec in sokkel-design: `Button`, `TextField`, `PageState`, `PageHeader`,
   `Section`, `Table`, the frame (`Rail`, `TopBar`, `StatusLine`), and the overlays `Dialog`,
-  `DropdownMenu` and `Select`.
+  `DropdownMenu`, `Select`, `CommandPalette` and `SettingsDialog`.
 - `crates/core/examples/spike.rs` (`cargo run --example spike`): the shell and the runs page, every part from the core, static, written to
   `specimens/` as SVG, PNG and text.
 - `crates/core/examples/parts/` (`cargo run --example parts`): the parts sheets, every part in its variants and states.
@@ -27,6 +27,8 @@ parts and the shell), drawn in cells.
 ![The table in tidevann dark at 120 columns](docs/assets/table-tidevann-dark-120.png)
 
 ![The overlays in tidevann dark at 120 columns](docs/assets/overlays-tidevann-dark-120.png)
+
+![The command palette and the settings dialog in tidevann dark at 120 columns](docs/assets/palette-tidevann-dark-120.png)
 
 ## Use
 
