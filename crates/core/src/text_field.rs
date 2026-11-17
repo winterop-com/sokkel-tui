@@ -4,11 +4,13 @@
 //! help, fallback, issue mark) around a one-line input. A problem is said by a mark at the
 //! control's end, never by a line inserted under it, so a form never changes height.
 //!
-//! In cells the control is one row, its edge drawn in its pad cells as a button's is; the gaps of
-//! 6 px between the frame's rows are no rows. The issue mark takes three columns inside the
-//! control's end and is a stop of its own after the control. Its popover is drawn last, over what
-//! lies below the field, with [`TextField::popover`]. The terminal shows one face, so `mono` and
-//! `numeric` draw as the rest do.
+//! In cells (the part's `cells` note) the label, the control and the help are one row each, with no
+//! blank rows between them. The control's edge is drawn in its pad cells as a button's is. The
+//! issue mark is one column, one from the control's end, and a stop of its own after the control;
+//! the value's room ends three columns before the end while it shows. Its issues are said in the
+//! status line while the field has focus ([`TextField::tip`]); the popover the mark opens is drawn
+//! last, over what lies below, with [`TextField::popover`]. The terminal shows one face, so `mono`
+//! and `numeric` draw as the rest do.
 
 use crate::keys::{Key, KeyPress};
 use crate::look::{Look, Rgba};
@@ -288,7 +290,6 @@ pub struct TextField<'a> {
     read_only: bool,
     disabled: bool,
     words: FieldWords,
-    on: &'a str,
 }
 
 impl<'a> TextField<'a> {
@@ -308,7 +309,6 @@ impl<'a> TextField<'a> {
             read_only: false,
             disabled: false,
             words: FieldWords::default(),
-            on: "background",
         }
     }
 
@@ -384,12 +384,6 @@ impl<'a> TextField<'a> {
         self
     }
 
-    /// The surface it stands on, a color token: `background` (default), `card`, `popover`.
-    pub fn on(mut self, surface: &'a str) -> Self {
-        self.on = surface;
-        self
-    }
-
     pub fn has_issues(&self) -> bool {
         !self.issues.is_empty()
     }
@@ -427,9 +421,10 @@ impl<'a> TextField<'a> {
         Some(said.join(" "))
     }
 
-    /// What the status line says while the field has focus: the issues, while the mark has it.
+    /// What the status line says while the field has focus: its issues, on the control or the
+    /// mark (principle 23).
     pub fn tip(&self, state: &FieldState) -> Option<String> {
-        (state.focus == FieldFocus::Mark).then(|| self.mark_name()).flatten()
+        (state.focus != FieldFocus::None).then(|| self.mark_name()).flatten()
     }
 
     /// The rows it takes at `width` columns.
@@ -459,10 +454,15 @@ impl<'a> TextField<'a> {
         }
     }
 
-    fn piece(&self, piece: &str, field: &str, under: Rgba) -> Rgba {
-        self.look
-            .paint_on(&format!("text-field.base.rest.{piece}"), field, under)
-            .unwrap_or_else(|| panic!("the contract paints no {field} for the text field's {piece}"))
+    /// A piece's color at rest, or faded while the field is disabled.
+    fn piece(&self, piece: &str, field: &str) -> Rgba {
+        let key = format!("text-field.base.rest.{piece}");
+        let c = if self.disabled {
+            self.look.faded(&key, field).or_else(|| self.look.paint(&key, field))
+        } else {
+            self.look.paint(&key, field)
+        };
+        c.unwrap_or_else(|| panic!("the contract paints no {field} for the text field's {piece}"))
     }
 
     fn put_lines(
@@ -476,8 +476,7 @@ impl<'a> TextField<'a> {
     ) {
         let Some(words) = words else { return };
         let look = self.look;
-        let under = look.surface(self.on);
-        let style = role.style(look).fg(look.terminal(self.piece(piece, "ink", under)));
+        let style = role.style(look).fg(look.terminal(self.piece(piece, "ink")));
         for line in text::wrap(words, area.width as usize) {
             if *y >= area.bottom() {
                 return;
@@ -501,32 +500,25 @@ impl StatefulWidget for &TextField<'_> {
         let look = self.look;
         let glyphs = look.glyphs();
         let t = |c: Rgba| look.terminal(c);
-        let under = look.surface(self.on);
         let mut y = area.y;
 
         // The label row: label, the required mark, the hint.
-        let label_style = TextRole::Label.style(look).fg(t(self.piece("label", "ink", under)));
+        let label_style = TextRole::Label.style(look).fg(t(self.piece("label", "ink")));
         let mut spans = vec![Span::styled(self.label.clone(), label_style)];
         if self.required {
             spans.push(match self.required_mark {
-                RequiredMark::Star => Span::styled(
-                    glyphs.required,
-                    Style::new().fg(t(self.piece("requiredStar", "ink", under))),
-                ),
+                RequiredMark::Star => {
+                    Span::styled(glyphs.required, Style::new().fg(t(self.piece("requiredStar", "ink"))))
+                }
                 RequiredMark::Word => Span::styled(
                     format!(" {}", self.words.required),
-                    TextRole::Help
-                        .style(look)
-                        .fg(t(self.piece("requiredWord", "ink", under))),
+                    TextRole::Help.style(look).fg(t(self.piece("requiredWord", "ink"))),
                 ),
             });
         }
         if let Some(hint) = &self.hint {
-            let ink = if self.key_hint {
-                look.color_on("muted-foreground", under)
-            } else {
-                self.piece("hint", "ink", under)
-            };
+            // A key hint is the code face in muted-foreground: the description's ink.
+            let ink = self.piece(if self.key_hint { "description" } else { "hint" }, "ink");
             spans.push(Span::raw(" "));
             spans.push(Span::styled(hint.clone(), TextRole::Help.style(look).fg(t(ink))));
         }
@@ -539,14 +531,16 @@ impl StatefulWidget for &TextField<'_> {
         if y < area.bottom() {
             let focus = state.focus == FieldFocus::Control && !self.disabled;
             let key = format!("text-field.base.{}.control", self.control_state(focus));
-            let ground = look.paint_on(&key, "ground", under).unwrap_or(under);
-            let field = |f: &str| look.paint_on(&key, f, ground).unwrap_or(ground);
-            let (mut ground, mut edge, mut ink, mut quiet) =
-                (ground, field("edge"), field("ink"), field("placeholder"));
-            if self.disabled {
-                let fade = |c: Rgba| look.faded(c, under);
-                (ground, edge, ink, quiet) = (fade(ground), fade(edge), fade(ink), fade(quiet));
-            }
+            let page = look.color("background");
+            let field = |f: &str| {
+                let c = if self.disabled {
+                    look.faded(&key, f)
+                } else {
+                    look.paint(&key, f)
+                };
+                c.unwrap_or(page)
+            };
+            let (ground, edge, ink, quiet) = (field("ground"), field("edge"), field("ink"), field("placeholder"));
             let row = Rect { y, height: 1, ..area };
             buf.set_style(row, Style::new().bg(t(ground)));
             let edge_style = Style::new().bg(t(ground)).fg(t(edge));
@@ -555,7 +549,9 @@ impl StatefulWidget for &TextField<'_> {
                 .set_symbol(glyphs.edge_end)
                 .set_style(edge_style);
 
-            let mark_w: u16 = if self.has_issues() { 3 } else { 0 };
+            // The mark: one column, one from the control's end; the value's room ends three
+            // columns before the end while an issue shows.
+            let mark_w: u16 = if self.has_issues() { 2 } else { 0 };
             let start = row.x + 1;
             let room = row.width.saturating_sub(2 + mark_w) as usize;
             let body = TextRole::Body.style(look);
@@ -592,35 +588,33 @@ impl StatefulWidget for &TextField<'_> {
 
             // The issue mark, inside the control's end.
             if let Some(worst) = self.worst() {
-                let mx = row.right() - 1 - mark_w;
+                // The glyph one column in from the end; the cells either side are its ring's.
+                let mx = row.right() - 3;
                 let mark_rest = if worst == Tone::Warning { "warning" } else { "rest" };
-                let mut mark_ground = ground;
-                if state.issue_open {
-                    mark_ground = look
-                        .paint_on("text-field.base.issueOpen.issueMark", "ground", ground)
-                        .unwrap_or(ground);
-                }
+                let mark_ground = if state.issue_open {
+                    look.paint("text-field.base.issueOpen.issueMark", "ground")
+                        .unwrap_or(ground)
+                } else {
+                    ground
+                };
                 let mark_ink = look
-                    .paint_on(&format!("text-field.base.{mark_rest}.issueMark"), "ink", mark_ground)
+                    .paint(&format!("text-field.base.{mark_rest}.issueMark"), "ink")
                     .unwrap_or(ink);
                 let glyph = match worst {
                     Tone::Critical => glyphs.issue_critical,
                     Tone::Warning => glyphs.issue_warning,
                 };
                 let mark_style = Style::new().bg(t(mark_ground)).fg(t(mark_ink));
-                buf.set_style(Rect::new(mx, y, mark_w, 1), mark_style);
                 buf[(mx + 1, y)]
                     .set_symbol(glyph)
                     .set_style(mark_style.add_modifier(Modifier::BOLD));
                 if state.focus == FieldFocus::Mark {
-                    let ring = look
-                        .paint_ring_on("text-field.base.focus.issueMark", "ring", mark_ground)
-                        .unwrap_or(mark_ink);
-                    let ring_style = Style::new().bg(t(mark_ground)).fg(t(ring));
+                    let ring = look.ring("text-field.base.focus.issueMark", "ring").unwrap_or(mark_ink);
+                    let ring_style = Style::new().bg(t(ground)).fg(t(ring));
                     buf[(mx, y)].set_symbol(glyphs.edge_end).set_style(ring_style);
                     buf[(mx + 2, y)].set_symbol(glyphs.edge_start).set_style(ring_style);
                 }
-                state.mark_at = Some(Rect::new(mx, y, mark_w, 1));
+                state.mark_at = Some(Rect::new(mx, y, 3, 1));
             }
             y += 1;
         }
@@ -662,10 +656,10 @@ impl IssuePopover<'_, '_> {
         let glyphs = look.glyphs();
         let t = |c: Rgba| look.terminal(c);
         let pop = "text-field.base.rest.issuePopover";
-        let under = look.surface("popover");
-        let ground = look.paint_on(pop, "ground", under).unwrap_or(under);
-        let ink = look.paint_on(pop, "ink", ground).unwrap_or(ground);
-        let quiet = look.color_on("muted-foreground", ground);
+        let ink = look
+            .paint(pop, "ink")
+            .unwrap_or_else(|| look.color("popover-foreground"));
+        let quiet = look.color("muted-foreground");
         let room = width.saturating_sub(4) as usize;
         let mut out = Vec::new();
         for (n, issue) in field.issues.iter().enumerate() {
@@ -676,7 +670,7 @@ impl IssuePopover<'_, '_> {
                 Tone::Critical => (glyphs.issue_critical, "critical-ink"),
                 Tone::Warning => (glyphs.issue_warning, "warning-ink"),
             };
-            let lead = Style::new().fg(t(look.color_on(tone_ink, ground)));
+            let lead = Style::new().fg(t(look.color(tone_ink)));
             let words = TextRole::Label.style(look).fg(t(ink));
             for (i, line) in text::wrap(&issue.text, room.saturating_sub(2)).into_iter().enumerate() {
                 out.push(Line::from(vec![
@@ -718,11 +712,10 @@ impl Widget for IssuePopover<'_, '_> {
         let look = self.field.look;
         let t = |c: Rgba| look.terminal(c);
         let pop = "text-field.base.rest.issuePopover";
-        let under = look.surface("popover");
-        let ground = look.paint_on(pop, "ground", under).unwrap_or(under);
-        let edge = look.paint_on(pop, "edge", ground).unwrap_or(ground);
+        let ground = look.paint(pop, "ground").unwrap_or_else(|| look.color("popover"));
+        let edge = look.paint(pop, "edge").unwrap_or(ground);
         // The border's cells stand on the page; only the inside wears the popover's ground.
-        let page = look.surface("background");
+        let page = look.color("background");
         Clear.render(area, buf);
         let block = Block::new()
             .borders(Borders::ALL)

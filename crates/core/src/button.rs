@@ -3,15 +3,16 @@
 //! Words, an icon and words, or an icon alone named by its label. A button that cannot act now
 //! says why; a busy one keeps its place, its look and its focus.
 //!
-//! In cells a button is one row at every size: the sizes keep their text role (`text.badge` for
-//! `xs` and `sm`, `text.action` above), and padding is one column. Its edge is drawn in its pad
-//! cells (`▏Filter▕`). Keyboard focus draws the ring in one cell outside each end, half a cell off
-//! the box as `focus-ring-offset` keeps it off; [`Button::width`] counts those cells, so a button
-//! keeps its place whether or not it has focus. A tooltip has no floating box here: [`Button::tip`]
-//! gives its words for the status line (proposal, point 7).
+//! In cells (the part's `cells` note) a button is one row at every size: the sizes keep their text
+//! role (`text.badge` for `xs` and `sm`, `text.action` above), and padding is one column. Its edge
+//! is drawn in its pad cells (`▏Filter▕`, open-questions T3 b). Keyboard focus draws the ring in
+//! the cell beside each end, outside its width, half a cell off the box as `focus-ring-offset`
+//! keeps it off (sokkel-tui's answer to T4); a row of buttons keeps a column between them for it.
+//! A tooltip has no floating box here: [`Button::tip`] gives its words for the status line
+//! (principle 23).
 
 use crate::keys::KeyPress;
-use crate::look::{Depth, Look, Rgba, ink_on};
+use crate::look::{Depth, Look, Rgba};
 use crate::text::{self, TextRole};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -103,7 +104,6 @@ pub struct Button<'a> {
     invalid: bool,
     focused: bool,
     hovered: bool,
-    on: &'a str,
 }
 
 impl<'a> Button<'a> {
@@ -130,7 +130,6 @@ impl<'a> Button<'a> {
             invalid: false,
             focused: false,
             hovered: false,
-            on: "background",
         }
     }
 
@@ -212,13 +211,6 @@ impl<'a> Button<'a> {
         self
     }
 
-    /// The surface it stands on, a color token: `background` (default), `card`, `popover`,
-    /// `sidebar`. An inherited ink is that surface's.
-    pub fn on(mut self, surface: &'a str) -> Self {
-        self.on = surface;
-        self
-    }
-
     /// Icon button: a longer sentence its tip says in place of the label.
     pub fn tooltip(mut self, tooltip: impl Into<String>) -> Self {
         self.tooltip = Some(tooltip.into());
@@ -266,7 +258,9 @@ impl<'a> Button<'a> {
         })
     }
 
-    /// The columns it takes, the ring's cells included.
+    /// The columns it takes: its ground (`cells`: the label measured, a column of padding at each
+    /// end, an icon and a gap before it; an icon button three). Keyboard focus draws its ring in the
+    /// cell beside each end, outside this width, in the gap a row of buttons keeps between them.
     pub fn width(&self) -> u16 {
         let inner = if self.icon_only {
             1
@@ -275,7 +269,7 @@ impl<'a> Button<'a> {
             let trail = usize::from(self.icon.is_some() && self.icon_place == IconPlace::End);
             text::width(&self.label) + 2 * (lead + trail)
         };
-        (inner + 4) as u16
+        (inner + 2) as u16
     }
 
     /// The paint state its ground and ink are drawn in.
@@ -309,31 +303,50 @@ impl<'a> Button<'a> {
         }
     }
 
-    /// Ground, ink and edge, opaque, over the surface it stands on.
-    fn colors(&self) -> (Rgba, Rgba, Option<Rgba>) {
-        let look = self.look;
-        let under = look.surface(self.on);
-        let state = self.ground_state();
-        let key = if self.destructive_hover && state == "hover" {
+    /// Whether its paint draws a ground at all in its state.
+    fn has_ground(&self) -> bool {
+        let state = if self.is_disabled() {
+            "rest"
+        } else {
+            self.ground_state()
+        };
+        let key = if self.destructive_hover && state == "hover" && !self.is_disabled() {
             "button.destructive-hover.hover.container".to_string()
         } else {
             format!("button.{}.{state}.container", self.variant_key())
         };
-        let ground = look.paint_on(&key, "ground", under).unwrap_or(under);
-        let ink = look
-            .paint_on(&key, "ink", ground)
-            .unwrap_or_else(|| look.color_on(ink_on(self.on), ground));
-        let edge_key = format!("button.{}.{}.container", self.variant_key(), self.edge_state());
-        let edge = look
-            .paint_shows(&edge_key, "edge")
-            .then(|| look.paint_on(&edge_key, "edge", ground))
-            .flatten();
+        self.look.shows(&key, "ground")
+    }
+
+    /// Ground, ink and edge, opaque as the contract resolves them; a disabled button's faded.
+    fn colors(&self) -> (Rgba, Rgba, Option<Rgba>) {
+        let look = self.look;
+        let page = look.color("background");
+        let variant = self.variant_key();
         if self.is_disabled() {
-            let fade = |c: Rgba| look.faded(c, under);
-            (fade(ground), fade(ink), edge.map(fade))
-        } else {
-            (ground, ink, edge)
+            let key = format!("button.{variant}.rest.container");
+            let ground = look.faded(&key, "ground").unwrap_or(page);
+            let ink = look.faded(&key, "ink").unwrap_or(ground);
+            let edge = look.shows(&key, "edge").then(|| look.faded(&key, "edge")).flatten();
+            return (ground, ink, edge);
         }
+        let state = self.ground_state();
+        let key = if self.destructive_hover && state == "hover" {
+            "button.destructive-hover.hover.container".to_string()
+        } else {
+            format!("button.{variant}.{state}.container")
+        };
+        let ground = look.paint(&key, "ground").unwrap_or(page);
+        let ink = look
+            .paint(&key, "ink")
+            .or_else(|| look.paint(&format!("button.{variant}.rest.container"), "ink"))
+            .unwrap_or_else(|| look.color("foreground"));
+        let edge_key = format!("button.{variant}.{}.container", self.edge_state());
+        let edge = look
+            .shows(&edge_key, "edge")
+            .then(|| look.paint(&edge_key, "edge"))
+            .flatten();
+        (ground, ink, edge)
     }
 }
 
@@ -346,47 +359,33 @@ impl Widget for Button<'_> {
 impl Widget for &Button<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let area = area.intersection(buf.area);
-        if area.width < 3 || area.height == 0 {
+        if area.width < 2 || area.height == 0 {
             return;
         }
         let look = self.look;
         let glyphs = look.glyphs();
         let bare = look.depth() == Depth::None;
         let (ground, ink, edge) = self.colors();
-        let under = look.surface(self.on);
         let t = |c: Rgba| look.terminal(c);
+        // A ground the contract leaves fully transparent (ghost, link, an icon button at rest) is no
+        // ground: the cells keep what they stand on, whatever surface that is.
+        let bg = |st: Style| {
+            if self.has_ground() { st.bg(t(ground)) } else { st }
+        };
 
-        let mut text_style = self.size.role().style(look).fg(t(ink)).bg(t(ground));
+        let mut text_style = bg(self.size.role().style(look).fg(t(ink)));
         if self.variant == ButtonVariant::Link && self.ground_state() == "hover" {
             text_style = text_style.add_modifier(Modifier::UNDERLINED);
         }
-        // Without color, focus is reversed and a disabled button faint: the only cues left.
+        // Without color, focus is reversed: the one cue left (principle 22).
         if bare && self.focused {
             text_style = text_style.add_modifier(Modifier::REVERSED);
         }
-        if bare && self.is_disabled() {
-            text_style = text_style.add_modifier(Modifier::DIM);
-        }
-        let box_style = Style::new().bg(t(ground)).fg(t(edge.unwrap_or(ground)));
-        let focus_key = format!("button.{}.focus.container", self.variant_key());
-        let ring_color = look
-            .paint_ring_on(&focus_key, "outline", under)
-            .unwrap_or_else(|| look.color_on("ring", under));
-        let ring_style = Style::new().bg(t(under)).fg(t(ring_color));
+        let box_style = bg(Style::new().fg(t(edge.unwrap_or(ground))));
 
         let y = area.y;
-        let mut x = area.x;
         let end = area.x + area.width.min(self.width());
-        let put = |buf: &mut Buffer, x: &mut u16, s: &str, st: Style| {
-            if *x < end {
-                buf[(*x, y)].set_symbol(s).set_style(st);
-                *x += 1;
-            }
-        };
-
-        // The ring's cell, the start edge.
-        let ring = self.focused && !bare;
-        put(buf, &mut x, if ring { glyphs.ring_start } else { " " }, ring_style);
+        let mut x = area.x;
         let (start, stop) = if bare {
             (glyphs.bare_start, glyphs.bare_end)
         } else if edge.is_some() {
@@ -394,13 +393,14 @@ impl Widget for &Button<'_> {
         } else {
             (" ", " ")
         };
-        put(buf, &mut x, start, box_style);
+        buf[(x, y)].set_symbol(start).set_style(box_style);
+        x += 1;
 
-        // The content: room for it is what is left before the end edge and ring.
-        let room = end.saturating_sub(x).saturating_sub(2) as usize;
+        // The content: the room left before the end's pad cell.
+        let room = end.saturating_sub(x + 1) as usize;
         let spinner = self.busy.then(|| look.spinner_frame(self.busy_ms));
         let mut content: Vec<(String, Style)> = Vec::new();
-        let icon_style = Style::new().fg(t(ink)).bg(t(ground));
+        let icon_style = bg(Style::new().fg(t(ink)));
         if self.icon_only {
             content.push((spinner.or(self.icon).unwrap_or(" ").to_string(), icon_style));
         } else {
@@ -425,7 +425,7 @@ impl Widget for &Button<'_> {
             for c in s.chars() {
                 let mut b = [0u8; 4];
                 let w = text::char_width(c) as u16;
-                if x + w > end.saturating_sub(2) {
+                if x + w > end.saturating_sub(1) {
                     break;
                 }
                 buf[(x, y)].set_symbol(c.encode_utf8(&mut b)).set_style(st);
@@ -435,7 +435,25 @@ impl Widget for &Button<'_> {
                 x += w.max(1);
             }
         }
-        put(buf, &mut x, stop, box_style);
-        put(buf, &mut x, if ring { glyphs.ring_end } else { " " }, ring_style);
+        while x + 1 < end {
+            buf[(x, y)].set_symbol(" ").set_style(box_style);
+            x += 1;
+        }
+        if x < end {
+            buf[(x, y)].set_symbol(stop).set_style(box_style);
+        }
+
+        // Keyboard focus: the ring in the cell beside each end, on what is drawn there.
+        if self.focused && !bare {
+            let focus_key = format!("button.{}.focus.container", self.variant_key());
+            let ring = look.ring(&focus_key, "outline").unwrap_or_else(|| look.color("ring"));
+            let whole = buf.area;
+            if area.x > whole.x {
+                buf[(area.x - 1, y)].set_symbol(glyphs.ring_start).set_fg(t(ring));
+            }
+            if end < whole.right() {
+                buf[(end, y)].set_symbol(glyphs.ring_end).set_fg(t(ring));
+            }
+        }
     }
 }

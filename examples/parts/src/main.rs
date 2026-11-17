@@ -35,25 +35,19 @@ fn state_button<'a>(look: &'a Look, variant: ButtonVariant, state: &str) -> Butt
 }
 
 fn heading(f: &mut Frame, look: &Look, x: u16, y: u16, words: &str) {
-    let style = TextRole::SectionTitle
-        .style(look)
-        .fg(look.color("foreground", "background"));
+    let style = TextRole::SectionTitle.style(look).fg(look.token("foreground"));
     f.buffer_mut().set_string(x, y, words, style);
 }
 
 fn quiet(look: &Look) -> Style {
-    TextRole::Help
-        .style(look)
-        .fg(look.color("muted-foreground", "background"))
+    TextRole::Help.style(look).fg(look.token("muted-foreground"))
 }
 
 fn draw_controls(f: &mut Frame, look: &Look) {
     let area = f.area();
     f.buffer_mut().set_style(
         area,
-        Style::new()
-            .bg(look.color("background", "background"))
-            .fg(look.color("foreground", "background")),
+        Style::new().bg(look.token("background")).fg(look.token("foreground")),
     );
     let x0 = area.x + 2;
     let mut y = area.y + 1;
@@ -74,7 +68,7 @@ fn draw_controls(f: &mut Frame, look: &Look) {
     ];
     for states in STATES.chunks(per_row) {
         for (i, s) in states.iter().enumerate() {
-            let x = x0 + lead + i as u16 * cell + 2;
+            let x = x0 + lead + i as u16 * cell + 1;
             f.buffer_mut().set_string(x, y, *s, quiet(look));
         }
         y += 1;
@@ -125,7 +119,7 @@ fn draw_controls(f: &mut Frame, look: &Look) {
             x = x0;
             y += 3;
         }
-        f.buffer_mut().set_string(x + 2, y, *name, quiet(look));
+        f.buffer_mut().set_string(x + 1, y, *name, quiet(look));
         f.render_widget(b, Rect::new(x, y + 1, b.width(), 1));
         x += w + 1;
     }
@@ -150,7 +144,7 @@ fn draw_controls(f: &mut Frame, look: &Look) {
             x = x0;
             y += 3;
         }
-        f.buffer_mut().set_string(x + 2, y, *name, quiet(look));
+        f.buffer_mut().set_string(x + 1, y, *name, quiet(look));
         f.render_widget(b, Rect::new(x, y + 1, b.width(), 1));
         x += w + 1;
     }
@@ -264,8 +258,8 @@ fn main() {
     .unwrap();
     let buffer = term.backend().buffer();
     let plain = Look::new(&args[2], scheme).unwrap();
-    let ground = plain.color("background", "background");
-    let ink = plain.color("foreground", "background");
+    let ground = plain.token("background");
+    let ink = plain.token("foreground");
     std::fs::write(format!("{}.svg", args[6]), snapshot::svg(buffer, ground, ink)).unwrap();
     std::fs::write(format!("{}.txt", args[6]), snapshot::text(buffer)).unwrap();
 }

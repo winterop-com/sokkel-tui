@@ -4,17 +4,19 @@
 //! and the content (principle 11). A failure is headed by what the server answered; its
 //! diagnostic and the problems it named stand under the heading, with Try again.
 //!
-//! In cells the frame is a box whose border stands on the page and whose inside wears the card;
-//! its padding is two columns across and a row down. The pieces 12 apart are a blank row apart,
-//! the lines 4 apart are none. The mark is the issue mark's glyph: a cross for a failure, a
-//! triangle for the warning tone.
+//! In cells (the part's `cells` note) the frame is a box whose border stands on the page and whose
+//! inside wears the card, padded two columns across and a row down at regular, none down at
+//! compact; unframed, it is padded as a panel and not down. The lines are no rows apart; Try again
+//! comes after one blank row at either density. The mark is `circle-alert`, or `triangle-alert`
+//! in the warning tone, one column and a gap before the heading.
 //!
 //! The warning tone's frame (`warning/8` in a `warning/35` edge) has no resolved paint yet, so a
 //! warning is drawn in the failed frame; its triangle and heading say it, as unframed they do.
 
 use crate::button::{Button, ButtonSize, ButtonVariant, IconPlace};
-use crate::cells::{cols, rows};
-use crate::look::{Look, Rgba, ink_on};
+use crate::cells::by_density;
+use crate::glyphs::Charset;
+use crate::look::{Look, Rgba};
 use crate::text::{self, TextRole};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -195,11 +197,10 @@ impl<'a> PageState<'a> {
         let mut b = Button::new(self.look, self.words.retry.clone())
             .variant(ButtonVariant::Outline)
             .size(ButtonSize::Sm)
-            .focused(self.retry_focused)
-            .on(self.ground_name());
-        let glyph = self.look.glyphs().retry;
-        if !glyph.is_empty() {
-            b = b.with_icon(glyph, IconPlace::Start);
+            .focused(self.retry_focused);
+        // An icon beside its own word may be left out in ASCII (glyphs.json, rules).
+        if self.look.charset() == Charset::Unicode {
+            b = b.with_icon(self.look.glyphs().retry, IconPlace::Start);
         }
         Some(b)
     }
@@ -209,8 +210,8 @@ impl<'a> PageState<'a> {
         let b = self.retry_button()?;
         let inner = self.inner(area);
         let y = inner.y + self.body_rows(inner.width) - 1;
-        // Its edge lines up with the heading's words; its ring cell stands before them.
-        Some(Rect::new(inner.x + 1, y, b.width(), 1).intersection(area))
+        // Its ground starts where the heading's words do.
+        Some(Rect::new(inner.x + 2, y, b.width(), 1).intersection(area))
     }
 
     /// The rows it takes at `width` columns.
@@ -220,12 +221,12 @@ impl<'a> PageState<'a> {
         self.body_rows(inner_w) + 2 * (pad_y + edge)
     }
 
-    /// Padding across and down, and the border's width.
+    /// Padding across and down, and the border's width (`cells.sizes`).
     fn insets(&self) -> (u16, u16, u16) {
         if self.framed {
-            (cols(16.0), rows(24.0), 1)
+            (2, by_density(self.look, 1, 0), 1)
         } else {
-            (cols(self.look.density_px("panel-pad")), rows(12.0), 0)
+            (by_density(self.look, 2, 1), 0, 0)
         }
     }
 
@@ -237,11 +238,6 @@ impl<'a> PageState<'a> {
             width: area.width.saturating_sub(2 * (px + e)),
             height: area.height.saturating_sub(2 * (py + e)),
         }
-    }
-
-    /// The surface its pieces stand on: the card inside a frame, else what it stands on.
-    fn ground_name(&self) -> &'a str {
-        if self.framed { "card" } else { self.on }
     }
 
     fn state_key(&self) -> &'static str {
@@ -270,7 +266,7 @@ impl<'a> PageState<'a> {
                     n += text::wrap_code(p, room.saturating_sub(2)).len();
                 }
                 if self.retry {
-                    n += rows(12.0) as usize + 1;
+                    n += 2;
                 }
                 n as u16
             }
@@ -294,15 +290,15 @@ impl Widget for &PageState<'_> {
         let glyphs = look.glyphs();
         let t = |c: Rgba| look.terminal(c);
         let state = self.state_key();
-        let page = look.surface(self.on);
-        let frame_key = if self.framed {
-            format!("page-state.base.{state}.frame")
+        let page = look.color(self.on);
+        let frame_key = format!("page-state.base.{state}.frame");
+        let ground = if self.framed {
+            look.paint(&frame_key, "ground").unwrap_or(page)
         } else {
-            "page-state.base.unframed.frame".to_string()
+            page
         };
-        let ground = look.paint_on(&frame_key, "ground", page).unwrap_or(page);
         if self.framed {
-            let edge = look.paint_on(&frame_key, "edge", ground).unwrap_or(ground);
+            let edge = look.paint(&frame_key, "edge").unwrap_or(ground);
             let block = Block::new()
                 .borders(Borders::ALL)
                 .border_set(look.border_set("radius-surface"))
@@ -315,8 +311,8 @@ impl Widget for &PageState<'_> {
         if inner.width == 0 || inner.height == 0 {
             return;
         }
-        let piece = |name: &str, field: &str| look.paint_on(&format!("page-state.base.{state}.{name}"), field, ground);
-        let quiet = piece("frame", "ink").unwrap_or_else(|| look.color_on("muted-foreground", ground));
+        let piece = |name: &str, field: &str| look.paint(&format!("page-state.base.{state}.{name}"), field);
+        let quiet = piece("frame", "ink").unwrap_or_else(|| look.color("muted-foreground"));
         let mut y = inner.y;
         let put = |buf: &mut Buffer, x: u16, y: u16, s: &str, st: Style| {
             if y < inner.bottom() {
@@ -354,13 +350,12 @@ impl Widget for &PageState<'_> {
                 let (mark, mark_ink) = match self.tone {
                     StateTone::Critical => (
                         glyphs.issue_critical,
-                        piece("mark", "ink").unwrap_or_else(|| look.color_on("destructive", ground)),
+                        piece("mark", "ink").unwrap_or_else(|| look.color("destructive")),
                     ),
-                    StateTone::Warning => (glyphs.issue_warning, look.color_on("warning-ink", ground)),
+                    StateTone::Warning => (glyphs.issue_warning, look.color("warning-ink")),
                 };
                 put(buf, inner.x, y, mark, Style::new().fg(t(mark_ink)));
-                let head_ink =
-                    piece("heading", "ink").unwrap_or_else(|| look.color_on(ink_on(self.ground_name()), ground));
+                let head_ink = piece("heading", "ink").unwrap_or_else(|| look.color("foreground"));
                 for line in text::wrap(heading(*outcome, self.tone, &self.words), room) {
                     put(buf, inner.x + 2, y, &line, TextRole::Action.style(look).fg(t(head_ink)));
                     y += 1;
@@ -392,10 +387,10 @@ impl Widget for &PageState<'_> {
                     }
                 }
                 if let Some(b) = self.retry_button() {
-                    y += rows(12.0);
+                    y += 1;
                     if y < inner.bottom() {
-                        // The button's ring cell sits in the padding, so its edge lines up with the text.
-                        let x = inner.x + 1;
+                        // Its ground starts where the heading's words do.
+                        let x = inner.x + 2;
                         (&b).render(Rect::new(x, y, b.width().min(inner.right() - x + 1), 1), buf);
                     }
                 }

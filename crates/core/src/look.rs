@@ -1,15 +1,11 @@
-//! The look: a theme, a scheme, a density and the color depth the terminal can show.
+//! The look: a theme, a scheme, a density, the color depth and the character set the terminal
+//! can show.
 //!
-//! Every color a part draws comes from here. A paint is read by its resolved key
-//! (`button.default.hover.container`) and drawn as it is: the renderer never mixes (principle 20).
-//!
-//! Two things here stand in for what the contract does not hold yet, and leave once it does
-//! (`docs/proposals/sokkel-design-tui.md`):
-//! - **Flattening.** A terminal cannot blend, and some paints carry alpha (`#006aa0cc`). Until the
-//!   resolver writes opaque paints over the surface each piece stands on, [`flat`] lays a color
-//!   over the surface the caller names.
-//! - **Fewer colors.** For a terminal without truecolor, [`Depth::Ansi256`] picks the nearest of
-//!   xterm's 256. The contract's ANSI map would replace it.
+//! Every color a part draws comes from here, opaque as the contract resolves it. A paint is read
+//! by its resolved key (`button.default.hover.container`) in its `flat` form, which the resolver
+//! writes over the surface each piece stands on (`standsOn`), and a disabled one in its `faded`
+//! form. The renderer never mixes (principle 20). In 256 colors each is the nearest of xterm's
+//! 16 to 255 by OKLab, as `colorDepth.ansi256` says; with no color, words and glyphs carry it.
 
 use crate::glyphs::{Charset, Glyphs};
 use crate::tokens::{Density, Scheme, resolved};
@@ -17,13 +13,13 @@ use ratatui::style::Color;
 use ratatui::widgets::BorderType;
 use serde_json::Value;
 
-/// How many colors the terminal shows.
+/// How many colors the terminal shows (`colorDepth`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Depth {
     /// 24-bit color: the theme as the contract resolves it.
     #[default]
     TrueColor,
-    /// xterm's 256 colors, each the nearest to the resolved one.
+    /// xterm's indices 16 to 255, each the nearest to the resolved color by OKLab.
     Ansi256,
     /// No color (`NO_COLOR`): bold, reverse and words carry the meaning.
     None,
@@ -62,14 +58,7 @@ impl Rgba {
     }
 }
 
-/// `color` laid over `under`, which is taken as opaque. Stands in for the resolver's opaque paints.
-pub fn flat(color: Rgba, under: Rgba) -> Rgba {
-    let t = color.3 as f32 / 255.0;
-    let m = |f: u8, u: u8| (f as f32 * t + u as f32 * (1.0 - t)).round() as u8;
-    Rgba(m(color.0, under.0), m(color.1, under.1), m(color.2, under.2), 255)
-}
-
-/// The theme, scheme and density an app draws in, and the terminal's color depth.
+/// The theme, scheme and density an app draws in, and the terminal's color depth and characters.
 #[derive(Debug, Clone)]
 pub struct Look {
     theme: String,
@@ -108,6 +97,11 @@ impl Look {
         self
     }
 
+    pub fn with_charset(mut self, charset: Charset) -> Look {
+        self.charset = charset;
+        self
+    }
+
     pub fn theme(&self) -> &str {
         &self.theme
     }
@@ -120,6 +114,14 @@ impl Look {
     pub fn depth(&self) -> Depth {
         self.depth
     }
+    pub fn charset(&self) -> Charset {
+        self.charset
+    }
+
+    /// The glyphs this look draws with.
+    pub fn glyphs(&self) -> &'static Glyphs {
+        self.charset.glyphs()
+    }
 
     /// A color token as the resolved file writes it (`primary` -> `#006aa0`).
     pub fn color_hex(&self, name: &str) -> &'static str {
@@ -128,59 +130,77 @@ impl Look {
             .unwrap_or_else(|| panic!("the contract has no color {name}"))
     }
 
-    /// One field of a resolved paint (`ground`, `edge`, `ink`, `rule`, `mark`, `placeholder`).
-    /// A state the contract does not paint is drawn as `rest`, which is picking a paint, not mixing one.
+    /// An opaque color token (`foreground`, `ring`, `critical-ink`). A translucent one (`hover`)
+    /// is read through the paint that uses it, never here.
+    pub fn color(&self, name: &str) -> Rgba {
+        let c = parse(self.color_hex(name));
+        debug_assert!(c.is_opaque(), "{name} is translucent: read it through its paint");
+        c
+    }
+
+    /// A resolved paint, or its `rest` where the contract does not paint the state: picking a
+    /// paint, not mixing one.
+    fn paint_of(&self, key: &str) -> Option<&'static Value> {
+        self.paints.get(key).or_else(|| self.paints.get(rest_of(key)))
+    }
+
+    /// One field of a resolved paint as the file writes it (`#006aa0cc`, `inherit`).
     pub fn paint_hex(&self, key: &str, field: &str) -> &'static str {
-        if let Some(v) = self.paints.get(key).and_then(|p| p.get(field)).and_then(Value::as_str) {
-            return v;
-        }
-        let rest = rest_of(key);
-        self.paints
-            .get(&rest)
-            .and_then(|p| p.get(field))
-            .and_then(Value::as_str)
+        self.field_of(key, field)
             .unwrap_or_else(|| panic!("the contract paints no {field} for {key}"))
+    }
+
+    fn field_of(&self, key: &str, field: &str) -> Option<&'static str> {
+        let own = |k: &str| self.paints.get(k)?.get(field)?.as_str();
+        own(key).or_else(|| own(&rest_of(key)))
     }
 
     /// Whether the contract paints this field for this key (or its `rest`).
     pub fn has_paint(&self, key: &str, field: &str) -> bool {
-        let has = |k: &str| {
-            self.paints
-                .get(k)
-                .and_then(|p| p.get(field))
-                .and_then(Value::as_str)
-                .is_some()
+        self.field_of(key, field).is_some()
+    }
+
+    /// A paint's field, opaque: its `flat` form where the resolved one blends or inherits, else
+    /// the resolved one. `None` where the paint has no such field.
+    pub fn paint(&self, key: &str, field: &str) -> Option<Rgba> {
+        let own = |k: &str| -> Option<Rgba> {
+            let p = self.paints.get(k)?;
+            if let Some(flat) = p.get("flat").and_then(|f| f.get(field)).and_then(Value::as_str) {
+                return Rgba::parse(flat);
+            }
+            Rgba::parse(p.get(field)?.as_str()?).filter(|c| c.is_opaque())
         };
-        has(key) || has(&rest_of(key))
+        own(key).or_else(|| own(&rest_of(key)))
     }
 
-    /// A color token, drawn over the surface named by `over` (a color token).
-    pub fn color(&self, name: &str, over: &str) -> Color {
-        self.draw(self.color_hex(name), self.color_hex(over))
+    /// A paint's field as a disabled control shows it: its `faded` form, opaque.
+    pub fn faded(&self, key: &str, field: &str) -> Option<Rgba> {
+        let own = |k: &str| -> Option<Rgba> {
+            let hex = self
+                .paints
+                .get(k)?
+                .get("faded")?
+                .get("disabled")?
+                .get(field)?
+                .as_str()?;
+            Rgba::parse(hex)
+        };
+        own(key).or_else(|| own(&rest_of(key)))
     }
 
-    /// A paint field, drawn over the surface named by `over` (a color token).
-    pub fn paint(&self, key: &str, field: &str, over: &str) -> Color {
-        self.draw(self.paint_hex(key, field), self.color_hex(over))
+    /// The color of a paint's `ring` or `outline` (`{color, width}`), opaque.
+    pub fn ring(&self, key: &str, field: &str) -> Option<Rgba> {
+        let p = self.paint_of(key)?;
+        if let Some(flat) = p.get("flat").and_then(|f| f.get(field)).and_then(Value::as_str) {
+            return Rgba::parse(flat);
+        }
+        Rgba::parse(p.get(field)?.get("color")?.as_str()?).filter(|c| c.is_opaque())
     }
 
-    /// A paint field drawn over another paint's ground (a row over its table's frame).
-    pub fn paint_over(&self, key: &str, field: &str, over_key: &str, over_field: &str) -> Color {
-        let under = self.opaque(self.paint_hex(over_key, over_field));
-        self.terminal(flat(self.parse(self.paint_hex(key, field)), under))
-    }
-
-    /// A paint field as a surface other colors lie on, already flat over `over`.
-    pub fn surface_of(&self, key: &str, field: &str, over: &str) -> Rgba {
-        flat(
-            self.parse(self.paint_hex(key, field)),
-            self.opaque(self.color_hex(over)),
-        )
-    }
-
-    /// Draw `hex` over `under`, both written as the resolved file writes colors.
-    pub fn draw(&self, hex: &str, under: &str) -> Color {
-        self.terminal(flat(self.parse(hex), self.opaque(under)))
+    /// Whether a paint field shows at all: a color that is not fully transparent. A transparent
+    /// edge is no edge, whatever its flat form.
+    pub fn shows(&self, key: &str, field: &str) -> bool {
+        self.field_of(key, field).and_then(Rgba::parse).is_some_and(|c| c.3 > 0)
     }
 
     /// An opaque color in the terminal's depth.
@@ -190,6 +210,19 @@ impl Look {
             Depth::Ansi256 => Color::Indexed(nearest_256(c)),
             Depth::None => Color::Reset,
         }
+    }
+
+    /// A color token in the terminal's depth.
+    pub fn token(&self, name: &str) -> Color {
+        self.terminal(self.color(name))
+    }
+
+    /// A paint field in the terminal's depth; panics where the contract paints none.
+    pub fn fill(&self, key: &str, field: &str) -> Color {
+        self.terminal(
+            self.paint(key, field)
+                .unwrap_or_else(|| panic!("the contract paints no {field} for {key}")),
+        )
     }
 
     /// A length token in px (`radius-surface`, `spacing-finger`).
@@ -206,75 +239,9 @@ impl Look {
             .unwrap_or_else(|| panic!("the contract has no density length {name}"))
     }
 
-    /// A text role's resolved size, line height, weight and tracking.
-    pub fn text_role(&self, role: &str) -> &'static Value {
-        &self.tokens["text"][role]
-    }
-
-    /// A box's lines and corners: the radius ladder as one bit, rounded or square, in the look's
-    /// character set (`+`, `-` and `|` in ASCII).
-    pub fn border_set(&self, role: &str) -> ratatui::symbols::border::Set<'static> {
-        use ratatui::symbols::border;
-        match (self.charset, self.corners(role)) {
-            (Charset::Ascii, _) => border::Set {
-                top_left: "+",
-                top_right: "+",
-                bottom_left: "+",
-                bottom_right: "+",
-                vertical_left: "|",
-                vertical_right: "|",
-                horizontal_top: "-",
-                horizontal_bottom: "-",
-            },
-            (Charset::Unicode, BorderType::Rounded) => border::ROUNDED,
-            (Charset::Unicode, _) => border::PLAIN,
-        }
-    }
-
-    /// Corners in cells: the radius ladder is one bit, rounded or square.
-    pub fn corners(&self, role: &str) -> BorderType {
-        if self.length(role) > 0.0 {
-            BorderType::Rounded
-        } else {
-            BorderType::Plain
-        }
-    }
-
-    /// A color token as a surface other colors lie on (`background`, `card`, `popover`, `sidebar`).
-    pub fn surface(&self, name: &str) -> Rgba {
-        self.opaque(self.color_hex(name))
-    }
-
-    /// A color token laid over a surface.
-    pub fn color_on(&self, name: &str, under: Rgba) -> Rgba {
-        flat(self.parse(self.color_hex(name)), under)
-    }
-
-    /// A paint field laid over a surface. `None` where the contract writes no color there
-    /// (`inherit`, or a field the paint lacks).
-    pub fn paint_on(&self, key: &str, field: &str, under: Rgba) -> Option<Rgba> {
-        if !self.has_paint(key, field) {
-            return None;
-        }
-        Rgba::parse(self.paint_hex(key, field)).map(|c| flat(c, under))
-    }
-
-    /// The color of a paint's `ring` or `outline` (`{color, width, offset}`), laid over a surface.
-    pub fn paint_ring_on(&self, key: &str, field: &str, under: Rgba) -> Option<Rgba> {
-        let hex = self.paints.get(key)?.get(field)?.get("color")?.as_str()?;
-        Rgba::parse(hex).map(|c| flat(c, under))
-    }
-
-    /// Whether a paint field is drawn at all: present, a color, and not fully transparent.
-    pub fn paint_shows(&self, key: &str, field: &str) -> bool {
-        self.has_paint(key, field) && Rgba::parse(self.paint_hex(key, field)).is_some_and(|c| c.3 > 0)
-    }
-
-    /// A color as a disabled control shows it: laid over its surface at `disabled-opacity`.
-    /// A stand-in, as [`flat`] is, until the resolver writes disabled paints opaque.
-    pub fn faded(&self, color: Rgba, under: Rgba) -> Rgba {
-        let a = (self.number("disabled-opacity") * 255.0).round() as u8;
-        flat(Rgba(color.0, color.1, color.2, a), under)
+    /// A theme word (`table-head-transform`).
+    pub fn word(&self, name: &str) -> Option<&'static str> {
+        self.tokens["words"].get(name)?.as_str()
     }
 
     /// A number token (`disabled-opacity`).
@@ -291,50 +258,55 @@ impl Look {
             .unwrap_or_else(|| panic!("the contract has no duration {name}"))
     }
 
-    /// The glyphs this look draws with.
-    pub fn glyphs(&self) -> &'static Glyphs {
-        self.charset.glyphs()
+    /// A text role's resolved size, line height, weight and tracking.
+    pub fn text_role(&self, role: &str) -> &'static Value {
+        &self.tokens["text"][role]
     }
 
-    pub fn charset(&self) -> Charset {
-        self.charset
+    /// Corners in cells: the radius ladder is one bit, rounded or square.
+    pub fn corners(&self, role: &str) -> BorderType {
+        if self.length(role) > 0.0 {
+            BorderType::Rounded
+        } else {
+            BorderType::Plain
+        }
     }
 
-    pub fn with_charset(mut self, charset: Charset) -> Look {
-        self.charset = charset;
-        self
+    /// A box's lines and corners from glyphs.json: rounded or square by the radius role, ASCII in
+    /// the ASCII character set.
+    pub fn border_set(&self, role: &str) -> ratatui::symbols::border::Set<'static> {
+        let b = self.box_glyphs(role);
+        ratatui::symbols::border::Set {
+            top_left: b.top_start,
+            top_right: b.top_end,
+            bottom_left: b.bottom_start,
+            bottom_right: b.bottom_end,
+            vertical_left: b.down,
+            vertical_right: b.down,
+            horizontal_top: b.across,
+            horizontal_bottom: b.across,
+        }
+    }
+
+    /// A box's glyphs, its tees included, by the radius role.
+    pub fn box_glyphs(&self, role: &str) -> &'static crate::glyphs::BoxGlyphs {
+        let g = self.glyphs();
+        match (self.charset, self.corners(role)) {
+            (Charset::Ascii, _) => &g.box_ascii,
+            (Charset::Unicode, BorderType::Rounded) => &g.box_rounded,
+            (Charset::Unicode, _) => &g.box_square,
+        }
     }
 
     /// The spinner frame to draw after `elapsed_ms` of busy: one frame per `motion-fast`.
     pub fn spinner_frame(&self, elapsed_ms: u64) -> &'static str {
-        let frames = self.glyphs().spinner;
+        let frames = &self.glyphs().spinner;
         frames[((elapsed_ms / self.duration_ms("motion-fast").max(1)) as usize) % frames.len()]
-    }
-
-    fn parse(&self, hex: &str) -> Rgba {
-        Rgba::parse(hex).unwrap_or_else(|| panic!("not a resolved color: {hex}"))
-    }
-
-    /// A surface is opaque by the time anything lies on it; a translucent one lies on `background`.
-    fn opaque(&self, hex: &str) -> Rgba {
-        let c = self.parse(hex);
-        if c.is_opaque() {
-            c
-        } else {
-            flat(c, self.parse(self.color_hex("background")))
-        }
     }
 }
 
-/// The ink of what a piece stands on, for a paint whose ink is `inherit`: `foreground` on the
-/// page, `popover-foreground` in a popup, `sidebar-foreground` on the rail.
-pub fn ink_on(surface: &str) -> &'static str {
-    match surface {
-        "card" => "card-foreground",
-        "popover" => "popover-foreground",
-        "sidebar" => "sidebar-foreground",
-        _ => "foreground",
-    }
+fn parse(hex: &str) -> Rgba {
+    Rgba::parse(hex).unwrap_or_else(|| panic!("not a resolved color: {hex}"))
 }
 
 /// `table.base.hover.row` -> `table.base.rest.row`.
@@ -347,7 +319,8 @@ fn rest_of(key: &str) -> String {
     }
 }
 
-/// The sRGB value of one of xterm's 256 colors.
+/// The sRGB value of one of xterm's 256 colors. 0 to 15 are the terminal's own; these are xterm's
+/// defaults, for a picture of a buffer only.
 pub fn xterm_256(i: u8) -> Rgba {
     const BASE: [(u8, u8, u8); 16] = [
         (0, 0, 0),
@@ -384,15 +357,43 @@ pub fn xterm_256(i: u8) -> Rgba {
     }
 }
 
-/// The nearest of xterm's cube and grays (16 to 255), by distance in sRGB weighted for the eye.
-fn nearest_256(c: Rgba) -> u8 {
-    let d = |a: Rgba| {
-        let (dr, dg, db) = (
-            a.0 as i32 - c.0 as i32,
-            a.1 as i32 - c.1 as i32,
-            a.2 as i32 - c.2 as i32,
-        );
-        2 * dr * dr + 4 * dg * dg + 3 * db * db
+/// An sRGB color in OKLab.
+pub fn oklab(c: Rgba) -> [f64; 3] {
+    let lin = |v: u8| {
+        let v = v as f64 / 255.0;
+        if v <= 0.04045 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
     };
-    (16..=255u8).min_by_key(|&i| d(xterm_256(i))).unwrap_or(16)
+    let (r, g, b) = (lin(c.0), lin(c.1), lin(c.2));
+    let l = (0.412_221_470_8 * r + 0.536_332_536_3 * g + 0.051_445_992_9 * b).cbrt();
+    let m = (0.211_903_498_2 * r + 0.680_699_545_1 * g + 0.107_396_956_6 * b).cbrt();
+    let s = (0.088_302_461_9 * r + 0.281_718_837_6 * g + 0.629_978_700_5 * b).cbrt();
+    [
+        0.210_454_255_3 * l + 0.793_617_785 * m - 0.004_072_046_8 * s,
+        1.977_998_495_1 * l - 2.428_592_205 * m + 0.450_593_709_9 * s,
+        0.025_904_037_1 * l + 0.782_771_766_2 * m - 0.808_675_766 * s,
+    ]
+}
+
+/// The nearest of xterm's cube and grays (16 to 255) by distance in OKLab, the lower index on a
+/// tie (`colorDepth.ansi256`).
+pub fn nearest_256(c: Rgba) -> u8 {
+    let want = oklab(c);
+    let d = |i: u8| {
+        let o = oklab(xterm_256(i));
+        (o[0] - want[0]).powi(2) + (o[1] - want[1]).powi(2) + (o[2] - want[2]).powi(2)
+    };
+    let mut best = 16u8;
+    let mut best_d = d(16);
+    for i in 17..=255u8 {
+        let di = d(i);
+        if di < best_d {
+            best = i;
+            best_d = di;
+        }
+    }
+    best
 }

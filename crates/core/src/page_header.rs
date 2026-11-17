@@ -6,11 +6,13 @@
 //! there is no room, and items fold into More from the last so the row stays one line. The header
 //! lays out by its own box. In the frame it draws no trail of its own (principle 8).
 //!
-//! In cells the lines 4 and 6 apart are no rows; the actions wrap a blank row under the block.
-//! The 512 px line is 61 columns. Buttons stand side by side with their ring cells between them.
+//! In cells (the part's `cells` note) the lines 4 and 6 apart are no rows; actions wrapped under
+//! the block come after a blank row at regular, none at compact. Buttons stand a column apart, the
+//! back button is three columns and one before the block, the meta's facts two apart. The 512 px
+//! line is 61 columns.
 
 use crate::button::{Button, ButtonVariant};
-use crate::cells::{PX_PER_COL, cols, rows};
+use crate::cells::{PX_PER_COL, cols, gap_rows};
 use crate::look::{Look, Rgba};
 use crate::text::{self, TextRole};
 use ratatui::buffer::Buffer;
@@ -180,7 +182,7 @@ impl<'a> PageHeader<'a> {
 
     /// Columns before the block's lines: the back button and 8 px after it.
     fn lead(&self) -> u16 {
-        self.back_button().map_or(0, |b| b.width() + cols(8.0))
+        self.back_button().map_or(0, |b| b.width() + 1)
     }
 
     fn title_text(&self) -> &str {
@@ -195,17 +197,23 @@ impl<'a> PageHeader<'a> {
         !self.items.is_empty() || self.primary.is_some()
     }
 
-    /// The actions' width with `shown` items and More if any are folded.
+    /// The actions' width with `shown` items and More if any are folded, a column apart.
     fn actions_width(&self, shown: usize) -> u16 {
-        let items: u16 = self.items.iter().take(shown).map(Button::width).sum();
-        let more = if shown < self.items.len() {
-            self.more_button().width()
-        } else {
+        let more = (shown < self.items.len()).then(|| self.more_button());
+        let widths: Vec<u16> = self
+            .items
+            .iter()
+            .take(shown)
+            .chain(more.as_ref())
+            .chain(self.primary.as_ref())
+            .chain(self.actions.iter())
+            .map(Button::width)
+            .collect();
+        if widths.is_empty() {
             0
-        };
-        let primary = self.primary.as_ref().map_or(0, Button::width);
-        let actions: u16 = self.actions.iter().map(Button::width).sum();
-        items + more + primary + actions
+        } else {
+            widths.iter().sum::<u16>() + widths.len() as u16 - 1
+        }
     }
 
     /// How many items show in `room` columns: all, or as many as fit beside More.
@@ -283,7 +291,11 @@ impl<'a> PageHeader<'a> {
         let (block_w, beside, _) = self.split(width);
         let lines = self.block_lines(block_w) as u16;
         let none = self.items.is_empty() && self.primary.is_none() && self.actions.is_empty();
-        if beside || none { lines } else { lines + rows(12.0) + 1 }
+        if beside || none {
+            lines
+        } else {
+            lines + gap_rows(self.look, 12.0) + 1
+        }
     }
 
     /// Where the pieces land in `area`.
@@ -307,24 +319,24 @@ impl<'a> PageHeader<'a> {
         let (mut x, y) = if beside {
             (area.right().saturating_sub(total), area.y + lines.saturating_sub(1))
         } else {
-            (area.x + lead, area.y + lines + rows(12.0))
+            (area.x + lead, area.y + lines + gap_rows(self.look, 12.0))
         };
         for (i, b) in self.items.iter().take(shown).enumerate() {
             out.items.push((i, Rect::new(x, y, b.width(), 1)));
-            x += b.width();
+            x += b.width() + 1;
         }
         if shown < self.items.len() {
             let w = self.more_button().width();
             out.more = Some(Rect::new(x, y, w, 1));
-            x += w;
+            x += w + 1;
         }
         if let Some(p) = &self.primary {
             out.primary = Some(Rect::new(x, y, p.width(), 1));
-            x += p.width();
+            x += p.width() + 1;
         }
         for (i, b) in self.actions.iter().enumerate() {
             out.actions.push((i, Rect::new(x, y, b.width(), 1)));
-            x += b.width();
+            x += b.width() + 1;
         }
         out
     }
@@ -345,10 +357,9 @@ impl Widget for &PageHeader<'_> {
         let look = self.look;
         let glyphs = look.glyphs();
         let t = |c: Rgba| look.terminal(c);
-        let page = look.surface("background");
         let ink = |piece: &str| {
-            look.paint_on(&format!("page-header.base.rest.{piece}"), "ink", page)
-                .unwrap_or_else(|| look.color_on("muted-foreground", page))
+            look.paint(&format!("page-header.base.rest.{piece}"), "ink")
+                .unwrap_or_else(|| look.color("muted-foreground"))
         };
         let layout = self.layout(area);
         let (block_w, _, _) = self.split(area.width);
@@ -401,7 +412,7 @@ impl Widget for &PageHeader<'_> {
         } else {
             // A code standing as the title: one line, cut short.
             let style = TextRole::PageTitle.style(look).fg(t(look
-                .paint_on("page-header.base.codeTitle.title", "ink", page)
+                .paint("page-header.base.codeTitle.title", "ink")
                 .unwrap_or_else(|| ink("title"))));
             let room = (block_w as usize).saturating_sub(self.count_room());
             let mut spans = vec![Span::styled(

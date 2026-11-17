@@ -58,39 +58,38 @@ show up here first.
 9. **The scrim.** One rule for what is under a layer in cells: drawn faint, or each cell's colors
    flattened under the scrim at run time as the one allowed blend.
 
-## (c2) What building Button and TextField settled
+## (c2) What landed, and what is still asked
 
-How the first two parts read in cells, for the per-part cell note in point 2:
+sokkel-design 0cd3072 (sokkel-design #31, tokens from sokkel-ui #659) holds points 1 to 9: opaque
+`flat` and `faded` paints over each piece's `standsOn`, `cells` in the index and per part, the text
+roles in cells, `colorDepth` with the `ansi-*` tokens and the OKLab rule for 256, glyphs.json,
+`renderers` per part, principle 23 (tips in the status line) and principle 17's terminal note.
+sokkel-tui reads all of it at that pin; its two stand-ins are gone. Still open there: T1 (sixteen
+colors), T2 (the scrim), T3 (one-row edges), T4 (focus in cells), T5 (the egui renderer's name).
 
-- **One row.** Every button size and the text field's control are one row. A size keeps its text
-  role (`badge` for `xs` and `sm`, `action` above); padding is one column.
-- **An edge in the pad cells.** A one-row control cannot draw a box, so its edge is a thin bar at
-  each end (`▏Filter▕`, `|` in ASCII), in the paint's edge color, where the edge is not transparent.
-- **The focus ring outside, in a reserved cell.** A focused button draws `┃` in the cell outside
-  each end: half a cell off the box, as `focus-ring-offset` keeps the outline off it, and visible
-  where the ring and the ground are one color (tidevann dark's default button). The width counts
-  those cells, so focus never moves anything. Without color, focus is reversed.
-- **The issue mark** takes three columns inside the control's end (`density.control-sm` is about
-  three columns); its focus ring hugs the glyph. The critical and warning glyphs differ in shape, not
-  only ink (`✖` and `▲`, `x` and `!` in ASCII).
-- **Disabled.** `disabled-opacity` laid over the surface, as the flattening stand-in does. Without
-  color, the faint attribute is the one cue left; the opaque disabled paints of point 1 would
-  replace both.
-- **A paint's ink of `inherit`** is the ink of the surface the part says it stands on (`on`).
+From building Button, TextField, PageState, PageHeader and Section on it:
 
-And from PageState, PageHeader and Section:
-
-- **Rows from px.** A vertical gap of 12 or more is a blank row, a smaller one none (`cells::rows`,
-  18 px a row). So the page state's pieces 12 apart are a row apart and its lines 4 apart are not;
-  a section's body padding is a row at regular density and none at compact.
-- **A boxed section's head rule** takes a row of its own, joined to the box's sides (`├──┤`); a
-  critical box draws its top line heavy in `critical`.
-- **A missing paint.** `page-state`'s warning tone (`warning/8` ground, `warning/35` edge) has no
-  resolved paint for its frame: `page-state.base.failed.frame` is the only failed frame. sokkel-tui
-  draws a warning in the failed frame, its triangle and heading saying the tone. The resolver could
-  add `page-state.base.failedWarning.frame` (and the mark's `warning-ink`), as the other tones are.
-- **A page header's widths** read 512 px as 61 columns, 256 as 30 and 128 as 15, measured on the
-  header's own width; the block's own width is its widest line, the description at most 65.
+1. **T3: recommendation b holds.** The end bars (`▏Filter▕`, brackets in ASCII) read as an edge
+   and keep the ground's width. sokkel-tui draws them.
+2. **T4: a ring beside the control, in the gap.** sokkel-tui draws keyboard focus on a button as
+   `┃` in the cell beside each end, outside its width: half a cell off the box, as
+   `focus-ring-offset` keeps it off, and visible where the ring and the ground are one color
+   (tidevann dark's default button), which reverse video is not. A row of buttons keeps a column
+   between them (the parts' `gap: 1`), and only one control has focus, so the cells are free.
+   For a row of a table or a list, recommendation a (`focus-mark` at the row's start) fits.
+3. **A part on another surface.** `flat` is resolved over a piece's `standsOn` default. A ghost
+   button in a section's head, an outline one in a popover, stands elsewhere: its hover ground's
+   flat form is then off by the difference. sokkel-tui draws a fully transparent ground as no ground
+   (the cell keeps its own), which is exact, but has no answer for a translucent hover there. The
+   resolver could write `flat` per surface a part names (`standsOn` listing `card`, `popover`,
+   `section-head-ground`), or the specs could name the surface a part's actions stand on.
+4. **A missing paint.** `page-state`'s warning tone (`warning/8` ground, `warning/35` edge) has no
+   resolved frame: `page-state.base.failed.frame` is the only failed frame. sokkel-tui draws a
+   warning in the failed frame, its triangle and heading saying the tone.
+5. **A critical section's rule.** The web's 2 px `critical` rule across the box's top has no cell
+   form; sokkel-tui draws the top line heavy (`━`, `=` in ASCII). glyphs.json could hold a heavy
+   rule beside `rule`.
+6. **A graph's dot.** The section's dot grid has no glyph in glyphs.json; sokkel-tui draws `·`.
 
 ## (d) Where it lives
 

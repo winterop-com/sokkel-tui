@@ -52,21 +52,22 @@ fn a_failed_read_says_its_diagnostic_problems_and_try_again() {
     let (buf, text) = draw(50, h, &s);
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(h as usize, lines.len());
-    assert!(lines[2].contains("✖ The server refused this read"), "{text}");
+    assert!(lines[2].contains("! The server refused this read"), "{text}");
     assert!(lines[3].contains("The schedule 0 25 * * * is not one."));
     assert!(lines[4].contains("• The hour is 0 to 23."));
     assert!(lines[6].contains("↻ Try again"));
     // The code part stands on its chip.
     let x = lines[3].find("0 25").unwrap() as u16;
-    let chip = look.terminal(
-        look.paint_on("page-state.base.failed.code", "ground", look.surface("card"))
-            .unwrap(),
-    );
+    let chip = look.fill("page-state.base.failed.code", "ground");
     assert_eq!(buf[(x, 3)].bg, chip);
     // Try again is where the layout says, and Enter presses it.
     let r = s.retry_area(Rect::new(0, 0, 50, h)).unwrap();
     assert_eq!(r.y, 6);
-    assert_eq!(lines[6].chars().nth(r.x as usize + 2), Some('↻'));
+    assert_eq!(
+        lines[6].chars().nth(r.x as usize + 1),
+        Some('↻'),
+        "the arrow after the pad cell"
+    );
     assert!(s.retry_button().unwrap().presses(Key::Enter.into()));
 }
 
@@ -79,9 +80,9 @@ fn loading_and_empty_and_unframed() {
     let (_, text) = draw(30, empty.height(30), &empty);
     assert!(text.contains("No runs yet."));
     let bare = PageState::failed(&look, None).framed(false);
-    assert_eq!(bare.height(40), 3, "a row of padding above and below, no edge");
-    assert_eq!(bare.height(30), 4, "the heading wraps");
-    let (_, text) = draw(40, 3, &bare);
+    assert_eq!(bare.height(40), 1, "unframed: no padding rows, no edge");
+    assert_eq!(bare.height(30), 2, "the heading wraps");
+    let (_, text) = draw(40, 1, &bare);
     assert!(!text.contains('╭'));
     let warn = PageState::failed(&look, None).tone(StateTone::Warning);
     let (_, text) = draw(50, warn.height(50), &warn);
@@ -98,7 +99,7 @@ fn a_header_keeps_its_actions_beside_the_title_while_there_is_room() {
     assert_eq!(h.height(80), 1);
     let (_, text) = draw(80, 1, &h);
     assert!(text.starts_with("Runs 1,200 runs"));
-    assert!(text.trim_end().ends_with("Filter    New"));
+    assert!(text.trim_end().ends_with("Filter   New"), "{text}");
     // Too narrow: they wrap under the title, a blank row down.
     assert_eq!(h.height(20), 3);
     let l = h.layout(Rect::new(0, 0, 20, 3));
@@ -110,16 +111,16 @@ fn a_header_keeps_its_actions_beside_the_title_while_there_is_room() {
 fn items_fold_into_more_from_the_last() {
     let look = look();
     let h = PageHeader::new(&look, "nightly-export")
-        .items(["Run now", "Pause", "Duplicate", "Delete"].map(|w| Button::new(&look, w)))
+        .items(["Run now", "Pause", "Duplicate", "Archive", "Delete"].map(|w| Button::new(&look, w)))
         .primary(Button::new(&look, "Edit"));
     let wide = h.layout(Rect::new(0, 0, 120, 1));
     assert_eq!(wide.folded, 0);
     assert!(wide.more.is_none());
-    let narrow = h.layout(Rect::new(0, 0, 62, 1));
-    assert!(narrow.folded > 0 && narrow.folded < 4);
+    let narrow = h.layout(Rect::new(0, 0, 64, 1));
+    assert!(narrow.folded > 0 && narrow.folded < 5, "{narrow:?}");
     assert!(narrow.more.is_some());
     assert!(narrow.primary.is_some(), "the primary never folds");
-    assert_eq!(narrow.items.len() + narrow.folded, 4);
+    assert_eq!(narrow.items.len() + narrow.folded, 5);
 }
 
 #[test]
@@ -140,10 +141,10 @@ fn a_boxed_section_has_its_head_over_a_rule() {
     let (_, text) = draw(30, area.height, &s);
     let lines: Vec<&str> = text.lines().collect();
     assert!(lines[0].starts_with('╭'));
-    assert!(lines[1].starts_with("│ Recent runs 12"));
+    assert!(lines[1].starts_with("│  Recent runs 12"), "{text}");
     assert!(lines[2].starts_with('├') && lines[2].ends_with('┤'));
     let body = s.body(area);
-    assert_eq!((body.x, body.width), (2, 26));
+    assert_eq!((body.x, body.width), (3, 24), "two columns of padding at regular");
     assert_eq!(body.y, 4, "a padding row at regular density");
     assert_eq!(body.height, 1);
 }
@@ -161,7 +162,7 @@ fn critical_and_flat() {
     let s = Section::new(&look, "Failing hosts").tone(SectionTone::Critical);
     let (_, text) = draw(30, s.height(30, 1), &s);
     assert!(text.starts_with("╭━━"));
-    assert!(text.contains("✖ Failing hosts"));
+    assert!(text.contains("▲ Failing hosts"), "{text}");
     let flat = Section::new(&look, "Settings").variant(SectionVariant::Flat);
     let (_, text) = draw(30, flat.height(30, 1), &flat);
     let lines: Vec<&str> = text.lines().collect();

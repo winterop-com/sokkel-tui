@@ -6,14 +6,16 @@
 //! a description under it, and actions at the head's end. A tone draws the body as a graph's dot
 //! grid or marks the section critical.
 //!
-//! In cells the boxed head is one row (more with a description) on the heads' ground, its rule a
-//! row of its own joined to the box's sides (`├──┤`). The body is padded `density.panel-pad`: a
-//! column across, and a row down at regular density, none at compact. A critical box draws its top
-//! line heavy in `critical`. Draw the section, then the body into [`Section::body`].
+//! In cells (the part's `cells` note) the boxed head is one row on the heads' ground (one more per
+//! line of a description), its rule a row of tees joined to the box's sides. The head and body are
+//! padded two columns at regular and one at compact; the body has a blank row inside the box at
+//! the top and bottom at regular, none at compact. A flat head is its title row and a rule row,
+//! then a blank row at regular. A critical box draws its top line heavy in `critical` (sokkel-tui's
+//! reading of the web's 2 px rule) and a warning mark before the title. Draw the section, then the
+//! body into [`Section::body`].
 
 use crate::button::Button;
-use crate::cells::{cols, rows};
-use crate::glyphs::Charset;
+use crate::cells::by_density;
 use crate::look::{Look, Rgba};
 use crate::text::{self, TextRole};
 use ratatui::buffer::Buffer;
@@ -101,13 +103,9 @@ impl<'a> Section<'a> {
         self.variant == SectionVariant::Boxed
     }
 
-    /// The surface the head's actions stand on, a color token.
-    fn head_surface(&self) -> &'static str {
-        if self.variant == SectionVariant::Boxed {
-            "section-head-ground"
-        } else {
-            "background"
-        }
+    /// The side padding of the head and the body.
+    fn pad_x(&self) -> u16 {
+        by_density(self.look, 2, 1)
     }
 
     /// Body padding across and down.
@@ -115,33 +113,30 @@ impl<'a> Section<'a> {
         if self.flush || !self.boxed() {
             (0, 0)
         } else {
-            let p = self.look.density_px("panel-pad");
-            (cols(p), rows(p))
+            (self.pad_x(), by_density(self.look, 1, 0))
         }
     }
 
+    /// The head's own side padding: inside the box, none over a flat head.
+    fn head_pad(&self) -> u16 {
+        if self.boxed() { self.pad_x() } else { 0 }
+    }
+
     fn description_lines(&self, width: u16) -> u16 {
-        let room = width.saturating_sub(2 * self.head_pad());
+        let side = 2 * u16::from(self.boxed());
+        let room = width.saturating_sub(side + 2 * self.head_pad());
         self.description
             .as_ref()
             .map_or(0, |d| text::wrap(d, room as usize).len() as u16)
     }
 
-    fn head_pad(&self) -> u16 {
-        if self.boxed() {
-            cols(self.look.density_px("panel-pad"))
-        } else {
-            0
-        }
-    }
-
     /// Rows above the body at `width` columns.
     fn top(&self, width: u16) -> u16 {
-        let head = 1 + self.description_lines(width.saturating_sub(2));
+        let head = 1 + self.description_lines(width);
         if self.boxed() {
             1 + head + 1
         } else {
-            head + 1 + rows(self.look.density_px("section-gap"))
+            head + 1 + by_density(self.look, 1, 0)
         }
     }
 
@@ -164,18 +159,20 @@ impl<'a> Section<'a> {
         }
     }
 
-    /// Where each action lands in `area`, for focus stops.
+    /// Where each action lands in `area`, a column apart at the head's end, for focus stops.
     pub fn action_areas(&self, area: Rect) -> Vec<Rect> {
         let side = u16::from(self.boxed());
         let y = area.y + side;
-        let mut x = area.right().saturating_sub(side + self.head_pad().saturating_sub(1));
+        let mut x = area.right().saturating_sub(side + self.head_pad());
         let mut out: Vec<Rect> = self
             .actions
             .iter()
             .rev()
             .map(|b| {
                 x = x.saturating_sub(b.width());
-                Rect::new(x, y, b.width(), 1)
+                let r = Rect::new(x, y, b.width(), 1);
+                x = x.saturating_sub(1);
+                r
             })
             .collect();
         out.reverse();
@@ -198,22 +195,23 @@ impl Widget for &Section<'_> {
         let look = self.look;
         let glyphs = look.glyphs();
         let t = |c: Rgba| look.terminal(c);
-        let page = look.surface("background");
+        let page = look.color("background");
         let critical = self.tone == SectionTone::Critical;
-        let paint = |key: &str, field: &str, under: Rgba| look.paint_on(&format!("section.base.{key}"), field, under);
-        let box_ground = paint("rest.box", "ground", page).unwrap_or(page);
+        let paint = |key: &str, field: &str| look.paint(&format!("section.base.{key}"), field);
+        let box_ground = paint("rest.box", "ground").unwrap_or(page);
         let head_ground = if self.boxed() {
-            paint("rest.head", "ground", box_ground).unwrap_or(box_ground)
+            paint("rest.head", "ground").unwrap_or(box_ground)
         } else {
             page
         };
         let side = u16::from(self.boxed());
-
-        // The box, its head's ground, the rule under the head.
-        let head_rows = 1 + self.description_lines(area.width.saturating_sub(2));
+        let head_rows = 1 + self.description_lines(area.width);
         let rule_y;
+        let bx = look.box_glyphs("radius-surface");
+
         if self.boxed() {
-            let edge = paint("rest.box", "edge", box_ground).unwrap_or(box_ground);
+            // The box: its border on the page, its inside the card, the head's ground over the rule.
+            let edge = paint("rest.box", "edge").unwrap_or(box_ground);
             let block = Block::new()
                 .borders(Borders::ALL)
                 .border_set(look.border_set("radius-surface"))
@@ -222,7 +220,7 @@ impl Widget for &Section<'_> {
             block.render(area, buf);
             buf.set_style(inner, Style::new().bg(t(box_ground)));
             if critical {
-                let rule = paint("toneCritical.box", "rule", page).unwrap_or(edge);
+                let rule = paint("toneCritical.box", "rule").unwrap_or(edge);
                 for x in area.x + 1..area.right() - 1 {
                     buf[(x, area.y)]
                         .set_symbol(glyphs.heavy_rule)
@@ -233,17 +231,15 @@ impl Widget for &Section<'_> {
             buf.set_style(head, Style::new().bg(t(head_ground)));
             rule_y = area.y + 1 + head_rows;
             if rule_y < area.bottom() - 1 {
-                let rule = paint("rest.head", "rule", box_ground).unwrap_or(edge);
-                let (l, m, r) = match look.charset() {
-                    Charset::Unicode => ("├", "─", "┤"),
-                    Charset::Ascii => ("+", "-", "+"),
-                };
+                let rule = paint("rest.head", "rule").unwrap_or(edge);
                 let st = Style::new().fg(t(rule)).bg(t(box_ground));
-                buf[(area.x, rule_y)].set_symbol(l).set_style(st.bg(t(page)));
+                buf[(area.x, rule_y)].set_symbol(bx.tee_start).set_style(st.bg(t(page)));
                 for x in area.x + 1..area.right() - 1 {
-                    buf[(x, rule_y)].set_symbol(m).set_style(st);
+                    buf[(x, rule_y)].set_symbol(bx.across).set_style(st);
                 }
-                buf[(area.right() - 1, rule_y)].set_symbol(r).set_style(st.bg(t(page)));
+                buf[(area.right() - 1, rule_y)]
+                    .set_symbol(bx.tee_end)
+                    .set_style(st.bg(t(page)));
             }
         } else {
             rule_y = area.y + head_rows;
@@ -253,16 +249,10 @@ impl Widget for &Section<'_> {
                 } else {
                     "rest.flatHead"
                 };
-                let rule = paint(key, "rule", page).unwrap_or(page);
-                let st = Style::new().fg(t(rule));
-                let line = match look.charset() {
-                    Charset::Unicode if critical => glyphs.heavy_rule,
-                    Charset::Unicode => "─",
-                    Charset::Ascii if critical => glyphs.heavy_rule,
-                    Charset::Ascii => "-",
-                };
+                let rule = paint(key, "rule").unwrap_or(page);
+                let line = if critical { glyphs.heavy_rule } else { glyphs.rule };
                 for x in area.x..area.right() {
-                    buf[(x, rule_y)].set_symbol(line).set_style(st);
+                    buf[(x, rule_y)].set_symbol(line).set_style(Style::new().fg(t(rule)));
                 }
             }
         }
@@ -271,11 +261,11 @@ impl Widget for &Section<'_> {
         let hx = area.x + side + self.head_pad();
         let hy = area.y + side;
         let hw = area.width.saturating_sub(2 * (side + self.head_pad()));
-        let actions_w: u16 = self.actions.iter().map(Button::width).sum();
+        let actions_w: u16 = self.actions.iter().map(|b| b.width() + 1).sum();
         let mut x = hx;
         if critical {
-            let ink = paint("toneCritical.mark", "ink", head_ground).unwrap_or(head_ground);
-            buf.set_string(x, hy, glyphs.issue_critical, Style::new().fg(t(ink)));
+            let ink = paint("toneCritical.mark", "ink").unwrap_or_else(|| look.color("critical"));
+            buf.set_string(x, hy, glyphs.issue_warning, Style::new().fg(t(ink)));
             x += 2;
         }
         let (role, title_key) = if self.boxed() {
@@ -283,22 +273,22 @@ impl Widget for &Section<'_> {
         } else {
             (TextRole::SectionTitle, "rest.flatTitle")
         };
-        let title_ink = paint(title_key, "ink", head_ground).unwrap_or(head_ground);
+        let title_ink = paint(title_key, "ink").unwrap_or_else(|| look.color("foreground"));
         let meta_w = self.meta.as_ref().map_or(0, |m| text::width(m) as u16 + 1);
-        let room = (hx + hw).saturating_sub(x + actions_w + meta_w + u16::from(actions_w > 0));
+        let room = (hx + hw).saturating_sub(x + actions_w + meta_w);
         let title = text::truncate(&self.title, room as usize, glyphs.ellipsis);
         buf.set_string(x, hy, &title, role.style(look).fg(t(title_ink)));
         x += text::width(&title) as u16;
         let quiet = TextRole::Help.style(look);
         if let Some(m) = &self.meta {
-            let ink = paint("rest.meta", "ink", head_ground).unwrap_or(head_ground);
+            let ink = paint("rest.meta", "ink").unwrap_or_else(|| look.color("muted-foreground"));
             buf.set_string(x + 1, hy, m, quiet.fg(t(ink)));
         }
         for (b, r) in self.actions.iter().zip(self.action_areas(area)) {
-            b.clone().on(self.head_surface()).render(r, buf);
+            b.render(r, buf);
         }
         if let Some(d) = &self.description {
-            let ink = paint("rest.description", "ink", head_ground).unwrap_or(head_ground);
+            let ink = paint("rest.description", "ink").unwrap_or_else(|| look.color("muted-foreground"));
             for (i, l) in text::wrap(d, hw as usize).into_iter().enumerate() {
                 let y = hy + 1 + i as u16;
                 if y < rule_y {
@@ -307,12 +297,11 @@ impl Widget for &Section<'_> {
             }
         }
 
-        // A graph's body: the canvas with a dot every two columns, every row.
+        // A graph's body: the canvas with a dot every two columns, every row, centered.
         if self.tone == SectionTone::Graph {
             let body = self.body(area);
-            let under = if self.boxed() { box_ground } else { page };
-            let ground = paint("toneGraph.body", "ground", under).unwrap_or(under);
-            let dot = paint("toneGraph.body", "mark", ground).unwrap_or(ground);
+            let ground = paint("toneGraph.body", "ground").unwrap_or(box_ground);
+            let dot = paint("toneGraph.body", "mark").unwrap_or(ground);
             let (px, py) = self.pad();
             let full = Rect {
                 x: body.x - px,
@@ -321,7 +310,6 @@ impl Widget for &Section<'_> {
                 height: body.height + 2 * py,
             };
             buf.set_style(full, Style::new().bg(t(ground)));
-            // Centered: the spare column, if any, split between the two sides.
             let first = full.x + 1 + (full.width.saturating_sub(1) % 2) / 2;
             for y in full.y..full.bottom() {
                 for x in (first..full.right().saturating_sub(1)).step_by(2) {

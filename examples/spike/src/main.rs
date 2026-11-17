@@ -1,6 +1,7 @@
 //! The spike: sokkel's shell and table drawn from sokkel-design's resolved paints, written out as
 //! SVG and text, cell for cell. Static: no input yet. The parts it draws by hand here move into
-//! the core crate one by one (`docs/plan.md`), and this example then draws them from there.
+//! the core crate one by one (`docs/plan.md`), and this example then draws them from there: the
+//! page header so far.
 //!
 //! Usage: sokkel-tui-spike <theme> <light|dark> <cols> <rows> <out-without-extension>
 
@@ -13,7 +14,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
 };
 use sokkel_tui::cells::{Width, page_inset};
-use sokkel_tui::{Button, ButtonVariant, Look, Scheme, TextRole, snapshot};
+use sokkel_tui::{Button, ButtonVariant, Look, PageHeader, Scheme, TextRole, snapshot};
 
 struct RunRow {
     job: &'static str,
@@ -55,8 +56,8 @@ fn spread(left: Vec<Span<'static>>, right: Vec<Span<'static>>, width: u16) -> Li
 fn draw(f: &mut Frame, look: &Look) {
     let area = f.area();
     let page = Style::new()
-        .bg(look.paint("shell.base.rest.page", "ground", "background"))
-        .fg(look.paint("shell.base.rest.page", "ink", "background"));
+        .bg(look.fill("shell.base.rest.page", "ground"))
+        .fg(look.fill("shell.base.rest.page", "ink"));
     f.buffer_mut().set_style(area, page);
 
     let narrow = Width::of(area) == Width::Narrow;
@@ -80,11 +81,11 @@ fn draw(f: &mut Frame, look: &Look) {
 
 fn draw_rail(f: &mut Frame, look: &Look, area: Rect) {
     const FRAME: &str = "rail.base.rest.frame";
-    let on = |key: &str, field: &str| look.paint_over(key, field, FRAME, "ground");
+    let on = |key: &str, field: &str| look.fill(key, field);
     let block = Block::new()
         .borders(Borders::RIGHT)
         .border_style(Style::new().fg(on(FRAME, "edge")))
-        .style(Style::new().bg(look.paint(FRAME, "ground", "background")));
+        .style(Style::new().bg(look.fill(FRAME, "ground")));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -150,9 +151,7 @@ fn draw_rail(f: &mut Frame, look: &Look, area: Rect) {
         Span::raw(" "),
         Span::styled(
             " a ",
-            Style::new()
-                .bg(look.color("kind-violet", "sidebar"))
-                .fg(look.color("on-fill", "sidebar")),
+            Style::new().bg(look.token("kind-violet")).fg(look.token("on-fill")),
         ),
         Span::styled(" ada", Style::new().fg(on("rail.base.rest.name", "ink"))),
     ]));
@@ -161,8 +160,8 @@ fn draw_rail(f: &mut Frame, look: &Look, area: Rect) {
 
 fn draw_top_bar(f: &mut Frame, look: &Look, area: Rect, rule: Rect, narrow: bool) {
     const BAR: &str = "top-bar.base.rest.bar";
-    let on = |key: &str, field: &str| look.paint_over(key, field, BAR, "ground");
-    let bar = Style::new().bg(look.paint(BAR, "ground", "background"));
+    let on = |key: &str, field: &str| look.fill(key, field);
+    let bar = Style::new().bg(look.fill(BAR, "ground"));
     f.buffer_mut().set_style(area, bar);
     f.buffer_mut().set_style(rule, bar);
     let crumb = Style::new().fg(on("top-bar.base.rest.crumb", "ink"));
@@ -175,9 +174,7 @@ fn draw_top_bar(f: &mut Frame, look: &Look, area: Rect, rule: Rect, narrow: bool
     let keys = Style::new()
         .bg(on("top-bar.base.rest.keys", "ground"))
         .fg(on("top-bar.base.rest.keys", "ink"));
-    let field = Style::new()
-        .bg(look.color("field", "sidebar"))
-        .fg(look.color("muted-foreground", "field"));
+    let field = Style::new().bg(look.token("field")).fg(look.token("muted-foreground"));
 
     let line = if narrow {
         // Below md: the menu button opens the rail as a drawer; the trail keeps its last crumb.
@@ -228,52 +225,35 @@ fn draw_page(f: &mut Frame, look: &Look, body: Rect, narrow: bool) {
     let [head, _, table] =
         Layout::vertical([Constraint::Length(1), Constraint::Length(1), Constraint::Fill(1)]).areas(inner);
 
-    // The page header: the title, its count, the actions with the primary last.
-    let title = TextRole::PageTitle
-        .style(look)
-        .fg(look.paint("page-header.base.rest.title", "ink", "background"));
-    let count = TextRole::Help
-        .style(look)
-        .fg(look.paint("page-header.base.rest.count", "ink", "background"));
-    let line = Line::from(vec![
-        Span::styled("Runs", title),
-        Span::raw("  "),
-        Span::styled("1,200 runs", count),
-    ]);
-    f.render_widget(Paragraph::new(line), head);
-    // The actions, the primary last, at the header's end. A button's width counts its ring cells.
-    let actions = [
+    // The page header, from the core: the title, its count, the actions with the primary last.
+    let header = PageHeader::new(look, "Runs").count("1,200 runs").actions([
         Button::new(look, "Filter").variant(ButtonVariant::Secondary),
         Button::new(look, "New"),
-    ];
-    let mut x = head.right() + 1;
-    for b in actions.iter().rev() {
-        x -= b.width();
-        f.render_widget(b, Rect::new(x, head.y, b.width(), 1));
-    }
+    ]);
+    f.render_widget(&header, head);
     draw_table(f, look, table, narrow);
 }
 
 fn draw_table(f: &mut Frame, look: &Look, area: Rect, narrow: bool) {
     const FRAME: &str = "table.base.rest.frame";
-    let on = |key: &str, field: &str| look.paint_over(key, field, FRAME, "ground");
+    let on = |key: &str, field: &str| look.fill(key, field);
     // The border's cells stand on the page; only the inside wears the frame's ground.
     let block = Block::new()
         .borders(Borders::ALL)
         .border_type(look.corners("radius-surface"))
-        .border_style(Style::new().fg(look.paint(FRAME, "edge", "background")));
+        .border_style(Style::new().fg(look.fill(FRAME, "edge")));
     let inner = block.inner(area);
     f.render_widget(block, area);
     f.buffer_mut()
-        .set_style(inner, Style::new().bg(look.paint(FRAME, "ground", "background")));
+        .set_style(inner, Style::new().bg(look.fill(FRAME, "ground")));
 
     let head = TextRole::Head
         .style(look)
         .bg(on("table.base.rest.head", "ground"))
         .fg(on("table.base.rest.head", "ink"));
     let sorted = head.fg(on("table.base.sorted.head", "ink"));
-    let faint = look.color("faint", "card");
-    let ring = look.color("ring", "card");
+    let faint = look.token("faint");
+    let ring = look.token("ring");
 
     let mut headers = vec![Cell::from(" "), Cell::from("Job"), Cell::from("State")];
     headers.push(Cell::from(if narrow { "By" } else { "Started by" }));
@@ -292,9 +272,8 @@ fn draw_table(f: &mut Frame, look: &Look, area: Rect, narrow: bool) {
             "rest"
         };
         let row_key = format!("table.base.{state}.row");
-        let ground = look.surface_of(&row_key, "ground", "card");
-        let ground_hex = format!("#{:02x}{:02x}{:02x}", ground.0, ground.1, ground.2);
-        let status = |suffix: &str| look.draw(look.color_hex(&format!("status-{}{suffix}", r.state)), &ground_hex);
+        let ground = look.paint(&row_key, "ground").unwrap_or_else(|| look.color("card"));
+        let status = |suffix: &str| look.token(&format!("status-{}{suffix}", r.state));
         let state_cell = Line::from(vec![
             Span::styled("● ", Style::new().fg(status(""))),
             Span::styled(r.state, Style::new().fg(status("-ink"))),
@@ -351,14 +330,14 @@ fn draw_table(f: &mut Frame, look: &Look, area: Rect, narrow: bool) {
         width: 16,
         height: 1,
     };
-    let quiet = Style::new().fg(look.paint("table.base.rest.empty", "ink", "background"));
+    let quiet = Style::new().fg(look.fill("table.base.rest.empty", "ink"));
     f.render_widget(Paragraph::new(Span::styled(" 1–12 of 1,200 ", quiet)), foot);
 }
 
 fn draw_status_line(f: &mut Frame, look: &Look, rule: Rect, area: Rect) {
     const STRIP: &str = "status-line.base.rest.strip";
-    let on = |key: &str, field: &str| look.paint_over(key, field, STRIP, "ground");
-    let ground = Style::new().bg(look.paint(STRIP, "ground", "background"));
+    let on = |key: &str, field: &str| look.fill(key, field);
+    let ground = Style::new().bg(look.fill(STRIP, "ground"));
     f.buffer_mut().set_style(rule, ground);
     f.buffer_mut().set_style(area, ground);
     f.render_widget(
@@ -404,8 +383,8 @@ fn main() {
     let mut term = Terminal::new(TestBackend::new(cols, rows)).unwrap();
     term.draw(|f| draw(f, &look)).unwrap();
     let buffer = term.backend().buffer();
-    let ground = look.color("background", "background");
-    let ink = look.color("foreground", "background");
+    let ground = look.token("background");
+    let ink = look.token("foreground");
     std::fs::write(format!("{}.svg", args[5]), snapshot::svg(buffer, ground, ink)).unwrap();
     std::fs::write(format!("{}.txt", args[5]), snapshot::text(buffer)).unwrap();
 }

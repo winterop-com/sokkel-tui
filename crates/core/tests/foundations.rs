@@ -4,7 +4,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
 use sokkel_tui::cells::{Width, cols};
-use sokkel_tui::look::{Rgba, flat};
+use sokkel_tui::look::{Rgba, nearest_256};
 use sokkel_tui::{Depth, Look, Scheme, TextRole, snapshot, tokens};
 
 #[test]
@@ -14,7 +14,7 @@ fn every_theme_in_both_schemes_has_a_look() {
     for theme in themes {
         for scheme in [Scheme::Light, Scheme::Dark] {
             let look = Look::new(theme, scheme).expect("a look");
-            assert!(matches!(look.color("foreground", "background"), Color::Rgb(..)));
+            assert!(matches!(look.token("foreground"), Color::Rgb(..)));
         }
     }
     assert!(Look::new("no-such-theme", Scheme::Dark).is_none());
@@ -33,10 +33,8 @@ fn every_paint_draws_opaque_in_every_theme() {
                         .and_then(|v| v.as_str())
                         .is_some_and(|v| v.starts_with('#'))
                     {
-                        assert!(
-                            matches!(look.paint(key, field, "background"), Color::Rgb(..)),
-                            "{theme} {key} {field}"
-                        );
+                        let c = look.paint(key, field);
+                        assert!(c.is_some_and(Rgba::is_opaque), "{theme} {key} {field}");
                     }
                 }
             }
@@ -54,18 +52,51 @@ fn a_state_the_contract_does_not_paint_is_drawn_as_rest() {
 }
 
 #[test]
-fn flattening_lays_alpha_over_the_surface() {
-    // tidevann light: primary/80 over background.
-    let over = flat(Rgba::parse("#006aa0cc").unwrap(), Rgba::parse("#f9fafb").unwrap());
-    assert_eq!(over, Rgba(50, 135, 178, 255));
+fn a_blended_paint_is_read_in_its_flat_form() {
+    // tidevann light: the default button's hover ground is primary/80; the contract flattens it.
+    let look = Look::new("tidevann", Scheme::Light).unwrap();
+    assert_eq!(look.paint_hex("button.default.hover.container", "ground"), "#006aa0cc");
+    assert_eq!(
+        look.paint("button.default.hover.container", "ground"),
+        Rgba::parse("#3287b2")
+    );
+    // An inherited ink has its flat form too.
+    assert_eq!(look.paint_hex("button.outline.rest.container", "ink"), "inherit");
+    assert!(look.paint("button.outline.rest.container", "ink").is_some());
+}
+
+#[test]
+fn a_disabled_paint_is_read_in_its_faded_form() {
+    let look = Look::new("tidevann", Scheme::Light).unwrap();
+    assert_eq!(
+        look.faded("button.default.rest.container", "ground"),
+        Rgba::parse("#7db2ce")
+    );
+    assert!(look.faded("text-field.base.disabled.control", "ink").is_some());
+    assert!(look.faded("text-field.base.rest.label", "ink").is_some());
+}
+
+#[test]
+fn a_transparent_edge_does_not_show() {
+    let look = Look::new("tidevann", Scheme::Dark).unwrap();
+    assert!(!look.shows("button.default.rest.container", "edge"));
+    assert!(look.shows("button.outline.rest.container", "edge"));
+}
+
+#[test]
+fn ansi256_is_the_nearest_of_16_to_255_by_oklab() {
+    assert_eq!(nearest_256(Rgba(0, 0, 0, 255)), 16);
+    assert_eq!(nearest_256(Rgba(255, 255, 255, 255)), 231);
+    assert_eq!(nearest_256(Rgba(255, 0, 0, 255)), 196);
+    assert_eq!(nearest_256(Rgba(128, 128, 128, 255)), 244);
 }
 
 #[test]
 fn fewer_colors_and_none() {
     let look = Look::new("tidevann", Scheme::Dark).unwrap().with_depth(Depth::Ansi256);
-    assert!(matches!(look.color("primary", "background"), Color::Indexed(16..=255)));
+    assert!(matches!(look.token("primary"), Color::Indexed(16..=255)));
     let look = look.with_depth(Depth::None);
-    assert_eq!(look.color("primary", "background"), Color::Reset);
+    assert_eq!(look.token("primary"), Color::Reset);
 }
 
 #[test]
@@ -121,4 +152,45 @@ fn a_snapshot_is_what_the_buffer_holds() {
     assert_eq!(text, "┌──────────┐\n│Runs      │\n└──────────┘\n");
     let svg = snapshot::svg(term.backend().buffer(), Color::Rgb(0, 0, 0), Color::Rgb(255, 255, 255));
     assert!(svg.starts_with("<svg") && svg.contains(">R</text>"));
+}
+
+#[test]
+fn text_roles_and_gaps_are_the_contracts_cells() {
+    let look = Look::new("tidevann", Scheme::Dark).unwrap();
+    assert!(
+        TextRole::Head
+            .style(&look)
+            .add_modifier
+            .contains(ratatui::style::Modifier::BOLD)
+    );
+    assert!(
+        !TextRole::Help
+            .style(&look)
+            .add_modifier
+            .contains(ratatui::style::Modifier::BOLD)
+    );
+    assert_eq!(sokkel_tui::cells::contract_px_per_col(), sokkel_tui::cells::PX_PER_COL);
+    assert_eq!(sokkel_tui::cells::gap_rows(&look, 12.0), 1);
+    assert_eq!(sokkel_tui::cells::gap_rows(&look, 6.0), 0);
+    let compact = look.with_density(sokkel_tui::Density::Compact);
+    assert_eq!(sokkel_tui::cells::gap_rows(&compact, 24.0), 0);
+}
+
+#[test]
+fn the_cells_constants_are_the_contracts() {
+    let cells = &tokens::index()["cells"];
+    assert_eq!(cells["breakpoints"]["md"]["columns"], sokkel_tui::cells::MD_COLS);
+    assert_eq!(cells["breakpoints"]["lg"]["columns"], sokkel_tui::cells::LG_COLS);
+    let sizes: Vec<(u16, u16)> = cells["checkSizes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            (
+                s["columns"].as_u64().unwrap() as u16,
+                s["rows"].as_u64().unwrap() as u16,
+            )
+        })
+        .collect();
+    assert_eq!(sizes, sokkel_tui::cells::CHECK_SIZES);
 }

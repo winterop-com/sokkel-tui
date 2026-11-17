@@ -1,25 +1,29 @@
-//! px in cells.
+//! px in cells, as `cells` in sokkel-design's index says.
 //!
-//! The contract writes lengths in px. A cell is about 8.4 px wide at a 14 px glyph, and a row about
-//! one line of text. Lengths are not divided blindly: a control is one row whatever its px height,
-//! and density changes blank rows and side padding, never a row's height. These are this
-//! renderer's readings until the contract holds cells of its own.
+//! A column stands for `pxPerColumn` px at a 14 px glyph, and a row holds one line of text. A
+//! vertical length is never divided: a control, a row, a bar and a head is one row whatever its px
+//! height, and room between stacked pieces is whole blank rows. Density changes blank rows and side
+//! padding, never a row's height. Each part's own `cells` note says its rows, padding and width.
 
 use crate::look::Look;
+use crate::tokens::{Density, index};
 use ratatui::layout::Rect;
 
-/// The px a column stands for, for the readings below.
+/// The px a column stands for (`cells.pxPerColumn`).
 pub const PX_PER_COL: f64 = 8.4;
-/// The px a row stands for: one line of 14 px text.
-pub const PX_PER_ROW: f64 = 18.0;
 
-/// Below this many columns the window is drawn as a phone draws it: `breakpoint-md` (768).
+/// Below this many columns the window is drawn as a phone draws it (`cells.breakpoints.md`).
 pub const MD_COLS: u16 = 90;
-/// From this many columns the shell's side panel is a column: `breakpoint-lg` (1024).
+/// From this many columns the shell's side panel is a column (`cells.breakpoints.lg`).
 pub const LG_COLS: u16 = 120;
 
-/// The terminal sizes every specimen is drawn at, as `checkWidths` are for a window.
+/// The terminal sizes every specimen is drawn at (`cells.checkSizes`).
 pub const CHECK_SIZES: [(u16, u16); 4] = [(60, 20), (80, 24), (120, 40), (200, 50)];
+
+/// The contract's own numbers, to check the constants against.
+pub fn contract_px_per_col() -> f64 {
+    index()["cells"]["pxPerColumn"].as_f64().unwrap_or(PX_PER_COL)
+}
 
 /// What the window's width makes of the frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,9 +57,18 @@ pub fn cols(px: f64) -> u16 {
     }
 }
 
-/// A vertical px length in whole rows: a gap of 12 or more is a blank row, a smaller one none.
-pub fn rows(px: f64) -> u16 {
-    (px / PX_PER_ROW).round().max(0.0) as u16
+/// Room between stacked pieces, in blank rows: under 12 px none; from 12 px one at regular and
+/// none at compact (`cells.rules`), unless the part's cells say otherwise.
+pub fn gap_rows(look: &Look, px: f64) -> u16 {
+    u16::from(px >= 12.0 && look.density() == Density::Regular)
+}
+
+/// A value a part's cells give per density: `regular` or `compact`.
+pub fn by_density(look: &Look, regular: u16, compact: u16) -> u16 {
+    match look.density() {
+        Density::Regular => regular,
+        Density::Compact => compact,
+    }
 }
 
 /// The page's side inset: `density.page-inset-wide` when the content box is 640 px wide or more,
@@ -67,8 +80,5 @@ pub fn page_inset(look: &Look, content: Rect) -> u16 {
 
 /// Blank rows between a page's sections: one at regular, none at compact.
 pub fn page_gap(look: &Look) -> u16 {
-    match look.density() {
-        crate::tokens::Density::Regular => 1,
-        crate::tokens::Density::Compact => 0,
-    }
+    gap_rows(look, look.density_px("page-gap"))
 }

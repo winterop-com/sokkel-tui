@@ -1,16 +1,21 @@
-//! The glyphs the parts draw, each in a Unicode and an ASCII form.
+//! The glyphs the parts draw, from sokkel-design's `glyphs.json`, in its Unicode or ASCII form.
 //!
-//! A terminal cannot choose its font, so every glyph a part draws has a form that any terminal
-//! shows. These sets stand in for the contract's character sets until it holds them
-//! (`docs/proposals/sokkel-design-tui.md`, point 5).
+//! A terminal cannot choose its font, so every glyph a part draws has a form any terminal shows.
+//! A few glyphs are this renderer's own until the contract settles them, each marked below: the
+//! edge at a one-row control's ends (open-questions T3, its recommendation b), the focus ring in the
+//! cells beside a control (T4), the heavy top rule of a critical box, and a graph's dot.
+
+use crate::tokens;
+use serde_json::Value;
+use std::sync::OnceLock;
 
 /// Which set of glyphs the terminal can show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Charset {
-    /// Box drawing, blocks, braille and arrows.
+    /// glyphs.json's Unicode forms.
     #[default]
     Unicode,
-    /// Printable ASCII only.
+    /// glyphs.json's ASCII forms.
     Ascii,
 }
 
@@ -29,88 +34,164 @@ impl Charset {
     }
 
     pub fn glyphs(self) -> &'static Glyphs {
+        static UNICODE: OnceLock<Glyphs> = OnceLock::new();
+        static ASCII: OnceLock<Glyphs> = OnceLock::new();
         match self {
-            Charset::Unicode => &UNICODE,
-            Charset::Ascii => &ASCII,
+            Charset::Unicode => UNICODE.get_or_init(|| Glyphs::read(self)),
+            Charset::Ascii => ASCII.get_or_init(|| Glyphs::read(self)),
         }
     }
 }
 
-/// One set of glyphs. Each is one cell wide.
+/// A box's corners, sides and tees (glyphs.json, `box`).
 #[derive(Debug)]
-pub struct Glyphs {
-    /// A control's edge at its start and at its end, drawn in its pad cells.
-    pub edge_start: &'static str,
-    pub edge_end: &'static str,
-    /// Keyboard focus on a control: the ring, in the cell outside each end.
-    pub ring_start: &'static str,
-    pub ring_end: &'static str,
-    /// A control's ends where no color can show it (`NO_COLOR`).
-    pub bare_start: &'static str,
-    pub bare_end: &'static str,
-    /// The busy spinner's frames, one per `motion-fast`.
-    pub spinner: &'static [&'static str],
-    /// The issue mark: a critical issue and a warning, told apart by shape as well as ink.
-    pub issue_critical: &'static str,
-    pub issue_warning: &'static str,
-    /// The required star.
-    pub required: &'static str,
-    /// Where words are cut short.
-    pub ellipsis: &'static str,
-    /// Before each item of a list.
-    pub bullet: &'static str,
-    /// Try again's turning arrow.
-    pub retry: &'static str,
-    /// The back button's chevron.
-    pub back: &'static str,
-    /// More: the button that holds what did not fit.
-    pub more: &'static str,
-    /// After each crumb of a trail.
-    pub chevron: &'static str,
-    /// One dot of a graph's dot grid.
-    pub dot: &'static str,
-    /// A box's top rule, drawn heavy for a critical tone.
-    pub heavy_rule: &'static str,
+pub struct BoxGlyphs {
+    pub top_start: &'static str,
+    pub top_end: &'static str,
+    pub bottom_start: &'static str,
+    pub bottom_end: &'static str,
+    pub across: &'static str,
+    pub down: &'static str,
+    pub tee_start: &'static str,
+    pub tee_end: &'static str,
 }
 
-pub static UNICODE: Glyphs = Glyphs {
-    edge_start: "▏",
-    edge_end: "▕",
-    ring_start: "┃",
-    ring_end: "┃",
-    bare_start: "[",
-    bare_end: "]",
-    spinner: &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
-    issue_critical: "✖",
-    issue_warning: "▲",
-    required: "*",
-    ellipsis: "…",
-    bullet: "•",
-    retry: "↻",
-    back: "‹",
-    more: "⋯",
-    chevron: "›",
-    dot: "·",
-    heavy_rule: "━",
-};
+/// One set of glyphs.
+#[derive(Debug)]
+pub struct Glyphs {
+    /// Busy or loading, one frame each `motion-fast`.
+    pub spinner: Vec<&'static str>,
+    /// A critical issue's mark (`circle-alert`) and a warning's (`triangle-alert`).
+    pub issue_critical: &'static str,
+    pub issue_warning: &'static str,
+    /// Text cut short at its end; ASCII's is three columns.
+    pub ellipsis: &'static str,
+    pub bullet: &'static str,
+    /// Try again's turning arrow (`rotate-cw`).
+    pub retry: &'static str,
+    /// Back (`chevron-left`).
+    pub back: &'static str,
+    /// More: the button that holds what did not fit (the `ellipsis` icon).
+    pub more: &'static str,
+    /// After each crumb of a trail (`chevron-right`).
+    pub chevron: &'static str,
+    pub chevron_down: &'static str,
+    pub sort_ascending: &'static str,
+    pub sort_descending: &'static str,
+    pub sortable: &'static str,
+    pub status_dot: &'static str,
+    /// A value that is not there (principle 10).
+    pub missing: &'static str,
+    pub check: &'static str,
+    pub checkbox_off: &'static str,
+    pub checkbox_on: &'static str,
+    pub checkbox_mixed: &'static str,
+    /// The active entry's bar, and keyboard focus at a row's start.
+    pub focus_mark: &'static str,
+    pub rule: &'static str,
+    pub scroll_thumb: &'static str,
+    pub scroll_track: &'static str,
+    pub box_rounded: BoxGlyphs,
+    pub box_square: BoxGlyphs,
+    pub box_ascii: BoxGlyphs,
+    /// The required star, a typed character.
+    pub required: &'static str,
+    /// sokkel-tui's own (T3, recommendation b): the edge of a one-row control at its ends.
+    pub edge_start: &'static str,
+    pub edge_end: &'static str,
+    /// sokkel-tui's own (T4): keyboard focus on a control, in the cell beside each end.
+    pub ring_start: &'static str,
+    pub ring_end: &'static str,
+    /// A control's ends where no color can show it: typed brackets.
+    pub bare_start: &'static str,
+    pub bare_end: &'static str,
+    /// sokkel-tui's own: a critical box's top rule, heavy as the web's 2 px.
+    pub heavy_rule: &'static str,
+    /// sokkel-tui's own: one dot of a graph's dot grid.
+    pub dot: &'static str,
+}
 
-pub static ASCII: Glyphs = Glyphs {
-    edge_start: "|",
-    edge_end: "|",
-    ring_start: ">",
-    ring_end: "<",
-    bare_start: "[",
-    bare_end: "]",
-    spinner: &["|", "/", "-", "\\"],
-    issue_critical: "x",
-    issue_warning: "!",
-    required: "*",
-    ellipsis: "~",
-    bullet: "-",
-    retry: "",
-    back: "<",
-    more: ":",
-    chevron: ">",
-    dot: ".",
-    heavy_rule: "=",
-};
+fn leak(s: &str) -> &'static str {
+    Box::leak(s.to_string().into_boxed_str())
+}
+
+impl Glyphs {
+    fn read(charset: Charset) -> Glyphs {
+        let file = tokens::glyphs();
+        let form = match charset {
+            Charset::Unicode => "unicode",
+            Charset::Ascii => "ascii",
+        };
+        let pick = |v: &Value, name: &str| -> &'static str {
+            leak(
+                v.get(form)
+                    .and_then(Value::as_str)
+                    .unwrap_or_else(|| panic!("glyphs.json has no {form} form for {name}")),
+            )
+        };
+        let glyph = |name: &str| pick(&file["glyphs"][name], name);
+        let icon = |name: &str| pick(&file["icons"][name], name);
+        let boxed = |set: &str| {
+            let b = &file["box"][set];
+            let g = |k: &str| {
+                leak(
+                    b[k].as_str()
+                        .unwrap_or_else(|| panic!("glyphs.json box {set} has no {k}")),
+                )
+            };
+            BoxGlyphs {
+                top_start: g("topStart"),
+                top_end: g("topEnd"),
+                bottom_start: g("bottomStart"),
+                bottom_end: g("bottomEnd"),
+                across: g("across"),
+                down: g("down"),
+                tee_start: g("teeStart"),
+                tee_end: g("teeEnd"),
+            }
+        };
+        let unicode = charset == Charset::Unicode;
+        Glyphs {
+            spinner: file["glyphs"]["spinner"][form]
+                .as_array()
+                .expect("glyphs.json has spinner frames")
+                .iter()
+                .map(|f| leak(f.as_str().unwrap_or("|")))
+                .collect(),
+            issue_critical: icon("circle-alert"),
+            issue_warning: icon("triangle-alert"),
+            ellipsis: glyph("ellipsis"),
+            bullet: glyph("bullet"),
+            retry: icon("rotate-cw"),
+            back: icon("chevron-left"),
+            more: icon("ellipsis"),
+            chevron: glyph("chevron-right"),
+            chevron_down: glyph("chevron-down"),
+            sort_ascending: glyph("sort-ascending"),
+            sort_descending: glyph("sort-descending"),
+            sortable: glyph("sortable"),
+            status_dot: glyph("status-dot"),
+            missing: glyph("missing"),
+            check: glyph("check"),
+            checkbox_off: glyph("checkbox-off"),
+            checkbox_on: glyph("checkbox-on"),
+            checkbox_mixed: glyph("checkbox-mixed"),
+            focus_mark: glyph("focus-mark"),
+            rule: glyph("rule"),
+            scroll_thumb: glyph("scroll-thumb"),
+            scroll_track: glyph("scroll-track"),
+            box_rounded: boxed("rounded"),
+            box_square: boxed("square"),
+            box_ascii: boxed("ascii"),
+            required: "*",
+            edge_start: if unicode { "▏" } else { "[" },
+            edge_end: if unicode { "▕" } else { "]" },
+            ring_start: if unicode { "┃" } else { ">" },
+            ring_end: if unicode { "┃" } else { "<" },
+            bare_start: "[",
+            bare_end: "]",
+            heavy_rule: if unicode { "━" } else { "=" },
+            dot: if unicode { "·" } else { "." },
+        }
+    }
+}

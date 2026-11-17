@@ -19,20 +19,22 @@ the contract say so that it does?
 
 ## What is built
 
-- `tokens`: the resolved file, embedded, fetched at a pinned sokkel-design commit.
-- `look`: a theme, scheme, density and color depth; paints read by key, a missing state drawn as
-  `rest`; alpha flattened over the named surface (a stand-in); the nearest of 256 colors (a
-  stand-in); corners from the radius ladder as rounded or square.
-- `text`: text roles as bold from weight 500 up.
-- `cells`: px in columns, the breakpoints as about 90 and 120 columns, the check sizes (60x20,
-  80x24, 120x40, 200x50), the page inset and gap.
+- `tokens`: sokkel-design's resolved tokens, index and glyphs, embedded, fetched at a pinned commit.
+- `look`: a theme, scheme, density, color depth and character set; paints read by key in their
+  opaque `flat` form and a disabled one in its `faded` form, a missing state drawn as `rest`; 256
+  colors as `colorDepth.ansi256` (nearest of 16 to 255 by OKLab); corners from the radius ladder as
+  rounded or square, in glyphs.json's box glyphs.
+- `text`: text roles as `cells.textRoles` says (bold, italic).
+- `cells`: px in columns, the breakpoints and check sizes from `cells`, blank rows by
+  `cells.rules` (one for 12 px or more at regular, none at compact).
 - `snapshot`: a buffer as SVG (for the eye and the side-by-side board) and as text (for tests).
-- `glyphs`: every glyph a part draws in a Unicode and an ASCII set (a stand-in, proposal point 5).
+- `glyphs`: glyphs.json's glyphs, icons and boxes in Unicode or ASCII; sokkel-tui's own only where
+  the contract is open (the one-row edge, T3; the focus ring, T4).
 - `keys`: keys as the parts read them, matched by the typed character; Mod is Ctrl, no Alt.
 - `button` (step 1): every variant in rest, hover, focus, busy, reason, disabled, invalid and open;
   icon buttons with `pressed`, `destructiveHover`, an icon at either end. One row at every size; the
-  edge in the pad cells; the focus ring in a reserved cell outside each end; the tip for the status
-  line. Disabled is faded over the surface at `disabled-opacity` (with the flattening stand-in).
+  edge in the pad cells; the focus ring in the cell beside each end; the tip for the status line.
+  Disabled in its `faded` paint; a transparent ground draws none, keeping the cell's own.
 - `text_field` (step 1): the frame (label, required star or word, hint or key hint, description,
   control, help, fallback), the issue mark in the control's end with critical and warning tones,
   its popover drawn last, editing with a cursor that scrolls the value, wide glyphs measured, read

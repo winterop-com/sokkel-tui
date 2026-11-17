@@ -1,15 +1,17 @@
-# The resolved tokens are sokkel-design's, fetched from GitHub at the commit sokkel-design.json pins,
-# so only committed contract work lands here. Read, never written.
+# The resolved tokens, the index (cells, color depth) and the glyphs are sokkel-design's, fetched
+# from GitHub at the commit sokkel-design.json pins, so only committed contract work lands here.
+# Read, never written.
 
-RESOLVED := crates/core/tokens/tokens.resolved.json
+TOKENS := crates/core/tokens
+FILES := tokens/tokens.resolved.json index.json glyphs.json
 PIN := $(shell python3 -c "import json;print(json.load(open('sokkel-design.json'))['commit'])")
 REF ?= $(PIN)
-FETCH = gh api -H "Accept: application/vnd.github.raw" "repos/winterop-com/sokkel-design/contents/tokens/tokens.resolved.json?ref=$(1)"
+FETCH = gh api -H "Accept: application/vnd.github.raw" "repos/winterop-com/sokkel-design/contents/$(1)?ref=$(2)"
 
 .PHONY: help tokens tokens-check fmt fmt-check check test specimens all clean
 
 help:
-	@echo "make tokens        fetch sokkel-design's resolved tokens at the pin (REF=<commit> moves it)"
+	@echo "make tokens        fetch sokkel-design's tokens, index and glyphs at the pin (REF=<commit> moves it)"
 	@echo "make tokens-check  fail when the copy is not sokkel-design's"
 	@echo "make fmt           format the workspace"
 	@echo "make check         clippy with warnings denied"
@@ -19,12 +21,12 @@ help:
 	@echo "make clean         remove the build and the specimens"
 
 tokens:
-	$(call FETCH,$(REF)) > $(RESOLVED)
+	for f in $(FILES); do $(call FETCH,$$f,$(REF)) > $(TOKENS)/$$(basename $$f) || exit 1; done
 	python3 -c "import json;p='sokkel-design.json';d=json.load(open(p));d['commit']='$$(gh api repos/winterop-com/sokkel-design/commits/$(REF) -q .sha)';open(p,'w').write(json.dumps(d,indent=4)+'\\n')"
 
 tokens-check:
-	@$(call FETCH,$(PIN)) | cmp -s - $(RESOLVED) \
-		|| (echo "$(RESOLVED) is not sokkel-design's at $(PIN): run make tokens"; exit 1)
+	@for f in $(FILES); do $(call FETCH,$$f,$(PIN)) | cmp -s - $(TOKENS)/$$(basename $$f) \
+		|| { echo "$(TOKENS)/$$(basename $$f) is not sokkel-design's at $(PIN): run make tokens"; exit 1; }; done
 
 fmt:
 	cargo fmt --all

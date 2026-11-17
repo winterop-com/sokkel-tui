@@ -1,13 +1,30 @@
-//! sokkel-design's resolved tokens, embedded.
+//! sokkel-design's files, embedded: the resolved tokens, the index and the glyphs.
 //!
-//! `tokens/tokens.resolved.json` is sokkel-design's own file, copied in by `make tokens` and never
-//! edited here. It holds every theme in light and dark (colors as sRGB hex, lengths in px, text
-//! roles), the density levels, and the resolved paints keyed `<part>.<variant>.<state>.<piece>`.
+//! `tokens/` holds sokkel-design's own files at the pinned commit, fetched by `make tokens` and never
+//! edited here. `tokens.resolved.json` holds every theme in light and dark (colors as sRGB hex,
+//! lengths in px, text roles), the density levels, and the resolved paints keyed
+//! `<part>.<variant>.<state>.<piece>`, each with its opaque `flat` and `faded` forms.
+//! `index.json` holds the cell grid (`cells`) and the color depths (`colorDepth`); `glyphs.json`
+//! the glyphs a part draws in cells, in Unicode and ASCII.
 
 use serde_json::Value;
 use std::sync::OnceLock;
 
 const RESOLVED: &str = include_str!("../tokens/tokens.resolved.json");
+const INDEX: &str = include_str!("../tokens/index.json");
+const GLYPHS: &str = include_str!("../tokens/glyphs.json");
+
+/// sokkel-design's index, parsed once: `cells`, `colorDepth` and the rest.
+pub fn index() -> &'static Value {
+    static INDEX_JSON: OnceLock<Value> = OnceLock::new();
+    INDEX_JSON.get_or_init(|| serde_json::from_str(INDEX).expect("index.json is sokkel-design's and parses"))
+}
+
+/// sokkel-design's glyphs, parsed once.
+pub fn glyphs() -> &'static Value {
+    static GLYPHS_JSON: OnceLock<Value> = OnceLock::new();
+    GLYPHS_JSON.get_or_init(|| serde_json::from_str(GLYPHS).expect("glyphs.json is sokkel-design's and parses"))
+}
 
 /// The whole resolved file, parsed once.
 pub fn resolved() -> &'static Value {

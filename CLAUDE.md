@@ -18,17 +18,20 @@ contract.
 
 ## The contract
 
-- `crates/core/tokens/tokens.resolved.json` is sokkel-design's, fetched from GitHub by `make tokens`
-  at the commit `sokkel-design.json` pins (`make tokens REF=<commit>` moves the pin). Never edit it,
-  and never copy it from a local checkout: that can carry unfinished work. `make tokens-check`
-  fails when it is not the pinned commit's.
+- `crates/core/tokens/` holds sokkel-design's `tokens.resolved.json`, `index.json` (`cells`,
+  `colorDepth`) and `glyphs.json`, fetched from GitHub by `make tokens` at the commit
+  `sokkel-design.json` pins (`make tokens REF=<commit>` moves the pin). Never edit them, and never
+  copy them from a local checkout: that can carry unfinished work. `make tokens-check` fails when
+  one is not the pinned commit's.
 - sokkel-ui, sokkel-design and sokkel-egui are read, never written: each has its own sessions. The
   specs are at https://winterop-com.github.io/sokkel-design/. A question for the contract, or a
   change it might want, is written into `docs/proposals/` here. The owner decides.
-- Every color a part draws is a resolved paint (`look.paint(key, field, over)`) or a color token,
-  never a literal and never mixed here (principle 20). Two stand-ins are allowed until the contract
-  holds them, each marked in `look.rs`: flattening alpha over the surface a piece stands on, and the
-  nearest of 256 colors.
+- Every color a part draws is a resolved paint in its opaque form (`look.paint(key, field)`, the
+  paint's `flat`; `look.faded` for a disabled one) or an opaque color token, never a literal and
+  never mixed here (principle 20). 256 colors follow `colorDepth.ansi256`. A part's cells (rows,
+  padding, gaps) follow its spec's `cells` note and `cells.rules`; its glyphs come from
+  `glyphs.json`. What the contract has not settled (open-questions T1 to T4) is marked where it is
+  drawn.
 - Words are the spec's keys with its English defaults; keyboard behavior is the spec's `keyboard`
   list. Text goes through `TextRole`, never a bold of its own.
 - Keys are matched by the character they type. Mod is Ctrl in a terminal. No Alt chords, and no

@@ -8,18 +8,14 @@ use sokkel_tui::{
 };
 
 fn heading(f: &mut Frame, look: &Look, x: u16, y: u16, words: &str) {
-    let style = TextRole::SectionTitle
-        .style(look)
-        .fg(look.color("foreground", "background"));
+    let style = TextRole::SectionTitle.style(look).fg(look.token("foreground"));
     if y < f.area().bottom() {
         f.buffer_mut().set_string(x, y, words, style);
     }
 }
 
 fn note(f: &mut Frame, look: &Look, x: u16, y: u16, words: &str) {
-    let style = TextRole::Help
-        .style(look)
-        .fg(look.color("muted-foreground", "background"));
+    let style = TextRole::Help.style(look).fg(look.token("muted-foreground"));
     if y < f.area().bottom() {
         f.buffer_mut().set_string(x, y, words, style);
     }
@@ -67,9 +63,7 @@ pub fn draw(f: &mut Frame, look: &Look) {
     let area = f.area();
     f.buffer_mut().set_style(
         area,
-        Style::new()
-            .bg(look.color("background", "background"))
-            .fg(look.color("foreground", "background")),
+        Style::new().bg(look.token("background")).fg(look.token("foreground")),
     );
     let x0 = area.x + 2;
     let mut y = area.y + 1;
@@ -197,16 +191,14 @@ pub fn draw(f: &mut Frame, look: &Look) {
         note(f, look, r.x, ny, name);
         f.render_widget(s, r.intersection(area));
         let b = s.body(r);
-        let words = TextRole::Body
-            .style(look)
-            .fg(look.color("muted-foreground", "background"));
+        let words = TextRole::Body.style(look).fg(look.token("muted-foreground"));
         if *name != "graph" && b.y < area.bottom() {
             f.buffer_mut().set_stringn(
                 b.x,
                 b.y,
                 "nightly-export  succeeded  6m 19s",
                 b.width as usize,
-                words.bg(look.color(if *name == "flat" { "background" } else { "card" }, "background")),
+                words.bg(look.token(if *name == "flat" { "background" } else { "card" })),
             );
         }
     }

@@ -1,10 +1,11 @@
 //! Text by role (principle 3), in a terminal.
 //!
-//! A terminal has one size. A role keeps what a cell can show of it: its weight, as bold from
-//! 500 up. Size, line height and tracking are not drawn. The ink is the part's, from its paint.
-//! Until the contract holds a role-to-cell table, this rule is it.
+//! A terminal has one size. A role keeps what `cells.textRoles` in sokkel-design's index gives
+//! it: bold or not, italic or not. Size, line height and tracking are not drawn, and no role has an
+//! ink of its own: the piece's paint gives it.
 
 use crate::look::Look;
+use crate::tokens::index;
 use ratatui::style::{Modifier, Style};
 
 /// The roles the parts set their words in, by their resolved names.
@@ -46,12 +47,26 @@ impl TextRole {
         look.text_role(self.name())["weight"].as_u64().unwrap_or(400)
     }
 
-    /// What a cell shows of the role: bold from weight 500 up.
-    pub fn style(self, look: &Look) -> Style {
-        if self.weight(look) >= 500 {
-            Style::new().add_modifier(Modifier::BOLD)
+    /// What a cell shows of the role (`cells.textRoles`): bold, italic.
+    pub fn style(self, _look: &Look) -> Style {
+        let cell = &index()["cells"]["textRoles"][self.name()];
+        let mut st = Style::new();
+        if cell["bold"].as_bool().unwrap_or(false) {
+            st = st.add_modifier(Modifier::BOLD);
+        }
+        if cell["italic"].as_bool().unwrap_or(false) {
+            st = st.add_modifier(Modifier::ITALIC);
+        }
+        st
+    }
+
+    /// The role's words as the theme sets them: `head` takes `table-head-transform` (upper case in
+    /// some themes) where the part asks for it, as the table's heads do.
+    pub fn transform(self, look: &Look, words: &str) -> String {
+        if self == TextRole::Head && look.word("table-head-transform") == Some("uppercase") {
+            words.to_uppercase()
         } else {
-            Style::new()
+            words.to_string()
         }
     }
 }
@@ -84,6 +99,8 @@ pub fn truncate(s: &str, max: usize, ellipsis: &str) -> String {
         used += w;
     }
     if max >= width(ellipsis) {
+        // Cut at a space, the ellipsis follows the word.
+        out.truncate(out.trim_end().len());
         out += ellipsis;
     }
     out
