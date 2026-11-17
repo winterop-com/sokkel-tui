@@ -217,6 +217,28 @@ impl<'a> Rail<'a> {
         self
     }
 
+    /// A parent's children, by their place in its group, with their labels: what its flyout lists
+    /// while the rail is collapsed. Empty for an entry that is no parent.
+    pub fn children(&self, group: usize, entry: usize) -> Vec<(usize, String)> {
+        let Some(g) = self.groups.get(group) else {
+            return Vec::new();
+        };
+        if g.entries.get(entry).is_none_or(|e| e.parent.is_none()) {
+            return Vec::new();
+        }
+        g.entries
+            .iter()
+            .enumerate()
+            .skip(entry + 1)
+            .take_while(|(_, e)| e.depth > 0)
+            .map(|(k, e)| (k, e.label.clone()))
+            .collect()
+    }
+
+    pub fn is_collapsed(&self) -> bool {
+        self.collapsed
+    }
+
     /// The app's name, as its head writes it.
     pub fn name(&self) -> &str {
         &self.name

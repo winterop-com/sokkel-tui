@@ -104,7 +104,8 @@ the contract say so that it does?
   yet: groups, trees, details, row actions, paging, editing, resizing, reordering, the grid.
 - `rail`, `top_bar`, `status_line`, `shell` (step 5): the rail's head, groups, entries (icon,
   label, count, unread dot, the active bar, a description under it, parents folding their
-  children under their labels, a status dot in a tone), collapsed form, foot cell and edge; the top bar's
+  children under their labels, a status dot in a tone; collapsed, a parent's children in a flyout beside the rail, which
+  the runtime opens), collapsed form, foot cell and edge; the top bar's
   search field, trail, palette button with its keys and actions, and below md the menu button, the
   last crumb and the search icon; the status line's note with its live dot and tones, its facts,
   and a focused control's tip in the note's place (principle 23); `ShellLayout` placing them, the

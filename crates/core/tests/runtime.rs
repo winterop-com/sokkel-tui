@@ -346,3 +346,63 @@ fn full_screen_drops_the_rail_and_the_top_bar_and_escape_leaves_it() {
     assert_eq!(st.key(KeyPress::new(Key::Escape)), ShellEvent::Changed);
     assert!(!st.kiosk);
 }
+
+/// An app whose rail has a parent of two hosts; the page says which entry was chosen.
+struct Hosts {
+    chosen: String,
+}
+
+impl sokkel_tui::app::ShellApp for Hosts {
+    fn chrome<'a>(&'a self, look: &'a Look) -> sokkel_tui::app::Chrome<'a> {
+        sokkel_tui::app::Chrome {
+            rail: Rail::new(look, "T", "Tidevann").groups([RailGroup::new(
+                None,
+                [
+                    RailEntry::new("Hosts").icon("▣").parent(false),
+                    RailEntry::new("api.example.org").child(),
+                    RailEntry::new("harbor.example.org").child(),
+                ],
+            )]),
+            top: TopBar::new(look),
+            foot: StatusLine::new(look),
+        }
+    }
+
+    fn page(&mut self, f: &mut ratatui::Frame, area: Rect, _cx: &mut sokkel_tui::app::Cx) {
+        f.buffer_mut().set_string(
+            area.x + 30,
+            area.bottom() - 1,
+            format!("chose {}", self.chosen),
+            ratatui::style::Style::new(),
+        );
+    }
+
+    fn entry(&mut self, group: usize, entry: usize) {
+        self.chosen = format!("{group}.{entry}");
+    }
+}
+
+#[test]
+fn a_collapsed_parent_opens_its_children_in_a_flyout() {
+    let shot = |keys: &[&str]| {
+        let keys: Vec<KeyPress> = keys.iter().filter_map(|k| KeyPress::named(k)).collect();
+        let app = Hosts { chosen: "none".into() };
+        sokkel_tui::snapshot::text(&sokkel_tui::app::shot(
+            app,
+            look(),
+            (100, 24),
+            |s| s.collapsed = true,
+            &keys,
+        ))
+    };
+    let open = shot(&["tab", "enter"]);
+    assert!(
+        open.contains("api.example.org") && open.contains("harbor.example.org"),
+        "{open}"
+    );
+    assert!(open.contains("chose none"), "the parent itself is no place");
+    assert!(
+        shot(&["tab", "enter", "down", "enter"]).contains("chose 0.2"),
+        "harbor, by its place"
+    );
+}

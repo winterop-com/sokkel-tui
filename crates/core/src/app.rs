@@ -308,6 +308,8 @@ enum Layer {
     Settings,
     Account,
     Shortcuts,
+    /// A collapsed parent's children, beside the rail: by its group and place.
+    Flyout(usize, usize),
 }
 
 /// What a shortcut does: the runtime's own, or the app's command.
@@ -376,6 +378,7 @@ struct Host<A> {
     width: Width,
     mouse: bool,
     account: MenuState,
+    flyout: MenuState,
     window: Rect,
     keys: Shortcuts<Act>,
     now: u64,
@@ -460,6 +463,7 @@ impl<A: ShellApp> Host<A> {
             width: Width::Wide,
             mouse: true,
             account: MenuState::default(),
+            flyout: MenuState::default(),
             window: Rect::default(),
             keys: Shortcuts::new(),
             now: 0,
@@ -481,6 +485,50 @@ impl<A: ShellApp> Host<A> {
         host.shell.kiosk = host.app.kiosk();
         host.keys = host.registry();
         host
+    }
+
+    /// A rail entry chosen: a collapsed parent opens its flyout, any other goes to the app.
+    fn entry(&mut self, g: usize, e: usize) {
+        let children = self.app.chrome(&self.look).rail.children(g, e);
+        if self.shell.collapsed && !self.shell.drawer && !children.is_empty() {
+            self.layer = Layer::Flyout(g, e);
+            self.flyout = MenuState {
+                open: true,
+                highlight: 0,
+                sub: None,
+            };
+            return;
+        }
+        self.shell.drawer = false;
+        self.app.entry(g, e);
+    }
+
+    /// The flyout's menu: the parent's children, and the anchor it opens at, beside the rail.
+    fn flyout_menu(&self, g: usize, e: usize) -> (DropdownMenu<'_>, Vec<usize>, Rect) {
+        let children = self.app.chrome(&self.look).rail.children(g, e);
+        let at = self
+            .shell
+            .entries()
+            .iter()
+            .find(|(k, _)| *k == (g, e))
+            .map_or(Rect::default(), |(_, r)| *r);
+        let anchor = Rect::new(at.right() + 1, at.y.saturating_sub(1), 1, 1);
+        let places = children.iter().map(|(k, _)| *k).collect();
+        let rows = children.into_iter().map(|(_, label)| Item::new(label).into());
+        (DropdownMenu::new(&self.look, rows), places, anchor)
+    }
+
+    fn flyout_event(&mut self, g: usize, event: MenuEvent, places: &[usize]) {
+        match event {
+            MenuEvent::Closed => self.layer = Layer::None,
+            MenuEvent::Action(i, _) => {
+                self.layer = Layer::None;
+                if let Some(&k) = places.get(i) {
+                    self.app.entry(g, k);
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Back: the settings close first, else the route before this one.
@@ -704,8 +752,7 @@ impl<A: ShellApp> Host<A> {
             }
             if key.is_press() {
                 let (g, e) = entries[i];
-                self.shell.drawer = false;
-                self.app.entry(g, e);
+                self.entry(g, e);
                 return true;
             }
         }
@@ -1083,7 +1130,7 @@ impl<A: ShellApp> Program for Host<A> {
                     self.key(k);
                 }
             }
-            Layer::Account | Layer::Shortcuts => {}
+            Layer::Account | Layer::Shortcuts | Layer::Flyout(..) => {}
             Layer::None if self.shell.searching => {
                 for k in typed().collect::<Vec<_>>() {
                     self.shell.key(k);
@@ -1147,6 +1194,15 @@ impl<A: ShellApp> Program for Host<A> {
                 let event = self.dialog().handle(&mut st, key);
                 self.settings = st;
                 self.settings_event(event);
+                return false;
+            }
+            Layer::Flyout(g, e) => {
+                let (menu, places, _) = self.flyout_menu(g, e);
+                let mut st = self.flyout;
+                let event = menu.handle(&mut st, key);
+                drop(menu);
+                self.flyout = st;
+                self.flyout_event(g, event, &places);
                 return false;
             }
             Layer::Account => {
@@ -1282,6 +1338,14 @@ impl<A: ShellApp> Program for Host<A> {
                     self.layer = Layer::None;
                 }
             }
+            Layer::Flyout(g, e) => {
+                let (menu, places, anchor) = self.flyout_menu(g, e);
+                let mut st = self.flyout;
+                let event = menu.pointer(&mut st, self.window, anchor, p);
+                drop(menu);
+                self.flyout = st;
+                self.flyout_event(g, event, &places);
+            }
             Layer::Account => {
                 let Some(anchor) = self.shell.account() else { return };
                 let (rows, acts) = self.account_menu();
@@ -1308,7 +1372,7 @@ impl<A: ShellApp> Program for Host<A> {
                 }
                 match self.shell.pointer(p) {
                     ShellEvent::Account => self.open(Layer::Account),
-                    ShellEvent::Entry(g, e) => self.app.entry(g, e),
+                    ShellEvent::Entry(g, e) => self.entry(g, e),
                     ShellEvent::Palette => self.open(Layer::Palette),
                     ShellEvent::Search => {
                         self.focus.press(p.at);
@@ -1427,6 +1491,10 @@ impl<A: ShellApp> Program for Host<A> {
                         does_style,
                     );
                 }
+            }
+            Layer::Flyout(g, e) => {
+                let (menu, _, anchor) = self.flyout_menu(g, e);
+                menu.render(window, anchor, f.buffer_mut(), &self.flyout);
             }
             Layer::Account => {
                 if let Some(anchor) = self.shell.account() {
