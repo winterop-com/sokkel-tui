@@ -124,6 +124,8 @@ pub fn draw(f: &mut Frame, look: &Look) {
                     ("Host", "juniper.example.org"),
                     ("Failed at", "fetching the inventory: api.example.org refused the token"),
                 ])
+            } else if i == 3 {
+                r.detail([("Host", "harbor.example.org")])
             } else {
                 r
             }

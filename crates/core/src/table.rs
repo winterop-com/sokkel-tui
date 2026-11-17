@@ -815,8 +815,19 @@ impl<'a> Table<'a> {
             .replace("{total}", &count(total))
     }
 
+    /// The columns before the first cell: the select box, and the disclosure chevron while a row
+    /// has a detail.
     fn select_w(&self) -> u16 {
-        if self.selectable { 4 } else { 0 }
+        (if self.selectable { 4 } else { 0 }) + self.lead_w()
+    }
+
+    /// The disclosure chevron's columns, while some row has a detail.
+    fn lead_w(&self) -> u16 {
+        if self.rows.iter().any(|r| !r.detail.is_empty()) {
+            2
+        } else {
+            0
+        }
     }
 
     /// Each column's width in columns, across `room`.
@@ -1425,6 +1436,19 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
             };
             buf.set_string(x, y, g, Style::new().fg(t(ink)).bg(t(ground)));
             x += 4;
+        }
+        // A row with a detail leads with its chevron: closed, or open while it shows.
+        if table.lead_w() > 0 {
+            if !table.rows[row].detail.is_empty() {
+                let g = if state.expanded.contains(&row) {
+                    glyphs.chevron_down
+                } else {
+                    glyphs.chevron
+                };
+                let quiet = look.color("muted-foreground");
+                buf.set_string(x, y, g, Style::new().fg(t(quiet)).bg(t(ground)));
+            }
+            x += table.lead_w();
         }
         for (i, c) in table.columns.iter().enumerate() {
             let w = widths[i];
