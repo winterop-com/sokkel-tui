@@ -62,7 +62,8 @@ the contract say so that it does?
   outside a shell, actions beside the title's foot or wrapped under it, items folding into More
   from the last with the primary kept, laid out by its own width.
 - `section` (step 3): boxed with its head over a joined rule, or flat; meta, description, actions;
-  the critical and graph tones; `flush`. Not yet: `fill` (a body that scrolls).
+  the critical and graph tones; `flush`; `fill` (the box takes the height given, its body scrolls with a scroller in its own
+  column; `scrolled` keeps the offset in range).
 - `table` (step 4): the table variant: frame, head and its rule of tees, rows drawn only while in
   view, sorting by keys from the head row (ascending, descending, as given; a missing value last),
   selection with the box column and the head's box, row tones, zebra, the quiet dash, status cells

@@ -181,3 +181,25 @@ fn code_stays_whole_and_punctuation_keeps_its_word() {
     assert_eq!(text, vec!["runs at", "0 2 * * *."]);
     assert!(lines[1][0].1, "the code part is marked");
 }
+
+#[test]
+fn a_filled_section_scrolls_its_body_with_a_scroller_at_its_end() {
+    let look = look();
+    let s = Section::new(&look, "Last runs").fill(12, 3);
+    let area = Rect::new(0, 0, 40, 10);
+    let body = s.body(area);
+    assert_eq!(
+        body.width,
+        40 - 2 - 4 - 1,
+        "the box, the padding, the scroller's column"
+    );
+    assert_eq!(s.scrolled(area, 12, 3, 100), 12 - body.height, "held at the end");
+    assert_eq!(s.scrolled(area, 12, 3, -100), 0);
+    let (_, text) = draw(40, 10, &s);
+    let x = body.right() as usize;
+    let column: String = text.lines().map(|l| l.chars().nth(x).unwrap_or(' ')).collect();
+    assert!(
+        column.contains('┃') && column.contains('│'),
+        "the thumb on its track: {column:?}"
+    );
+}

@@ -185,6 +185,7 @@ pub fn draw(f: &mut Frame, look: &Look) {
             Section::new(look, "Settings").variant(SectionVariant::Flat).meta("4"),
             2,
         ),
+        ("fill", Section::new(look, "Last runs").meta("12").fill(12, 3), 4),
     ];
     for (name, s, body) in &sections {
         let (r, ny) = cols.take(s.height(cols.w, *body));
@@ -192,7 +193,25 @@ pub fn draw(f: &mut Frame, look: &Look) {
         f.render_widget(s, r.intersection(area));
         let b = s.body(r);
         let words = TextRole::Body.style(look).fg(look.token("muted-foreground"));
-        if *name != "graph" && b.y < area.bottom() {
+        if *name == "fill" {
+            // Twelve runs in four rows' room, scrolled to the fourth.
+            let words = TextRole::Body
+                .style(look)
+                .fg(look.token("muted-foreground"))
+                .bg(look.token("card"));
+            for k in 0..b.height {
+                let run = ["nightly-export", "sync-inventory", "rebuild-index", "send-digest"][(k as usize + 3) % 4];
+                if b.y + k < area.bottom() {
+                    f.buffer_mut().set_stringn(
+                        b.x,
+                        b.y + k,
+                        format!("{run}  {:02}:04", 12 - k - 3),
+                        b.width as usize,
+                        words,
+                    );
+                }
+            }
+        } else if *name != "graph" && b.y < area.bottom() {
             f.buffer_mut().set_stringn(
                 b.x,
                 b.y,

@@ -50,7 +50,7 @@ specimens:
 		target/debug/examples/06_shell $$t $$m $$c $$r $$out "$$@" || exit 1; \
 		if command -v rsvg-convert >/dev/null; then rsvg-convert -z 2 $$out.svg -o $$out.png; fi; \
 	done
-	for s in "controls 48 70" "page 84 120" "table 90 90" "overlays 56 90" "palette 64 100"; do \
+	for s in "controls 48 70" "page 92 142" "table 90 90" "overlays 56 90" "palette 64 100"; do \
 		set -- $$s; sheet=$$1; tall=$$2; narrow=$$3; \
 		for v in "tidevann dark 120 $$tall" "tidevann dark 80 $$narrow" "tidevann light 120 $$tall" "tidevann light 80 $$narrow" "terminal dark 120 $$tall"; do \
 			set -- $$v; \

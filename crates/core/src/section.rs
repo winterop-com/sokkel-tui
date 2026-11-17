@@ -49,6 +49,8 @@ pub struct Section<'a> {
     variant: SectionVariant,
     tone: SectionTone,
     flush: bool,
+    /// `fill`: the body's rows and the first one in view.
+    fill: Option<(u16, u16)>,
 }
 
 impl<'a> Section<'a> {
@@ -62,6 +64,7 @@ impl<'a> Section<'a> {
             variant: SectionVariant::Boxed,
             tone: SectionTone::Plain,
             flush: false,
+            fill: None,
         }
     }
 
@@ -146,15 +149,32 @@ impl<'a> Section<'a> {
         self.top(width) + 2 * py + body + u16::from(self.boxed())
     }
 
+    /// `fill`: the box takes the height it is given and its body of `rows` rows scrolls, `offset`
+    /// the first in view. The body keeps a column at its end for the scroller, as `scrollbar-width`
+    /// keeps its room; the app draws the rows from `offset` into [`Section::body`].
+    pub fn fill(mut self, rows: u16, offset: u16) -> Self {
+        self.fill = Some((rows, offset));
+        self
+    }
+
+    /// The offset a filled body of `rows` rows in `area` turns to, moved `by` rows (the wheel, the
+    /// arrows), kept in range.
+    pub fn scrolled(&self, area: Rect, rows: u16, offset: u16, by: isize) -> u16 {
+        let view = self.body(area).height;
+        let end = rows.saturating_sub(view) as isize;
+        (offset as isize + by).clamp(0, end.max(0)) as u16
+    }
+
     /// Where the body goes in `area`.
     pub fn body(&self, area: Rect) -> Rect {
         let (px, py) = self.pad();
         let side = u16::from(self.boxed());
         let top = self.top(area.width);
+        let scroller = u16::from(self.fill.is_some());
         Rect {
             x: area.x + side + px,
             y: area.y + top + py,
-            width: area.width.saturating_sub(2 * (side + px)),
+            width: area.width.saturating_sub(2 * (side + px) + scroller),
             height: area.height.saturating_sub(top + 2 * py + side),
         }
     }
@@ -316,6 +336,27 @@ impl Widget for &Section<'_> {
                     buf[(x, y)]
                         .set_symbol(glyphs.dot)
                         .set_style(Style::new().fg(t(dot)).bg(t(ground)));
+                }
+            }
+        }
+        // The scroller of a filled body, in its own column: the track, the thumb where the view is.
+        if let Some((rows, offset)) = self.fill {
+            let body = self.body(area);
+            let view = body.height;
+            if rows > view && view > 0 && body.right() < area.right() {
+                let x = body.right();
+                let ink = t(look.color("border"));
+                let thumb_ink = t(look.color("muted-foreground"));
+                let len = ((view as u32 * view as u32) / rows as u32).max(1) as u16;
+                let end = rows - view;
+                let at = ((offset.min(end) as u32 * (view - len) as u32) / end.max(1) as u32) as u16;
+                for k in 0..view {
+                    let (g, ink) = if (at..at + len).contains(&k) {
+                        (glyphs.scroll_thumb, thumb_ink)
+                    } else {
+                        (glyphs.scroll_track, ink)
+                    };
+                    buf[(x, body.y + k)].set_symbol(g).set_fg(ink);
                 }
             }
         }

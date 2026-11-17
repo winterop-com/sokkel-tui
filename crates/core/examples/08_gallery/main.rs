@@ -291,7 +291,7 @@ fn draw_controls(f: &mut Frame, look: &Look) {
 /// The sheets, and the rows each takes at a wide and at a narrow width.
 const SHEETS: [(&str, u16, u16); 5] = [
     ("controls", 48, 70),
-    ("page", 84, 120),
+    ("page", 92, 142),
     ("table", 90, 90),
     ("overlays", 56, 90),
     ("palette", 64, 100),
