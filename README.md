@@ -16,9 +16,16 @@ parts and the shell), drawn in cells.
 - The parts, each from its spec in sokkel-design: `Button`, `TextField`, `PageState`, `PageHeader`,
   `Section`, `Table`, the frame (`Rail`, `TopBar`, `StatusLine`), and the overlays `Dialog`,
   `DropdownMenu`, `Select`, `CommandPalette` and `SettingsDialog`.
-- `crates/core/examples/`, a progression: `cargo run --example 01_basic` through `07_runs`
-  (Tidevann's runs in a real terminal, every part working; `-- light` for the light scheme), and
-  `08_gallery` to browse every part's sheet in the terminal.
+- `crates/core/examples/`, a progression to run in a terminal (`-- light` for the light scheme;
+  Ctrl+Q quits):
+  - `01_basic`: a form, focus by Tab, a button with its reason and its busy moment.
+  - `02_page`: a page header and a read in its states (keys 1 to 4), sections.
+  - `03_table`: the one table, by keys and mouse; narrow the terminal for cards.
+  - `04_overlays`: a menu with a submenu, a select, a confirm dialog that holds.
+  - `05_palette`: the command palette (Ctrl+K, every theme) and the settings dialog.
+  - `06_shell`: the frame drawn to SVG and text.
+  - `07_runs`: Tidevann's runs, every part together.
+  - `08_gallery`: every part's sheet, browsed (t theme, s scheme, a ASCII, c no color).
 
 ![Button and TextField in tidevann dark at 120 columns](docs/assets/parts-tidevann-dark-120.png)
 
