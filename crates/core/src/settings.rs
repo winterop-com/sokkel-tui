@@ -19,6 +19,7 @@ use crate::dialog::{Confirm, Dialog, DialogWidth};
 use crate::keys::{Key, KeyPress};
 use crate::look::{Look, Rgba};
 use crate::text::{self, TextRole};
+use crate::tokens::{Density, Scheme};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::Style;
@@ -34,6 +35,23 @@ pub struct Setting {
     pub keywords: Vec<String>,
     /// The columns the app's control takes, at the row's end or under its words.
     pub control_width: u16,
+    /// A choice the dialog draws and turns itself; without one the control is the app's.
+    pub choice: Option<Choice>,
+}
+
+/// A setting's value among a few: drawn as a button saying the chosen one, which a press (Enter,
+/// Space or the pointer) turns to the next. The app is told by [`SettingsEvent::Chose`].
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Choice {
+    pub options: Vec<String>,
+    pub chosen: usize,
+}
+
+impl Choice {
+    /// The option a press turns to.
+    pub fn next(&self) -> usize {
+        (self.chosen + 1) % self.options.len().max(1)
+    }
 }
 
 impl Setting {
@@ -58,6 +76,15 @@ impl Setting {
 
     pub fn keywords(mut self, words: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.keywords = words.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// A choice among `options`, `chosen` showing; its control is as wide as the widest.
+    pub fn choice(mut self, options: impl IntoIterator<Item = impl Into<String>>, chosen: usize) -> Self {
+        let options: Vec<String> = options.into_iter().map(Into::into).collect();
+        let widest = options.iter().map(|o| text::width(o) as u16).max().unwrap_or(0);
+        self.control_width = self.control_width.max(widest + 2);
+        self.choice = Some(Choice { options, chosen });
         self
     }
 }
@@ -196,6 +223,9 @@ pub enum SettingsEvent {
     Close,
     /// Reset to defaults was pressed: ask with [`SettingsDialog::reset_confirm`].
     AskReset,
+    /// A choice turned: the setting, by its place in the shown section, and the option it turned
+    /// to. [`SettingsDialog::setting`] gives its id.
+    Chose(usize, usize),
 }
 
 /// Where the dialog put its pieces.
@@ -298,10 +328,104 @@ impl<'a> SettingsDialog<'a> {
         }
     }
 
-    /// Answer a key on the dialog's own stops.
+    /// The shown section's setting at `k`.
+    pub fn setting(&self, state: &SettingsState, k: usize) -> Option<&Setting> {
+        self.section(self.shown(state)?)?.settings.get(k)
+    }
+
+    /// Its stops in Tab order, as the window shows them.
+    pub fn order(&self, state: &SettingsState) -> Vec<SettingsFocus> {
+        let mut out = Vec::new();
+        let column = !self.phone || !state.in_section;
+        let pane = !self.phone || state.in_section;
+        if self.phone && state.in_section {
+            out.push(SettingsFocus::Back);
+        }
+        if column {
+            out.push(SettingsFocus::Search);
+            out.extend(
+                self.sections(&state.query)
+                    .into_iter()
+                    .map(|(g, s)| SettingsFocus::Entry(g, s)),
+            );
+        }
+        if pane && let Some(at) = self.shown(state) {
+            out.extend(self.kept(at, &state.query).into_iter().map(SettingsFocus::Control));
+        }
+        if self.shows_reset(state) {
+            out.push(SettingsFocus::Reset);
+        }
+        out.push(SettingsFocus::Done);
+        out.push(SettingsFocus::Close);
+        out
+    }
+
+    /// A press on the shown section's control at `k`: a choice turns, the app's control is
+    /// focused.
+    fn press_control(&self, state: &mut SettingsState, k: usize) -> SettingsEvent {
+        state.focus = SettingsFocus::Control(k);
+        match self.setting(state, k).and_then(|s| s.choice.as_ref()) {
+            Some(c) => SettingsEvent::Chose(k, c.next()),
+            None => SettingsEvent::Changed,
+        }
+    }
+
+    /// A press of the pointer at `at` on the dialog drawn at `area`: a stop takes focus and acts
+    /// as Enter would; outside the dialog, it closes.
+    pub fn press(&self, state: &mut SettingsState, area: Rect, at: Position) -> SettingsEvent {
+        if !area.contains(at) {
+            return SettingsEvent::Close;
+        }
+        let l = self.layout(area, state);
+        let hit = |r: Option<Rect>| r.is_some_and(|r| r.contains(at));
+        if hit(l.close) || hit(l.done) {
+            return SettingsEvent::Close;
+        }
+        if hit(l.back) {
+            state.in_section = false;
+            return SettingsEvent::Changed;
+        }
+        if hit(l.reset) {
+            state.focus = SettingsFocus::Reset;
+            return SettingsEvent::AskReset;
+        }
+        if hit(l.search) {
+            state.focus = SettingsFocus::Search;
+            return SettingsEvent::Changed;
+        }
+        if let Some(&((g, s), _)) = l.entries.iter().find(|(_, r)| r.contains(at)) {
+            state.focus = SettingsFocus::Entry(g, s);
+            state.shown = (g, s);
+            state.in_section = self.phone;
+            return SettingsEvent::Changed;
+        }
+        if let Some(&(k, _)) = l.controls.iter().find(|(_, r)| r.contains(at)) {
+            return self.press_control(state, k);
+        }
+        SettingsEvent::Ignored
+    }
+
+    /// Answer a key: Tab and Shift+Tab move round its stops, Enter and Space press the focused
+    /// one, a choice turns.
     pub fn handle(&self, state: &mut SettingsState, key: KeyPress) -> SettingsEvent {
         if key.alt || key.ctrl {
             return SettingsEvent::Ignored;
+        }
+        if matches!(key.key, Key::Tab | Key::BackTab) {
+            let order = self.order(state);
+            let n = order.len();
+            let at = order.iter().position(|f| *f == state.focus).unwrap_or(0);
+            state.focus = order[if key.key == Key::Tab {
+                (at + 1) % n
+            } else {
+                (at + n - 1) % n
+            }];
+            return SettingsEvent::Changed;
+        }
+        if let SettingsFocus::Control(k) = state.focus
+            && key.is_press()
+        {
+            return self.press_control(state, k);
         }
         if key.key == Key::Escape {
             if self.phone && state.in_section {
@@ -763,5 +887,64 @@ impl SettingsDialog<'_> {
                 .focused(state.focus == SettingsFocus::Done)
                 .render(r, buf);
         }
+        // The choices: an outline button saying the chosen option.
+        for (k, r) in &layout.controls {
+            let Some(c) = self.setting(state, *k).and_then(|s| s.choice.as_ref()) else {
+                continue;
+            };
+            let b = Button::new(look, c.options.get(c.chosen).cloned().unwrap_or_default())
+                .variant(ButtonVariant::Outline)
+                .focused(state.focus == SettingsFocus::Control(*k));
+            let w = b.width().min(r.width);
+            b.render(Rect { width: w, ..*r }, buf);
+        }
     }
+}
+
+/// The look as settings: the theme, the scheme and the density, each a choice. Every app can show
+/// it; [`look_chose`] gives the look a choice in it makes.
+pub fn look_section(look: &Look) -> SettingsSection {
+    let themes = crate::tokens::themes();
+    let theme = themes.iter().position(|t| *t == look.theme()).unwrap_or(0);
+    SettingsSection::new(
+        "look",
+        "Look",
+        [
+            Setting::new("theme", "Theme", 0)
+                .description("The colors, from the contract's themes.")
+                .choice(themes.iter().map(|t| t.to_string()), theme),
+            Setting::new("scheme", "Scheme", 0)
+                .description("Light or dark.")
+                .choice(["Light", "Dark"], usize::from(look.scheme() == Scheme::Dark)),
+            Setting::new("density", "Density", 0)
+                .description("Regular, or compact rows and padding.")
+                .choice(["Regular", "Compact"], usize::from(look.density() == Density::Compact)),
+        ],
+    )
+    .icon("◐")
+    .no_reset()
+}
+
+/// The look a choice in [`look_section`] makes: `id` is the setting's, `option` the one chosen.
+/// None for a setting that is not the look's.
+pub fn look_chose(look: &Look, id: &str, option: usize) -> Option<Look> {
+    let (mut theme, mut scheme, mut density) = (look.theme().to_string(), look.scheme(), look.density());
+    match id {
+        "theme" => theme = crate::tokens::themes().get(option)?.to_string(),
+        "scheme" => scheme = if option == 1 { Scheme::Dark } else { Scheme::Light },
+        "density" => {
+            density = if option == 1 {
+                Density::Compact
+            } else {
+                Density::Regular
+            }
+        }
+        _ => return None,
+    }
+    Some(
+        Look::new(&theme, scheme)?
+            .with_density(density)
+            .with_depth(look.depth())
+            .with_charset(look.charset()),
+    )
 }

@@ -9,12 +9,10 @@
 //! table and the list variant. The mouse: a press on a row, a box, a head, the search or Clear; the
 //! wheel. Ctrl+Q quits.
 
-#[path = "common/mod.rs"]
-mod common;
-
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
+use sokkel_tui::app;
 use sokkel_tui::{
     Align, Cell, CellValue, Column, ColumnWidth, Fact, Key, KeyPress, Look, NoteTone, Pointer, PointerKind, Row,
     RowTone, SortDir, StatusLine, Table, TableEvent, TableHit, TableState, TableVariant,
@@ -119,7 +117,7 @@ impl App {
     }
 }
 
-impl common::App for App {
+impl app::Program for App {
     fn look(&self) -> &Look {
         &self.look
     }
@@ -249,7 +247,7 @@ impl common::App for App {
 
 fn main() -> std::io::Result<()> {
     let mut app = App {
-        look: common::look(),
+        look: app::look_from_args("tidevann"),
         columns: columns(),
         rows: rows(),
         all: rows(),
@@ -261,5 +259,5 @@ fn main() -> std::io::Result<()> {
         hover: None,
         picked: None,
     };
-    common::run(&mut app)
+    app::run(&mut app)
 }

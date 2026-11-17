@@ -7,13 +7,11 @@
 //! move in what is open, Right opens the submenu, Enter chooses, Escape closes. The mouse works on
 //! every row and verb, and a press outside closes. Ctrl+Q quits.
 
-#[path = "common/mod.rs"]
-mod common;
-
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::Style;
 use ratatui::widgets::Widget;
+use sokkel_tui::app;
 use sokkel_tui::{
     Button, ButtonVariant, Confirm, Dialog, DialogEvent, DialogFocus, DialogLayout, DialogWidth, DropdownMenu, Fact,
     Item, Key, KeyPress, Look, MenuEvent, MenuState, NoteTone, PageHeader, Pointer, PointerKind, PopupRow, Select,
@@ -116,7 +114,7 @@ impl App {
     }
 }
 
-impl common::App for App {
+impl app::Program for App {
     fn look(&self) -> &Look {
         &self.look
     }
@@ -355,7 +353,7 @@ impl common::App for App {
 
 fn main() -> std::io::Result<()> {
     let mut app = App {
-        look: common::look(),
+        look: app::look_from_args("tidevann"),
         focus: Stop::Filter,
         failed_only: false,
         mine_only: false,
@@ -372,5 +370,5 @@ fn main() -> std::io::Result<()> {
         dialog_at: None,
         win: Rect::default(),
     };
-    common::run(&mut app)
+    app::run(&mut app)
 }

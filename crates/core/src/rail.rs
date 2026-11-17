@@ -116,6 +116,7 @@ impl Default for RailWords {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RailLayout {
     pub entries: Vec<((usize, usize), Rect)>,
+    /// The control that collapses the rail, or, collapsed, the head that expands it.
     pub collapse: Option<Rect>,
 }
 
@@ -206,9 +207,14 @@ impl<'a> Rail<'a> {
         let mut y = area.y + 1 + by_density(look, 1, 0);
         let bottom = area.bottom().saturating_sub(foot);
         let inner_w = area.width.saturating_sub(1);
-        // Collapsed, the mark alone stands in the head and expands the rail.
-        if self.collapsible && !self.collapsed {
-            out.collapse = Some(Rect::new(area.x + inner_w - 2, area.y, 1, 1));
+        // Collapsed, the mark alone stands in the head and expands the rail: the head is the
+        // control then; expanded, the control at the head's end.
+        if self.collapsible {
+            out.collapse = Some(if self.collapsed {
+                Rect::new(area.x, area.y, inner_w, 1)
+            } else {
+                Rect::new(area.x + inner_w - 2, area.y, 1, 1)
+            });
         }
         for (g, group) in self.groups.iter().enumerate() {
             if group.title.is_some() {
@@ -280,7 +286,7 @@ impl Widget for &Rail<'_> {
             );
         }
         let layout = self.layout(area, 0);
-        if let Some(r) = layout.collapse {
+        if let Some(r) = layout.collapse.filter(|_| !self.collapsed) {
             let g = glyphs.collapse;
             let ink = paint("rest.collapse", "ink").unwrap_or(ground);
             buf.set_string(r.x, r.y, g, Style::new().fg(t(ink)));

@@ -109,7 +109,11 @@ fn collapsed_it_is_its_icons_and_says_a_focused_one_in_the_status_line() {
     assert_eq!(r.tip().as_deref(), Some("Hosts  Unread"));
     let layout = r.layout(Rect::new(0, 0, 7, 12), 0);
     assert_eq!(layout.entries.len(), 3);
-    assert!(layout.collapse.is_none());
+    assert_eq!(
+        layout.collapse,
+        Some(Rect::new(0, 0, 6, 1)),
+        "collapsed, the head expands it"
+    );
 }
 
 #[test]

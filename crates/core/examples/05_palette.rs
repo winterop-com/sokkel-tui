@@ -7,12 +7,10 @@
 //! Keys: Ctrl+K the palette; in it Up and Down, Enter, Escape. In Settings Tab moves, Enter on an
 //! entry or a choice, Escape closes. The mouse works on rows, entries and verbs. Ctrl+Q quits.
 
-#[path = "common/mod.rs"]
-mod common;
-
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
+use sokkel_tui::app;
 use sokkel_tui::cells::Width;
 use sokkel_tui::{
     Button, ButtonVariant, Command, CommandGroup, CommandPalette, CommandTone, Density, Fact, Key, KeyPress, Keys,
@@ -202,7 +200,7 @@ impl App {
     }
 }
 
-impl common::App for App {
+impl app::Program for App {
     fn look(&self) -> &Look {
         &self.look
     }
@@ -381,7 +379,7 @@ impl common::App for App {
 
 fn main() -> std::io::Result<()> {
     let mut app = App {
-        look: common::look(),
+        look: app::look_from_args("tidevann"),
         layer: Layer::None,
         palette: PaletteState::default(),
         settings: SettingsState::default(),
@@ -391,5 +389,5 @@ fn main() -> std::io::Result<()> {
         palette_at: None,
         settings_at: None,
     };
-    common::run(&mut app)
+    app::run(&mut app)
 }

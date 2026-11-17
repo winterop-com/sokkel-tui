@@ -1,13 +1,22 @@
-//! The spike: sokkel's shell and the runs table, every part drawn from the core, written out as
-//! SVG and text, cell for cell. Static: no input yet (step 7 makes it a program).
+//! 06: sokkel's frame around the runs table, run by the library's runtime: the rail, the top bar,
+//! the status line, the drawer below md, the command palette (Ctrl+K) and the settings (`,`) with
+//! the look and the frame in them, and the mouse. The example only gives its parts and its page;
+//! everything the frame does is the library's (`app::run_shell`).
 //!
-//! Usage: cargo run --example 06_shell -- <theme> <light|dark> <cols> <rows> <out-without-extension> [collapsed] [drawer] [compact]
+//! Usage: cargo run --example 06_shell [-- light]
+//! Keys: Ctrl+K the palette, `,` the settings, Escape closes what is open; the mouse on the rail's
+//! collapse, its entries, the menu button below md (90 columns: resize the terminal), the palette
+//! button. Ctrl+Q quits.
+//!
+//! With arguments it writes one frame out as SVG and text, cell for cell, for `make specimens`:
+//! cargo run --example 06_shell -- <theme> <light|dark> <cols> <rows> <out-without-extension> [collapsed] [drawer] [compact]
 
-use ratatui::{Frame, Terminal, backend::TestBackend, layout::Rect, style::Style};
+use ratatui::{Frame, Terminal, backend::TestBackend, layout::Rect};
+use sokkel_tui::app::{self, Chrome, ShellApp};
 use sokkel_tui::cells::Width;
 use sokkel_tui::{
     Align, Button, ButtonVariant, Cell, Column, ColumnWidth, Density, Fact, Look, NoteTone, PageHeader, Rail,
-    RailEntry, RailFoot, RailGroup, Row, RowTone, Scheme, ShellLayout, SortDir, StatusLine, Table, TableState, TopBar,
+    RailEntry, RailFoot, RailGroup, Row, RowTone, Scheme, ShellState, SortDir, StatusLine, Table, TableState, TopBar,
     snapshot,
 };
 
@@ -38,13 +47,6 @@ const RUNS: &[RunRow] = &[
 
 const SELECTED: usize = 1;
 
-/// What the specimen shows besides the plain frame.
-#[derive(Default)]
-struct Show {
-    collapsed: bool,
-    drawer: bool,
-}
-
 fn rail<'a>(look: &'a Look, collapsed: bool) -> Rail<'a> {
     Rail::new(look, "T", "Tidevann")
         .groups([
@@ -74,49 +76,37 @@ fn rail<'a>(look: &'a Look, collapsed: bool) -> Rail<'a> {
         })
 }
 
-fn draw(f: &mut Frame, look: &Look, show: &Show) {
-    let window = f.area();
-    f.buffer_mut().set_style(
-        window,
-        Style::new().bg(look.token("background")).fg(look.token("foreground")),
-    );
-    let rail = rail(look, show.collapsed);
-    let shell = ShellLayout::new(look, window, rail.width());
-    if let Some(r) = shell.rail {
-        f.render_widget(&rail, r);
+/// The runs page in sokkel's frame.
+struct Runs;
+
+impl ShellApp for Runs {
+    fn chrome<'a>(&'a self, look: &'a Look) -> Chrome<'a> {
+        Chrome {
+            rail: rail(look, false),
+            top: TopBar::new(look).trail(["Tidevann", "Runs"]).search(""),
+            foot: StatusLine::new(look).note("Live", NoteTone::Live).live(true).facts([
+                Fact::labeled("host", "api.example.org").code(),
+                Fact::new("Updated 12s ago"),
+                Fact::labeled("?", "Shortcuts"),
+            ]),
+        }
     }
-    let top = TopBar::new(look)
-        .trail(["Tidevann", "Runs"])
-        .window(shell.width)
-        .search("");
-    f.render_widget(&top, shell.top);
-    let foot = StatusLine::new(look).note("Live", NoteTone::Live).live(true).facts([
-        Fact::labeled("host", "api.example.org").code(),
-        Fact::new("Updated 12s ago"),
-        Fact::labeled("?", "Shortcuts"),
-    ]);
-    f.render_widget(&foot, shell.foot);
 
-    let page = shell.page(look);
-    let narrow = shell.width == Width::Narrow;
-    let header = PageHeader::new(look, "Runs").count("1,200 runs").actions([
-        Button::new(look, "Filter").variant(ButtonVariant::Secondary),
-        Button::new(look, "New"),
-    ]);
-    let hh = header.height(page.width);
-    f.render_widget(&header, Rect { height: hh, ..page });
-    let gap = 1 + u16::from(look.density() == Density::Regular);
-    let table = Rect {
-        y: page.y + hh + gap - 1,
-        height: page.height.saturating_sub(hh + gap - 1),
-        ..page
-    };
-    draw_table(f, look, table, narrow);
-
-    // Below md the rail is a drawer over the content, drawn expanded.
-    if show.drawer && narrow {
-        let expanded = self::rail(look, false);
-        f.render_widget(&expanded, ShellLayout::drawer(window, expanded.width()));
+    fn page(&mut self, look: &Look, f: &mut Frame, page: Rect, _active: bool) {
+        let narrow = Width::of(f.area()) == Width::Narrow;
+        let header = PageHeader::new(look, "Runs").count("1,200 runs").actions([
+            Button::new(look, "Filter").variant(ButtonVariant::Secondary),
+            Button::new(look, "New"),
+        ]);
+        let hh = header.height(page.width);
+        f.render_widget(&header, Rect { height: hh, ..page });
+        let gap = 1 + u16::from(look.density() == Density::Regular);
+        let table = Rect {
+            y: page.y + hh + gap - 1,
+            height: page.height.saturating_sub(hh + gap - 1),
+            ..page
+        };
+        draw_table(f, look, table, narrow);
     }
 }
 
@@ -157,13 +147,10 @@ fn draw_table(f: &mut Frame, look: &Look, area: Rect, narrow: bool) {
     f.render_stateful_widget(&table, area, &mut state);
 }
 
-fn main() {
+fn main() -> std::io::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 6 {
-        eprintln!(
-            "usage: cargo run --example 06_shell -- <theme> <light|dark> <cols> <rows> <out-without-extension> [collapsed] [drawer] [compact]"
-        );
-        std::process::exit(2);
+        return app::run_shell(Runs, app::look_from_args("tidevann"));
     }
     let scheme = if args[2] == "light" {
         Scheme::Light
@@ -175,16 +162,18 @@ fn main() {
     if flag("compact") {
         look = look.with_density(Density::Compact);
     }
-    let show = Show {
-        collapsed: flag("collapsed"),
-        drawer: flag("drawer"),
-    };
+    let mut shell = ShellState::default();
+    shell.collapsed = flag("collapsed");
+    shell.drawer = flag("drawer");
     let (cols, rows): (u16, u16) = (args[3].parse().unwrap(), args[4].parse().unwrap());
     let mut term = Terminal::new(TestBackend::new(cols, rows)).unwrap();
-    term.draw(|f| draw(f, &look, &show)).unwrap();
+    term.draw(|f| app::draw_shell(&mut Runs, &look, f, &mut shell, true))
+        .unwrap();
     let buffer = term.backend().buffer();
-    let ground = look.token("background");
-    let ink = look.token("foreground");
-    std::fs::write(format!("{}.svg", args[5]), snapshot::svg(buffer, ground, ink)).unwrap();
-    std::fs::write(format!("{}.txt", args[5]), snapshot::text(buffer)).unwrap();
+    std::fs::write(
+        format!("{}.svg", args[5]),
+        snapshot::svg(buffer, look.token("background"), look.token("foreground")),
+    )?;
+    std::fs::write(format!("{}.txt", args[5]), snapshot::text(buffer))?;
+    Ok(())
 }

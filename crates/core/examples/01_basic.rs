@@ -7,17 +7,16 @@
 //!
 //! Usage: cargo run --example 01_basic [-- light]
 //! Keys: Tab and Shift+Tab move focus; type in a field; Enter or Space presses a button;
-//! Ctrl+Q or Esc quits.
+//! Ctrl+Q or Esc quits. A press of the pointer focuses what is under it, and presses a button.
 
-use ratatui::crossterm::event::{self, Event};
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::widgets::{StatefulWidget, Widget};
+use sokkel_tui::app;
 use sokkel_tui::{
-    Button, ButtonVariant, Charset, Depth, Fact, FieldFocus, FieldState, Focus, FocusId, Issue, Key, KeyPress, Look,
-    NoteTone, Scheme, StatusLine, TextField, TextRole, Tip,
+    Button, ButtonVariant, Fact, FieldFocus, FieldState, Focus, FocusId, Issue, Key, KeyPress, Look, NoteTone, Pointer,
+    PointerKind, StatusLine, TextField, TextRole, Tip,
 };
-use std::time::{Duration, Instant};
 
 const NAME: &str = "name";
 const SCHEDULE: &str = "schedule";
@@ -224,16 +223,45 @@ impl App {
     }
 }
 
+impl app::Program for App {
+    fn look(&self) -> &Look {
+        &self.look
+    }
+
+    fn draw(&mut self, f: &mut ratatui::Frame) {
+        App::draw(self, f);
+    }
+
+    fn key(&mut self, key: KeyPress) -> bool {
+        App::key(self, key);
+        self.quit
+    }
+
+    fn pointer(&mut self, p: Pointer) {
+        if p.kind != PointerKind::Press {
+            return;
+        }
+        match self.focus.press(p.at) {
+            Some(id) if id == FocusId::new(CANCEL) => self.quit = true,
+            Some(id) if id == FocusId::new(CREATE) => App::key(self, KeyPress::new(Key::Enter)),
+            _ => {}
+        }
+    }
+
+    fn tick(&mut self, now: u64) {
+        App::tick(self, now);
+    }
+
+    fn done(&self) -> bool {
+        self.quit
+    }
+}
+
 fn main() -> std::io::Result<()> {
-    let light = std::env::args().any(|a| a == "light");
-    let look = Look::new("tidevann", if light { Scheme::Light } else { Scheme::Dark })
-        .expect("tidevann")
-        .with_depth(Depth::detect())
-        .with_charset(Charset::detect());
     let mut focus = Focus::new();
     focus.set(FocusId::new(NAME));
     let mut app = App {
-        look,
+        look: app::look_from_args("tidevann"),
         focus,
         name: FieldState::default(),
         schedule: FieldState::default(),
@@ -243,21 +271,5 @@ fn main() -> std::io::Result<()> {
         now: 0,
         quit: false,
     };
-    let mut terminal = ratatui::init();
-    let start = Instant::now();
-    let result = (|| -> std::io::Result<()> {
-        while !app.quit {
-            app.tick(start.elapsed().as_millis() as u64);
-            terminal.draw(|f| app.draw(f))?;
-            if event::poll(Duration::from_millis(app.look.duration_ms("motion-fast")))?
-                && let Event::Key(k) = event::read()?
-                && let Some(key) = KeyPress::from_crossterm(&k)
-            {
-                app.key(key);
-            }
-        }
-        Ok(())
-    })();
-    ratatui::restore();
-    result
+    app::run(&mut app)
 }

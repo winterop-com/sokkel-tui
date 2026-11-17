@@ -6,13 +6,11 @@
 //! Keys: 1 loading, 2 failed, 3 empty, 4 the content; Tab moves between Refresh and, in the failed
 //! state, Try again; Enter presses it (a read takes a moment). A press does the same. Ctrl+Q quits.
 
-#[path = "common/mod.rs"]
-mod common;
-
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::widgets::Widget;
+use sokkel_tui::app;
 use sokkel_tui::{
     Button, ButtonVariant, Fact, Key, KeyPress, Look, NoteTone, Outcome, PageHeader, PageState, Pointer, PointerKind,
     Section, SectionTone, StatusLine, TextRole,
@@ -57,7 +55,7 @@ impl Page {
     }
 }
 
-impl common::App for Page {
+impl app::Program for Page {
     fn look(&self) -> &Look {
         &self.look
     }
@@ -213,7 +211,7 @@ impl common::App for Page {
 
 fn main() -> std::io::Result<()> {
     let mut page = Page {
-        look: common::look(),
+        look: app::look_from_args("tidevann"),
         read: Read::Loading,
         reading: None,
         focus: Stop::Refresh,
@@ -222,5 +220,5 @@ fn main() -> std::io::Result<()> {
         retry_at: None,
     };
     page.reading = Some((0, Read::Content));
-    common::run(&mut page)
+    app::run(&mut page)
 }

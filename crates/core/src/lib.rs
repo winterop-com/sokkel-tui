@@ -12,6 +12,9 @@
 //! - [`shortcuts`]: the app's keys, matched by the character they type.
 //! - [`snapshot`]: a buffer as SVG and as text.
 //!
+//! The runtime: [`app`], one screen ([`app::run`]) or an app in sokkel's frame
+//! ([`app::run_shell`]), the palette, the settings, the drawer and the mouse kept for it.
+//!
 //! The parts, each from its spec in sokkel-design's `parts/` (`docs/plan.md`):
 //! - [`button`]: [`Button`], with words, an icon and words, or an icon alone.
 //! - [`text_field`]: [`TextField`], the field frame around a one-line input.
@@ -23,6 +26,7 @@
 //! - [`dialog`], [`menu`], [`select`]: the overlays, over the popup [`popup`] they share.
 //! - [`palette`]: the command palette; [`settings`]: the settings dialog.
 
+pub mod app;
 pub mod button;
 pub mod cells;
 pub mod dialog;
@@ -66,10 +70,10 @@ pub use rail::{Rail, RailEntry, RailFoot, RailGroup, RailLayout, RailWords};
 pub use section::{Section, SectionTone, SectionVariant};
 pub use select::{Select, SelectEvent, SelectOption, SelectState, SelectVariant};
 pub use settings::{
-    Setting, SettingsDialog, SettingsEvent, SettingsFocus, SettingsGroup, SettingsLayout, SettingsSection,
+    Choice, Setting, SettingsDialog, SettingsEvent, SettingsFocus, SettingsGroup, SettingsLayout, SettingsSection,
     SettingsState, SettingsWords,
 };
-pub use shell::ShellLayout;
+pub use shell::{Shell, ShellEvent, ShellLayout, ShellState};
 pub use shortcuts::{Binding, KeyContext, Keys, ShortcutWords, Shortcuts};
 pub use status_line::{Fact, NoteTone, StatusLine};
 pub use table::{
