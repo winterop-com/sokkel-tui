@@ -16,7 +16,7 @@ use crate::glyphs::Charset;
 use crate::keys::{Key, KeyPress, Pointer, PointerKind};
 use crate::look::{Depth, Look};
 use crate::menu::{DropdownMenu, MenuEvent, MenuState};
-use crate::palette::{Command, CommandGroup, CommandPalette, PaletteEvent, PaletteState};
+use crate::palette::{Command, CommandGroup, CommandPalette, PaletteEvent, PaletteState, PaletteWords};
 use crate::popup::{Item, PopupRow};
 use crate::rail::Rail;
 use crate::settings::{
@@ -131,6 +131,14 @@ pub fn run(program: &mut impl Program) -> std::io::Result<()> {
 }
 
 /// The frame's parts an app gives each frame.
+/// The app's search's answer to one query: its results as groups (a group a kind), or failed.
+#[derive(Debug, Clone, Default)]
+pub struct SearchAnswer {
+    pub query: String,
+    pub groups: Vec<CommandGroup>,
+    pub failed: bool,
+}
+
 pub struct Chrome<'a> {
     pub rail: Rail<'a>,
     pub top: TopBar<'a>,
@@ -273,6 +281,18 @@ pub trait ShellApp {
     }
     /// The reader stopped waiting for a running command: the app lets it go on, or stops it.
     fn stop_waiting(&mut self, _id: &str) {}
+    /// The palette's query, for the app's own search (`search`), asked once typing has paused
+    /// (`debounce`, 150 ms) and the query is not empty. The app answers through
+    /// [`ShellApp::palette_answer`], now or on a later tick.
+    fn palette_search(&mut self, _query: &str) {}
+    /// What the app's search has answered: the query it answers and its results, by kind, or
+    /// that it failed. The runtime shows them under the commands; an earlier query's stay out of
+    /// reach while the next one waits.
+    fn palette_answer(&self) -> Option<SearchAnswer> {
+        None
+    }
+    /// One of the app's search results was chosen, by its command id: the palette closes.
+    fn palette_open(&mut self, _id: &str) {}
     /// The app's settings sections, after the runtime's Look and Frame.
     fn settings(&self, _look: &Look) -> Vec<SettingsSection> {
         Vec::new()
@@ -359,6 +379,9 @@ const RAIL: &str = "sokkel.rail";
 const MOUSE: &str = "sokkel.mouse";
 const KIOSK: &str = "sokkel.kiosk";
 const THEME: &str = "sokkel.theme:";
+const SEARCH_RETRY: &str = "sokkel.search.retry";
+/// The pause in typing before the palette's query goes to the app's search (`debounce`).
+const DEBOUNCE_MS: u64 = 150;
 
 /// The frame's own stops.
 fn search_stop() -> FocusId {
@@ -396,6 +419,10 @@ struct Host<A> {
     now: u64,
     /// The app's command still running, and since when.
     running: Option<(String, u64)>,
+    /// The palette's query as last seen and when it changed, and the query last asked of the
+    /// app's search and when.
+    typed: (String, u64),
+    asked: Option<(String, u64)>,
     /// Where the look is kept, and the look last kept there.
     kept: Option<std::path::PathBuf>,
     worn: (String, Scheme, Density),
@@ -480,6 +507,8 @@ impl<A: ShellApp> Host<A> {
             keys: Shortcuts::new(),
             now: 0,
             running: None,
+            typed: (String::new(), 0),
+            asked: None,
             focus: Focus::new(),
             hover: None,
             history: Vec::new(),
@@ -856,11 +885,39 @@ impl<A: ShellApp> Host<A> {
 
     /// The palette as the runtime shows it: the app's commands and its own, its foot saying the
     /// app's name, Enter's verb and the keys that open it.
-    fn palette_part(&self) -> CommandPalette<'_> {
+    fn palette_part(&self, query: &str) -> CommandPalette<'_> {
         let name = self.app.chrome(&self.look).rail.name().to_string();
-        CommandPalette::new(&self.look, self.groups())
+        let (results, waiting, failed) = self.search_results(query);
+        let mut groups = self.groups();
+        groups.extend(results);
+        CommandPalette::new(&self.look, groups)
             .window(self.width)
             .foot(name, Some(Keys::Mod('k')))
+            .search_status(waiting, failed)
+    }
+
+    /// The app's search under the commands: its answer's groups (held when they answer an earlier
+    /// query), how long the query has waited for its own answer, and whether that answer failed.
+    fn search_results(&self, query: &str) -> (Vec<CommandGroup>, Option<u64>, bool) {
+        if query.is_empty() || self.layer != Layer::Palette {
+            return (Vec::new(), None, false);
+        }
+        let answer = self.app.palette_answer();
+        let fresh = answer.as_ref().is_some_and(|a| a.query == query);
+        // The wait runs from the change of the query, through the pause, to its answer.
+        let waiting = (!fresh).then(|| self.now.saturating_sub(self.typed.1));
+        let Some(answer) = answer else {
+            return (Vec::new(), waiting, false);
+        };
+        if fresh && answer.failed {
+            let retry = Command::new(SEARCH_RETRY, PaletteWords::default().retry).icon("↻");
+            return (vec![CommandGroup::new("", [retry]).results()], None, true);
+        }
+        if answer.failed {
+            return (Vec::new(), waiting, false);
+        }
+        let groups = answer.groups.into_iter().map(|g| g.results().held(!fresh)).collect();
+        (groups, waiting, false)
     }
 
     fn groups(&self) -> Vec<CommandGroup> {
@@ -1124,6 +1181,22 @@ impl<A: ShellApp> Host<A> {
 
     fn palette_event(&mut self, event: PaletteEvent) {
         match event {
+            // The app's search: Retry asks again; a result opens and the palette closes.
+            PaletteEvent::Run(id) if id == SEARCH_RETRY => {
+                let query = self.palette.query.clone();
+                self.app.palette_search(&query);
+                self.asked = Some((query, self.now));
+                self.typed.1 = self.now;
+            }
+            PaletteEvent::Run(id)
+                if self
+                    .app
+                    .palette_answer()
+                    .is_some_and(|a| a.groups.iter().any(|g| g.commands.iter().any(|c| c.id == id))) =>
+            {
+                self.layer = Layer::None;
+                self.app.palette_open(&id);
+            }
             PaletteEvent::Run(id) => self.command(&id),
             PaletteEvent::StopWaiting => {
                 if let Some((id, _)) = self.running.take() {
@@ -1187,6 +1260,21 @@ impl<A: ShellApp> Program for Host<A> {
     fn tick(&mut self, now: u64) {
         self.now = now;
         self.app.tick(now);
+        // The palette's query, to the app's search once typing has paused.
+        if self.layer == Layer::Palette {
+            let query = self.palette.query.clone();
+            if query != self.typed.0 {
+                self.typed = (query.clone(), now);
+            }
+            let asked = self.asked.as_ref().is_some_and(|(q, _)| *q == query);
+            if !query.is_empty() && !asked && now.saturating_sub(self.typed.1) >= DEBOUNCE_MS {
+                self.app.palette_search(&query);
+                self.asked = Some((query, now));
+            }
+        } else if self.asked.is_some() {
+            self.asked = None;
+            self.typed = (String::new(), now);
+        }
         if let Some((id, since)) = self.running.clone() {
             if self.app.finished(&id) {
                 self.running = None;
@@ -1212,7 +1300,7 @@ impl<A: ShellApp> Program for Host<A> {
             }
             Layer::Palette => {
                 let mut st = std::mem::take(&mut self.palette);
-                let event = self.palette_part().handle(&mut st, key);
+                let event = self.palette_part(&st.query).handle(&mut st, key);
                 self.palette = st;
                 self.palette_event(event);
                 return false;
@@ -1335,7 +1423,7 @@ impl<A: ShellApp> Program for Host<A> {
             Layer::Palette => {
                 let Some(area) = self.palette_at else { return };
                 let mut st = std::mem::take(&mut self.palette);
-                let pal = self.palette_part();
+                let pal = self.palette_part(&st.query);
                 let hit = pal.hit(area, p.at, &st);
                 let event = match (p.kind, hit) {
                     (PointerKind::Move, Some(h)) => {
@@ -1465,7 +1553,7 @@ impl<A: ShellApp> Program for Host<A> {
         match self.layer {
             Layer::Palette => {
                 let mut st = std::mem::take(&mut self.palette);
-                let pal = self.palette_part();
+                let pal = self.palette_part(&st.query);
                 let r = pal.area(window, &st);
                 pal.render(r, f.buffer_mut(), &mut st);
                 if let Some(pos) = st.cursor_position() {

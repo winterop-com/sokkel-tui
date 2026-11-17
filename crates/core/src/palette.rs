@@ -127,6 +127,12 @@ impl Command {
 pub struct CommandGroup {
     pub title: String,
     pub commands: Vec<Command>,
+    /// The app's own search results (`search`): shown as the app answered them, never filtered
+    /// again by the query.
+    pub results: bool,
+    /// Results of an earlier query while the next one waits: in place but out of reach, passed
+    /// over by the keys; dimmed once the wait has run `wait-shown`.
+    pub held: bool,
 }
 
 impl CommandGroup {
@@ -134,7 +140,21 @@ impl CommandGroup {
         CommandGroup {
             title: title.into(),
             commands: commands.into_iter().collect(),
+            results: false,
+            held: false,
         }
+    }
+
+    /// The app's search results: listed as given, under the commands. An empty title draws no
+    /// title line.
+    pub fn results(mut self) -> Self {
+        self.results = true;
+        self
+    }
+
+    pub fn held(mut self, held: bool) -> Self {
+        self.held = held;
+        self
     }
 }
 
@@ -152,6 +172,11 @@ pub struct PaletteWords {
     pub run: String,
     pub enter: String,
     pub keys: ShortcutWords,
+    /// The app's search (`PALETTE_SEARCH_WORDS`).
+    pub searching: String,
+    pub search_failed: String,
+    pub retry: String,
+    pub see_all: String,
 }
 
 impl Default for PaletteWords {
@@ -167,6 +192,10 @@ impl Default for PaletteWords {
             run: "Run".into(),
             enter: "Enter".into(),
             keys: ShortcutWords::default(),
+            searching: "Searching".into(),
+            search_failed: "The search did not answer.".into(),
+            retry: "Retry".into(),
+            see_all: "See all results for \u{201c}{query}\u{201d}".into(),
         }
     }
 }
@@ -265,6 +294,8 @@ enum Line {
     Command(usize, usize),
     /// A two-line row's second line.
     Detail(usize, usize),
+    /// The app's search failed: said over its Retry row.
+    Failed,
 }
 
 /// The command palette. Build it each frame; draw it last, over the frame.
@@ -277,6 +308,9 @@ pub struct CommandPalette<'a> {
     words: PaletteWords,
     /// The foot: the app's name, and the keys that open the palette.
     foot: Option<(String, Option<Keys>)>,
+    /// The app's search: how long the query has waited for its answer, and whether it failed.
+    waiting: Option<u64>,
+    failed: bool,
 }
 
 impl<'a> CommandPalette<'a> {
@@ -288,7 +322,29 @@ impl<'a> CommandPalette<'a> {
             width_px: 384.0,
             words: PaletteWords::default(),
             foot: None,
+            waiting: None,
+            failed: false,
         }
+    }
+
+    /// The app's search as it stands: the query waiting `waiting` ms for its answer (after
+    /// `wait-shown` held results dim, and with nothing listed "Searching" stands in the empty
+    /// line's place), or `failed`, said over its Retry row (a results group the app's runtime
+    /// gives).
+    pub fn search_status(mut self, waiting: Option<u64>, failed: bool) -> Self {
+        self.waiting = waiting;
+        self.failed = failed;
+        self
+    }
+
+    /// Whether the wait shows: it has run `wait-shown`.
+    fn wait_shows(&self) -> bool {
+        self.waiting.is_some_and(|ms| ms >= self.look.duration_ms("wait-shown"))
+    }
+
+    /// Whether a row can be reached: not disabled, not held.
+    fn reachable(&self, at: (usize, usize)) -> bool {
+        self.command(at).disabled.is_none() && !self.groups[at.0].held
     }
 
     /// The window's width decides its form: below md it takes the window's width.
@@ -325,6 +381,10 @@ impl<'a> CommandPalette<'a> {
             .iter()
             .enumerate()
             .filter_map(|(g, group)| {
+                // The app's results stand as it answered them.
+                if group.results {
+                    return (!group.commands.is_empty()).then(|| (g, (0..group.commands.len()).collect()));
+                }
                 let mut hits: Vec<(u32, usize)> = group
                     .commands
                     .iter()
@@ -398,9 +458,7 @@ impl<'a> CommandPalette<'a> {
             };
         }
         let rows = self.rows(&state.query);
-        let enabled: Vec<usize> = (0..rows.len())
-            .filter(|&k| self.command(rows[k]).disabled.is_none())
-            .collect();
+        let enabled: Vec<usize> = (0..rows.len()).filter(|&k| self.reachable(rows[k])).collect();
         let at = enabled.iter().position(|&k| k == state.active).unwrap_or(0);
         match key.key {
             Key::Down if !enabled.is_empty() => {
@@ -443,9 +501,7 @@ impl<'a> CommandPalette<'a> {
     /// After the query changed: the first enabled row active, the refusal cleared.
     fn retarget(&self, state: &mut PaletteState) {
         let rows = self.rows(&state.query);
-        state.active = (0..rows.len())
-            .find(|&k| self.command(rows[k]).disabled.is_none())
-            .unwrap_or(0);
+        state.active = (0..rows.len()).find(|&k| self.reachable(rows[k])).unwrap_or(0);
         state.scroll = 0;
         state.refusal = None;
     }
@@ -465,7 +521,12 @@ impl<'a> CommandPalette<'a> {
             if k > 0 {
                 out.push(Line::Separator);
             }
-            out.push(Line::Title(g));
+            if self.failed && self.groups[g].results {
+                out.push(Line::Failed);
+            }
+            if !self.groups[g].title.is_empty() {
+                out.push(Line::Title(g));
+            }
             for c in cs {
                 out.push(Line::Command(g, c));
                 if self.groups[g].commands[c].detail.is_some() {
@@ -543,8 +604,12 @@ impl CommandPalette<'_> {
             PaletteHit::Command(_) if state.running.is_some() => PaletteEvent::Ignored,
             PaletteHit::Command(place) => {
                 let rows = self.rows(&state.query);
-                match rows.get(place).map(|&r| self.command(r)) {
-                    Some(cmd) if cmd.disabled.is_none() => {
+                match rows
+                    .get(place)
+                    .filter(|&&r| self.reachable(r))
+                    .map(|&r| self.command(r))
+                {
+                    Some(cmd) => {
                         state.active = place;
                         state.refusal = None;
                         PaletteEvent::Run(cmd.id.clone())
@@ -561,7 +626,7 @@ impl CommandPalette<'_> {
             && state.running.is_none()
         {
             let rows = self.rows(&state.query);
-            if rows.get(place).is_some_and(|&r| self.command(r).disabled.is_none()) {
+            if rows.get(place).is_some_and(|&r| self.reachable(r)) {
                 state.active = place;
             }
         }
@@ -633,12 +698,22 @@ impl CommandPalette<'_> {
         let lines = self.lines(state);
         let rows = self.rows(&state.query);
         if rows.is_empty() && !self.released(state) {
-            let ei = p("rest.empty", "ink").unwrap_or(ink);
-            let w = text::width(&self.words.empty) as u16;
+            // While the app's search waits past wait-shown, "Searching" with its spinner stands
+            // in the empty line's place, in faint.
+            let (words, ei) = if self.wait_shows() {
+                let ms = self.waiting.unwrap_or(0);
+                (
+                    format!("{} {}", look.spinner_frame(ms), self.words.searching),
+                    look.color("faint"),
+                )
+            } else {
+                (self.words.empty.clone(), p("rest.empty", "ink").unwrap_or(ink))
+            };
+            let w = text::width(&words) as u16;
             buf.set_string(
                 list.x + list.width.saturating_sub(w) / 2,
                 list.y,
-                &self.words.empty,
+                &words,
                 TextRole::Body.style(look).fg(t(ei)),
             );
         } else {
@@ -746,6 +821,18 @@ impl CommandPalette<'_> {
                     TextRole::Badge.style(look).fg(t(ti)),
                 );
             }
+            Line::Failed => {
+                buf.set_string(
+                    list.x + 1,
+                    y,
+                    text::truncate(
+                        &self.words.search_failed,
+                        list.width.saturating_sub(2) as usize,
+                        glyphs.ellipsis,
+                    ),
+                    TextRole::Body.style(look).fg(t(quiet)),
+                );
+            }
             Line::StopWaiting => {
                 let state_key = if active { "active" } else { "rest" };
                 let rg = p(&format!("{state_key}.row"), "ground").unwrap_or(ground);
@@ -777,7 +864,8 @@ impl CommandPalette<'_> {
             }
             Line::Command(g, c) => {
                 let cmd = &self.groups[g].commands[c];
-                let disabled = cmd.disabled.is_some();
+                // A held result dims as a disabled row does, once the wait shows.
+                let disabled = cmd.disabled.is_some() || self.groups[g].held && self.wait_shows();
                 let st = if disabled {
                     "disabled"
                 } else if active {

@@ -300,7 +300,7 @@ const SHEETS: [(&str, u16, u16); 5] = [
     ("page", 92, 142),
     ("table", 141, 141),
     ("overlays", 56, 90),
-    ("palette", 64, 100),
+    ("palette", 81, 134),
 ];
 
 fn draw_sheet(f: &mut Frame, sheet: &str, look: &Look) {

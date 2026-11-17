@@ -141,7 +141,11 @@ the contract say so that it does?
   its title on the footer's ground), its status row (a status line or a refusal) and the nested
   shade (`Dialog::shade`); what lies under a layer under the scrim (T2). The palette's two-line rows
   (`Command::detail`) and its foot (`foot(name, keys)`: the app's name, Enter's verb, the keys that
-  open it, as many as fit). Not yet: the palette's app search.
+  open it, as many as fit). The app's search (`ShellApp::palette_search`/`palette_answer`/
+  `palette_open`, `CommandGroup::results`/`held`, `CommandPalette::search_status`: asked after a
+  150 ms pause, results under the commands, an earlier query's held out of reach and dimmed after
+  `wait-shown`, Searching in the empty line's place, a failure over Retry). Not yet: See all, and
+  `minQuery`/`debounce` as the app's options.
 - The pointer, where the terminal reports it (`keys::Pointer`): the table says what a position
   hits (a row, its box, the head's box, a head, a card) and acts on a press; the menu, the select's
   list and the palette say which row is under it; every part already reports where its controls

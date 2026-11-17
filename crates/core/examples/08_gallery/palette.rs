@@ -112,20 +112,51 @@ pub fn draw(f: &mut Frame, look: &Look) {
     let room_h = 16;
     let words = PaletteWords::default();
     let palette = CommandPalette::new(look, groups()).window(window);
+    // The app's search: its results under the commands, and its wait with nothing listed.
+    let found = CommandGroup::new(
+        "Past runs",
+        [
+            Command::new("run:1", "sync-inventory at 11:58")
+                .icon("▶")
+                .detail("failed in juniper"),
+            Command::new("run:6", "sync-inventory at 09:58")
+                .icon("▶")
+                .detail("cancelled in juniper"),
+        ],
+    )
+    .results();
+    let mut with_results = groups();
+    with_results.push(found);
+    let answered = CommandPalette::new(look, with_results).window(window);
+    let waiting = CommandPalette::new(look, groups())
+        .window(window)
+        .search_status(Some(600), false);
     let mut states = [
-        ("at rest, the second row active", PaletteState::default()),
-        ("filtered by what was typed", PaletteState::default()),
-        ("a command running past busy-release", PaletteState::default()),
-        ("a command refused", PaletteState::default()),
+        ("at rest, the second row active", &palette, PaletteState::default()),
+        ("filtered by what was typed", &palette, PaletteState::default()),
+        ("a command running past busy-release", &palette, PaletteState::default()),
+        ("a command refused", &palette, PaletteState::default()),
+        (
+            "the app's search answered under the commands",
+            &answered,
+            PaletteState::default(),
+        ),
+        (
+            "the app's search waiting past wait-shown",
+            &waiting,
+            PaletteState::default(),
+        ),
     ];
-    states[0].1.active = 1;
-    states[1].1.query = "ex".into();
-    states[2].1.running("export", 6000);
-    states[3].1.active = 4;
+    states[0].2.active = 1;
+    states[1].2.query = "ex".into();
+    states[2].2.running("export", 6000);
+    states[3].2.active = 4;
+    states[4].2.query = "inv".into();
+    states[5].2.query = "grace".into();
     states[3]
-        .1
+        .2
         .refused(Some("api.example.org refused the export: too many runs".into()), &words);
-    for (i, (name, state)) in states.iter_mut().enumerate() {
+    for (i, (name, palette, state)) in states.iter_mut().enumerate() {
         let (c, r) = if two { (i % 2, i / 2) } else { (0, i) };
         let room = Rect::new(
             x0 + c as u16 * (room_w + 2),
@@ -145,7 +176,7 @@ pub fn draw(f: &mut Frame, look: &Look) {
         let pa = palette.area(inner, state);
         palette.render(pa, f.buffer_mut(), state);
     }
-    y += if two { 2 * (room_h + 1) } else { 4 * (room_h + 1) };
+    y += if two { 3 * (room_h + 1) } else { 6 * (room_h + 1) };
 
     heading(f, look, x0, y, "SettingsDialog");
     y += 1;

@@ -7,7 +7,8 @@
 //!
 //! Keys: Tab moves through the rail, the search, the palette button, the page and the account;
 //! Ctrl+K the palette; ? the shortcuts; / the search (it narrows the runs by job); G then R and G
-//! then J go to a page, Escape back; `m` (or a press on a row's ⋯) opens a run's actions; in the table Up, Down, Home, End, PageUp, PageDown, Space selects. The
+//! then J go to a page, Escape back; Ctrl+K searches the runs too (the app's search, answering after
+//! 400 ms), a run chosen there opening its detail beside the page; `m` (or a press on a row's ⋯) opens a run's actions; in the table Up, Down, Home, End, PageUp, PageDown, Space selects. The
 //! mouse works on every row, button, entry and menu row; the wheel scrolls. Ctrl+Q quits.
 //!
 //! With `--frame` it draws one frame after the keys given (`tab`, `down`, `ctrl-k`, `enter`, a
@@ -16,7 +17,7 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::widgets::Widget;
-use sokkel_tui::app::{self, Chrome, Cx, Flow, Ran, ShellApp};
+use sokkel_tui::app::{self, Chrome, Cx, Flow, Ran, SearchAnswer, ShellApp};
 use sokkel_tui::{
     Align, Binding, Button, ButtonVariant, Cell, Column, ColumnWidth, Command, CommandGroup, Confirm, Density,
     DetailPane, Dialog, DialogEvent, DialogFocus, DialogWidth, DropdownMenu, Fact, FocusId, Item, Key, KeyPress, Keys,
@@ -153,6 +154,11 @@ struct Runs {
     panel_at: Rect,
     dialog: Option<DialogFocus>,
     busy_since: Option<u64>,
+    /// The palette's search over the runs: the query asked and when, and the last answer. It
+    /// answers after 400 ms, as a server would.
+    asked: Option<(String, u64)>,
+    answer: Option<SearchAnswer>,
+    now: u64,
     /// Where the last frame drew what a press can hit.
     filter_at: Option<Rect>,
     new_at: Option<Rect>,
@@ -175,6 +181,9 @@ impl Runs {
             panel_at: Rect::default(),
             dialog: None,
             busy_since: None,
+            asked: None,
+            answer: None,
+            now: 0,
             filter_at: None,
             new_at: None,
             table_at: Rect::default(),
@@ -683,7 +692,59 @@ impl ShellApp for Runs {
     }
 
     /// A busy confirm settles after a moment and the run is added.
+    fn palette_search(&mut self, query: &str) {
+        self.asked = Some((query.to_string(), self.now));
+    }
+
+    fn palette_answer(&self) -> Option<SearchAnswer> {
+        self.answer.clone()
+    }
+
+    /// A run chosen in the palette: its detail in the side panel.
+    fn palette_open(&mut self, id: &str) {
+        let Some(i) = id.strip_prefix("run:").and_then(|i| i.parse::<usize>().ok()) else {
+            return;
+        };
+        self.page = Page::Runs;
+        let job = self.runs.get(i).map(|r| (r.job.clone(), r.started.clone()));
+        self.table.opened = self
+            .shown()
+            .iter()
+            .position(|r| Some((r.job.clone(), r.started.clone())) == job);
+    }
+
     fn tick(&mut self, now: u64) {
+        self.now = now;
+        // The search answers 400 ms after it was asked: the runs whose job, project or person
+        // holds the query.
+        if let Some((q, t)) = self.asked.clone()
+            && now.saturating_sub(t) >= 400
+        {
+            self.asked = None;
+            let ql = q.to_lowercase();
+            let hits: Vec<Command> = self
+                .runs
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| {
+                    [Some(&r.job), Some(&r.project), r.by.as_ref()]
+                        .into_iter()
+                        .flatten()
+                        .any(|w| w.to_lowercase().contains(&ql))
+                })
+                .take(6)
+                .map(|(i, r)| {
+                    Command::new(format!("run:{i}"), format!("{} at {}", r.job, r.started))
+                        .icon("▶")
+                        .detail(format!("{} in {}", r.state, r.project))
+                })
+                .collect();
+            self.answer = Some(SearchAnswer {
+                query: q,
+                groups: vec![CommandGroup::new("Runs", hits)],
+                failed: false,
+            });
+        }
         if let Some(t) = self.busy_since
             && now.saturating_sub(t) >= 1500
         {

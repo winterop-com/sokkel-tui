@@ -242,3 +242,47 @@ fn a_two_line_row_says_its_detail_and_the_foot_its_verb() {
         Some(PaletteHit::Command(0))
     );
 }
+
+#[test]
+fn the_apps_search_lists_its_results_holds_an_earlier_querys_and_says_its_wait() {
+    let look = look();
+    let found = CommandGroup::new(
+        "Runs",
+        [
+            Command::new("run:1", "sync-inventory at 11:58").detail("failed in juniper"),
+            Command::new("run:6", "sync-inventory at 09:58"),
+        ],
+    )
+    .results();
+    // Answered: the results stand as given, under the commands, and the keys reach them.
+    let pal = CommandPalette::new(&look, [found.clone()]);
+    let mut s = PaletteState::default();
+    s.query = "grace".into();
+    assert_eq!(pal.matches("grace"), vec![(0, vec![0, 1])], "never filtered again");
+    pal.handle(&mut s, press(Key::Down));
+    assert_eq!(pal.handle(&mut s, press(Key::Enter)), PaletteEvent::Run("run:6".into()));
+    // Held while the next query waits: passed over, so Enter runs nothing.
+    let pal = CommandPalette::new(&look, [found.held(true)]).search_status(Some(100), false);
+    let mut s = PaletteState::default();
+    s.query = "grace x".into();
+    assert_eq!(pal.handle(&mut s, press(Key::Enter)), PaletteEvent::Ignored);
+    // Nothing listed past wait-shown: "Searching" in the empty line's place; sooner, the empty line.
+    let text = |pal: &CommandPalette, s: &mut PaletteState| {
+        let window = Rect::new(0, 0, 80, 24);
+        let mut buf = Buffer::empty(window);
+        pal.render(pal.area(window, s), &mut buf, s);
+        snapshot::text(&buf)
+    };
+    let mut s = PaletteState::default();
+    s.query = "zz".into();
+    let soon = CommandPalette::new(&look, Vec::<CommandGroup>::new()).search_status(Some(100), false);
+    assert!(text(&soon, &mut s).contains("No command matches."));
+    let late = CommandPalette::new(&look, Vec::<CommandGroup>::new()).search_status(Some(400), false);
+    assert!(text(&late, &mut s).contains("Searching"));
+    // Failed: said over a Retry row.
+    let retry = CommandGroup::new("", [Command::new("retry", "Retry")]).results();
+    let failed = CommandPalette::new(&look, [retry]).search_status(None, true);
+    let shown = text(&failed, &mut s);
+    let said = shown.find("The search did not answer.").expect("said");
+    assert!(said < shown.find("Retry").unwrap());
+}
