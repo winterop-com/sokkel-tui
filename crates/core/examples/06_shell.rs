@@ -84,6 +84,10 @@ struct Runs {
 }
 
 impl ShellApp for Runs {
+    fn id(&self) -> Option<&str> {
+        Some("tidevann")
+    }
+
     fn chrome<'a>(&'a self, look: &'a Look) -> Chrome<'a> {
         Chrome {
             rail: rail(look, false),

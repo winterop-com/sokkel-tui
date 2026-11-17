@@ -167,6 +167,11 @@ pub enum Flow {
 
 /// An app in sokkel's frame. Only [`ShellApp::chrome`] and [`ShellApp::page`] are required.
 pub trait ShellApp {
+    /// The app's name for what it keeps between runs (its look, under [`kept_path`]); None keeps
+    /// nothing.
+    fn id(&self) -> Option<&str> {
+        None
+    }
     /// The rail, the top bar and the status line, this frame.
     fn chrome<'a>(&'a self, look: &'a Look) -> Chrome<'a>;
     /// Draw the page in `area`. `active` is false while a layer (the palette, the settings, the
@@ -286,11 +291,23 @@ struct Host<A> {
     window: Rect,
     keys: Shortcuts<Act>,
     now: u64,
+    /// Where the look is kept, and the look last kept there.
+    kept: Option<std::path::PathBuf>,
+    worn: (String, Scheme, Density),
 }
 
-/// Run `app` in sokkel's frame, starting in `look`.
+/// Run `app` in sokkel's frame, starting in `look`, or in the look it kept when it has an
+/// [`ShellApp::id`] and no `light` or `dark` among the arguments.
 pub fn run_shell(app: impl ShellApp, look: Look) -> std::io::Result<()> {
+    let kept = app.id().and_then(kept_path);
+    let asked = std::env::args().any(|a| a == "light" || a == "dark");
+    let look = match &kept {
+        Some(path) if !asked => read_look(path, &look).unwrap_or(look),
+        _ => look,
+    };
     let mut host = Host {
+        kept,
+        worn: (look.theme().to_string(), look.scheme(), look.density()),
         app,
         look,
         shell: ShellState::default(),
@@ -766,6 +783,14 @@ impl<A: ShellApp> Program for Host<A> {
         let window = f.area();
         self.width = Width::of(window);
         self.window = window;
+        // A look changed by any way (the palette, the settings, the account menu) is kept.
+        let worn = (self.look.theme().to_string(), self.look.scheme(), self.look.density());
+        if worn != self.worn {
+            if let Some(path) = &self.kept {
+                let _ = write_look(path, &self.look);
+            }
+            self.worn = worn;
+        }
         let active = self.layer == Layer::None && !self.shell.searching;
         draw_shell(&mut self.app, &self.look, f, &mut self.shell, active);
         if let Some(pos) = self.shell.cursor_position() {
@@ -840,4 +865,61 @@ impl<A: ShellApp> Program for Host<A> {
             Layer::None => {}
         }
     }
+}
+
+/// The keys the look is kept under, the web's own (sokkel-ui's `SCHEME_KEY` and `APPEARANCE_KEY`),
+/// so an app's look reads the same wherever it is kept.
+pub const SCHEME_KEY: &str = "sokkel-ui-scheme";
+pub const APPEARANCE_KEY: &str = "sokkel-ui-appearance";
+
+/// Where an app named `id` keeps its look: `appearance.json` in its folder under the user's config
+/// directory (`$XDG_CONFIG_HOME`, else `~/.config`, else `%APPDATA%`).
+pub fn kept_path(id: &str) -> Option<std::path::PathBuf> {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))
+        .or_else(|| std::env::var_os("APPDATA").map(std::path::PathBuf::from))?;
+    Some(base.join(id).join("appearance.json"))
+}
+
+/// The look kept at `path`, worn over `base` (its depth and character set kept); None where
+/// nothing is kept or it cannot be read.
+pub fn read_look(path: &std::path::Path, base: &Look) -> Option<Look> {
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
+    let scheme = match v.get(SCHEME_KEY).and_then(|s| s.as_str()) {
+        Some("light") => Scheme::Light,
+        Some("dark") => Scheme::Dark,
+        _ => base.scheme(),
+    };
+    let look = v.get(APPEARANCE_KEY);
+    let theme = look
+        .and_then(|a| a.get("theme"))
+        .and_then(|t| t.as_str())
+        .unwrap_or(base.theme());
+    let density = match look.and_then(|a| a.get("density")).and_then(|d| d.as_str()) {
+        Some("compact") => Density::Compact,
+        Some("regular") => Density::Regular,
+        _ => base.density(),
+    };
+    Some(
+        Look::new(theme, scheme)?
+            .with_density(density)
+            .with_depth(base.depth())
+            .with_charset(base.charset()),
+    )
+}
+
+/// Keep `look` at `path`, under the web's keys.
+pub fn write_look(path: &std::path::Path, look: &Look) -> std::io::Result<()> {
+    let v = serde_json::json!({
+        SCHEME_KEY: if look.scheme() == Scheme::Dark { "dark" } else { "light" },
+        APPEARANCE_KEY: {
+            "theme": look.theme(),
+            "density": if look.density() == Density::Compact { "compact" } else { "regular" },
+        },
+    });
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(path, serde_json::to_string_pretty(&v)? + "\n")
 }

@@ -168,3 +168,23 @@ fn the_search_takes_typing_until_enter_and_says_where_the_cursor_is() {
     shell.render(window, &mut buf, &mut st);
     assert_eq!(st.cursor_position(), None);
 }
+
+#[test]
+fn the_look_is_kept_under_the_webs_keys_and_read_back() {
+    use sokkel_tui::app::{APPEARANCE_KEY, SCHEME_KEY, read_look, write_look};
+    let dir = std::env::temp_dir().join(format!("sokkel-tui-kept-{}", std::process::id()));
+    let path = dir.join("appearance.json");
+    let amber = Look::new("amber", Scheme::Light)
+        .unwrap()
+        .with_density(Density::Compact);
+    write_look(&path, &amber).unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains(SCHEME_KEY) && text.contains(APPEARANCE_KEY) && text.contains("\"amber\""));
+    let back = read_look(&path, &look()).unwrap();
+    assert_eq!(
+        (back.theme(), back.scheme(), back.density()),
+        ("amber", Scheme::Light, Density::Compact)
+    );
+    assert!(read_look(&dir.join("missing.json"), &look()).is_none());
+    std::fs::remove_dir_all(dir).unwrap();
+}
