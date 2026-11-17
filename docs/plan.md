@@ -37,7 +37,7 @@ the contract say so that it does?
   search, one focus through the frame and the page, the app's own layers, and the look kept under
   the web's keys; `shot` draws a frame after scripted keys. A back stack (an app's routes, Escape back
   with nothing open, the settings closing first), focus to the new page's first stop on a route change and back
-  to what opened a layer when it closes. Not yet: the rail's resize.
+  to what opened a layer when it closes. The rail's edge is a stop after its entries.
 - `table`'s cells take a state the app names in a tone (`Cell::toned`, `StatusTone`: good,
   warning, critical, info, quiet), for health states the run vocabulary lacks (proposal c7).
 - `dashboard`: the grid (spans of twelve by its own width), `DashboardPanel` (head with subtitle,
@@ -115,8 +115,9 @@ the contract say so that it does?
   search field, trail, palette button with its keys and actions, and below md the menu button, the
   last crumb and the search icon; the status line's note with its live dot and tones, its facts,
   and a focused control's tip in the note's place (principle 23); `ShellLayout` placing them, the
-  drawer below md. Not yet: the rail's parents and flyouts, descriptions, strip, body, resizing and
-  reordering; the panel; what lies under the drawer (T2).
+  drawer below md. The rail's edge resizes it (a drag, or Tab to it and Left, Right, Home, End,
+  Enter; `ShellState::rail_size`, between `minSize` and `maxSize`). Not yet: the rail's strip,
+  body and reordering; the panel; what lies under the drawer (T2).
 - `dialog`, `menu`, `select`, `popup` (step 6, first half): the dialog (header, body, the footer's
   verbs with the confirm last, a shut confirm's reason as its tip, `busy-release` and Stop
   waiting, the corner close, Escape held while busy, a sheet below md); the dropdown menu (items

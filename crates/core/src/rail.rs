@@ -172,6 +172,8 @@ pub struct Rail<'a> {
     foot: Option<RailFoot>,
     focused: Option<(usize, usize)>,
     words: RailWords,
+    size: Option<u16>,
+    edge_shown: bool,
 }
 
 impl<'a> Rail<'a> {
@@ -186,6 +188,8 @@ impl<'a> Rail<'a> {
             foot: None,
             focused: None,
             words: RailWords::default(),
+            size: None,
+            edge_shown: false,
         }
     }
 
@@ -249,9 +253,33 @@ impl<'a> Rail<'a> {
         self.foot.as_ref().map(|f| f.name.clone())
     }
 
-    /// Its width in columns: 240 px expanded (29), 57 collapsed (7).
+    /// Its width in columns: expanded its size (`defaultSize` 240 px, 29), between `minSize` 200
+    /// and `maxSize` 360; 57 collapsed (7).
     pub fn width(&self) -> u16 {
-        if self.collapsed { cols(57.0) } else { cols(240.0) }
+        if self.collapsed {
+            cols(57.0)
+        } else {
+            let (min, default, max) = Rail::sizes();
+            self.size.unwrap_or(default).clamp(min, max)
+        }
+    }
+
+    /// The expanded rail's narrowest, own and widest width in columns (`minSize`, `defaultSize`,
+    /// `maxSize`).
+    pub fn sizes() -> (u16, u16, u16) {
+        (cols(200.0), cols(240.0), cols(360.0))
+    }
+
+    /// Its expanded width in columns, as the edge left it; `None` for `defaultSize`.
+    pub fn size(mut self, size: Option<u16>) -> Self {
+        self.size = size;
+        self
+    }
+
+    /// The edge's line shows (`primary`): hovered, focused or dragged.
+    pub fn edge(mut self, shown: bool) -> Self {
+        self.edge_shown = shown;
+        self
     }
 
     /// What the status line says while an entry has focus: a collapsed entry's label, its count
@@ -361,6 +389,13 @@ impl Widget for &Rail<'_> {
         let ex = area.right() - 1;
         for y in area.y..area.bottom() {
             buf[(ex, y)].set_symbol(glyphs.scroll_track).set_fg(t(edge));
+        }
+        // While the edge is hovered or dragged its line shows, in primary, the full height.
+        if self.edge_shown && !self.collapsed {
+            let line = look.color("primary");
+            for y in area.y..area.bottom() {
+                buf[(ex, y)].set_symbol(glyphs.scroll_thumb).set_fg(t(line));
+            }
         }
         let inner_w = area.width - 1;
 

@@ -225,3 +225,38 @@ fn a_rail_entry_shows_its_status_dot_and_says_its_word_when_focused() {
     assert_eq!(buf[(x, y as u16)].fg, look.token("critical"));
     assert_eq!(rail.tip().as_deref(), Some("juniper  fail"));
 }
+
+#[test]
+fn the_rails_edge_resizes_it_by_a_drag_and_by_keys() {
+    use ratatui::layout::Position;
+    use sokkel_tui::{Key, KeyPress, Pointer, PointerKind, Shell, ShellState};
+    let look = look();
+    let shell = Shell::new(&look, rail(&look), TopBar::new(&look), StatusLine::new(&look));
+    let mut state = ShellState::default();
+    let window = Rect::new(0, 0, 120, 30);
+    let mut buf = Buffer::empty(window);
+    shell.render(window, &mut buf, &mut state);
+    let (min, own, max) = Rail::sizes();
+    let edge = state.edge_area().expect("an expanded rail beside the page");
+    assert_eq!(edge.x, own - 1, "the rail's last column");
+    let at = |kind, x| Pointer {
+        kind,
+        at: Position::new(x, 10),
+    };
+    state.pointer(at(PointerKind::Press, edge.x));
+    state.pointer(at(PointerKind::Drag, edge.x + 6));
+    assert_eq!(state.rail_size, Some(own + 6), "the edge follows the pointer");
+    state.pointer(at(PointerKind::Drag, 2));
+    assert_eq!(state.rail_size, Some(min), "never narrower than minSize");
+    state.pointer(at(PointerKind::Release, 2));
+    state.pointer(at(PointerKind::Drag, 60));
+    assert_eq!(state.rail_size, Some(min), "let go, a drag moves nothing");
+    shell.render(window, &mut buf, &mut state);
+    assert_eq!(state.edge_area().unwrap().x, min - 1, "drawn at its new width");
+    assert!(state.edge_key(KeyPress::new(Key::End)));
+    assert_eq!(state.rail_size, Some(max));
+    assert!(state.edge_key(KeyPress::new(Key::Left)));
+    assert_eq!(state.rail_size, Some(max - 2), "16 px a press");
+    assert!(state.edge_key(KeyPress::new(Key::Enter)));
+    assert_eq!(state.rail_size, None, "Enter puts back its own width");
+}

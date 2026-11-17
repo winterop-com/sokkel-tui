@@ -361,6 +361,9 @@ fn palette_stop() -> FocusId {
 fn account_stop() -> FocusId {
     FocusId::new("sokkel.account")
 }
+fn edge_stop() -> FocusId {
+    FocusId::new("sokkel.rail-edge")
+}
 fn entry_stop(g: usize, e: usize) -> FocusId {
     FocusId::new("sokkel.rail").child((g as u64) << 32 | e as u64)
 }
@@ -581,6 +584,7 @@ impl<A: ShellApp> Host<A> {
             .iter()
             .map(|(e, _)| *e)
             .find(|&(g, e)| self.focus.ring(entry_stop(g, e)));
+        self.shell.edge_focus = self.focus.ring(edge_stop());
         self.shell.top_focus = if self.focus.ring(palette_stop()) {
             crate::top_bar::TopBarFocus::Palette
         } else {
@@ -604,6 +608,10 @@ impl<A: ShellApp> Host<A> {
         if !self.shell.drawer {
             for &((g, e), r) in self.shell.entries() {
                 self.focus.stop(entry_stop(g, e), r);
+            }
+            // The rail's edge, after its entries: keys resize the rail.
+            if let Some(r) = self.shell.edge_area() {
+                self.focus.stop(edge_stop(), r);
             }
         }
         if let Some(r) = self.shell.search_area() {
@@ -755,6 +763,10 @@ impl<A: ShellApp> Host<A> {
                 self.entry(g, e);
                 return true;
             }
+        }
+        if self.focus.is(edge_stop()) && self.shell.edge_key(key) {
+            self.focus.saw_key();
+            return true;
         }
         if key.is_press() && self.focus.is(palette_stop()) {
             self.open(Layer::Palette);

@@ -134,6 +134,7 @@ impl KeyPress {
 /// program that asks for them (mouse capture); the keyboard is the main input, and every part works
 /// without them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PointerKind {
     /// The main button went down.
     Press,
@@ -141,6 +142,10 @@ pub enum PointerKind {
     Move,
     ScrollUp,
     ScrollDown,
+    /// The pointer moved with the main button down.
+    Drag,
+    /// The main button came up.
+    Release,
 }
 
 /// A pointer event at a cell.
@@ -151,8 +156,8 @@ pub struct Pointer {
 }
 
 impl Pointer {
-    /// A crossterm mouse event as the parts read it; `None` for what no part answers (a release,
-    /// a drag, the other buttons).
+    /// A crossterm mouse event as the parts read it; `None` for what no part answers (the other
+    /// buttons).
     pub fn from_crossterm(ev: &ratatui::crossterm::event::MouseEvent) -> Option<Pointer> {
         use ratatui::crossterm::event::{MouseButton, MouseEventKind};
         let kind = match ev.kind {
@@ -160,6 +165,8 @@ impl Pointer {
             MouseEventKind::Moved => PointerKind::Move,
             MouseEventKind::ScrollUp => PointerKind::ScrollUp,
             MouseEventKind::ScrollDown => PointerKind::ScrollDown,
+            MouseEventKind::Drag(MouseButton::Left) => PointerKind::Drag,
+            MouseEventKind::Up(MouseButton::Left) => PointerKind::Release,
             _ => return None,
         };
         Some(Pointer {

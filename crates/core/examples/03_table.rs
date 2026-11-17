@@ -198,6 +198,7 @@ impl app::Program for App {
                 table.scroll(&mut state, 3);
             }
             PointerKind::Move => self.hover = Some(p.at),
+            _ => {}
         }
         self.state = state;
     }

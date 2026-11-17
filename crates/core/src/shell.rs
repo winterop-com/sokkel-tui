@@ -119,6 +119,14 @@ pub struct ShellState {
     /// What the status line says in place of the app's note (a sequence waiting for its second
     /// key).
     pub note: Option<String>,
+    /// The expanded rail's width in columns as its edge left it; `None` for its own.
+    pub rail_size: Option<u16>,
+    /// Keyboard focus on the rail's edge, as the runtime's focus says: its line shows.
+    pub edge_focus: bool,
+    /// The edge being dragged, and hovered.
+    dragging: bool,
+    edge_hover: bool,
+    edge: Option<Rect>,
     cursor: Option<Position>,
     window: Rect,
     narrow: bool,
@@ -179,7 +187,9 @@ impl<'a> Shell<'a> {
             .rail
             .clone()
             .collapsed(state.collapsed, true)
-            .focused(state.rail_focus);
+            .focused(state.rail_focus)
+            .size(state.rail_size)
+            .edge(state.dragging || state.edge_hover || state.edge_focus);
         let shell = if state.kiosk {
             let foot_h = StatusLine::height(look).min(window.height);
             ShellLayout {
@@ -201,6 +211,11 @@ impl<'a> Shell<'a> {
         };
         state.window = window;
         state.narrow = shell.width == Width::Narrow;
+        // The edge: the rail's last column, resizing it while it is expanded beside the content.
+        state.edge = shell
+            .rail
+            .filter(|_| !state.collapsed && shell.width != Width::Narrow)
+            .map(|r| Rect::new(r.right() - 1, r.y, 1, r.height));
         if !state.narrow {
             state.drawer = false;
         }
@@ -334,6 +349,39 @@ impl ShellState {
     /// A pointer event on the frame: the rail's collapse, the menu button, an entry, the search,
     /// the palette button; with the drawer open, a press outside it closes it.
     pub fn pointer(&mut self, p: Pointer) -> ShellEvent {
+        // The edge: a press takes it, a drag moves it, a release lets it go.
+        let on_edge = self.edge.is_some_and(|r| r.contains(p.at));
+        match p.kind {
+            PointerKind::Press if on_edge && self.drawer_at.is_none() => {
+                self.dragging = true;
+                return ShellEvent::Changed;
+            }
+            PointerKind::Drag if self.dragging => {
+                if let Some(edge) = self.edge {
+                    let (min, _, max) = Rail::sizes();
+                    let x0 = edge
+                        .right()
+                        .saturating_sub(self.rail_size.unwrap_or(Rail::sizes().1).clamp(min, max));
+                    let size = (p.at.x + 1).saturating_sub(x0).clamp(min, max);
+                    self.rail_size = Some(size);
+                }
+                return ShellEvent::Changed;
+            }
+            PointerKind::Release if self.dragging => {
+                self.dragging = false;
+                return ShellEvent::Changed;
+            }
+            PointerKind::Move => {
+                let was = self.edge_hover;
+                self.edge_hover = on_edge;
+                return if was != on_edge {
+                    ShellEvent::Changed
+                } else {
+                    ShellEvent::Ignored
+                };
+            }
+            _ => {}
+        }
         if p.kind != PointerKind::Press {
             return ShellEvent::Ignored;
         }
@@ -398,6 +446,29 @@ impl ShellState {
     /// Where the account control was drawn: the account menu opens over it.
     pub fn account(&self) -> Option<Rect> {
         self.account
+    }
+
+    /// Where the rail's edge stands, while it resizes the rail.
+    pub fn edge_area(&self) -> Option<Rect> {
+        self.edge
+    }
+
+    /// A key on the focused edge: Left and Right move it two columns (16 px), Home and End go to
+    /// the narrowest and the widest, Enter puts back its own width.
+    pub fn edge_key(&mut self, key: crate::keys::KeyPress) -> bool {
+        use crate::keys::Key;
+        let (min, own, max) = Rail::sizes();
+        let now = self.rail_size.unwrap_or(own).clamp(min, max);
+        let to = match key.key {
+            Key::Left => now.saturating_sub(2).max(min),
+            Key::Right => (now + 2).min(max),
+            Key::Home => min,
+            Key::End => max,
+            Key::Enter => own,
+            _ => return false,
+        };
+        self.rail_size = (to != own).then_some(to);
+        true
     }
 
     /// Whether a press at `at` lands on the open drawer, which stands over the page.
