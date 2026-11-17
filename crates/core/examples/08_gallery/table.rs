@@ -102,6 +102,18 @@ pub fn draw(f: &mut Frame, look: &Look) {
         &mut y,
     );
 
+    // Grouped by State: each group under a head naming it with its count, sorted within.
+    let table = Table::new(look, &columns, &rows).focused(true);
+    let mut state = TableState::default().grouped_by(1).sorted_by(3, SortDir::Descending);
+    place(
+        f,
+        "grouped by State, sorted by Took within",
+        13,
+        &table,
+        &mut state,
+        &mut y,
+    );
+
     let empty: Vec<Row> = Vec::new();
     let table = Table::new(look, &columns, &empty).loading(true);
     place(f, "loading", 6, &table, &mut TableState::default(), &mut y);

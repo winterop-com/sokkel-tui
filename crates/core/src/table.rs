@@ -293,6 +293,21 @@ pub enum TableEvent {
     Opened(usize),
 }
 
+/// One line of the table's body: a group's head (its name and count), or a row by its place.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BodyLine {
+    Head(String, usize),
+    Row(usize),
+}
+
+/// The words a row's cell in `column` gives its group.
+fn group_key(rows: &[Row], row: usize, column: usize) -> String {
+    rows[row]
+        .cells
+        .get(column)
+        .map_or(String::new(), |c| c.words().to_string())
+}
+
 /// What lives between frames: the active row, the scroll, the order, the selection.
 #[derive(Debug, Clone, Default)]
 pub struct TableState {
@@ -307,6 +322,9 @@ pub struct TableState {
     pub head: Option<usize>,
     /// The row picked for a detail beside the list.
     pub opened: Option<usize>,
+    /// Rows grouped by this column's value (`groupBy`), each group under its head, the groups in
+    /// the order they first come, sorted within.
+    pub group: Option<usize>,
     /// How many rows the last frame showed: a view's worth for PageUp and PageDown.
     view: usize,
     /// Whether the last frame stacked the rows as cards.
@@ -317,6 +335,33 @@ impl TableState {
     pub fn sorted_by(mut self, column: usize, dir: SortDir) -> Self {
         self.sort = Some((column, dir));
         self
+    }
+
+    /// Rows grouped by `column`'s value, each group under a head naming it with its count.
+    pub fn grouped_by(mut self, column: usize) -> Self {
+        self.group = Some(column);
+        self
+    }
+
+    /// The body's lines in drawn order: a group's head before its rows while grouped, else the
+    /// rows alone, each by its place.
+    fn lines(&self, rows: &[Row]) -> Vec<BodyLine> {
+        let order = self.order(rows);
+        let Some(g) = self.group else {
+            return (0..order.len()).map(BodyLine::Row).collect();
+        };
+        let mut out = Vec::new();
+        let mut last: Option<String> = None;
+        for (place, &row) in order.iter().enumerate() {
+            let key = group_key(rows, row, g);
+            if last.as_ref() != Some(&key) {
+                let n = order.iter().filter(|&&r| group_key(rows, r, g) == key).count();
+                out.push(BodyLine::Head(key.clone(), n));
+                last = Some(key);
+            }
+            out.push(BodyLine::Row(place));
+        }
+        out
     }
 
     /// The rows in the order drawn: as given, or by the sorted column.
@@ -336,6 +381,17 @@ impl TableState {
                     }
                 }
             });
+        }
+        // Grouped: the groups in the order they first come among the rows, each sorted within.
+        if let Some(g) = self.group {
+            let mut firsts: Vec<String> = Vec::new();
+            for r in 0..rows.len() {
+                let k = group_key(rows, r, g);
+                if !firsts.contains(&k) {
+                    firsts.push(k);
+                }
+            }
+            order.sort_by_key(|&r| firsts.iter().position(|k| *k == group_key(rows, r, g)).unwrap_or(0));
         }
         order
     }
@@ -836,7 +892,10 @@ impl Table<'_> {
         if at.y < body_y {
             return None;
         }
-        let place = state.offset + (at.y - body_y) as usize;
+        let line = state.offset + (at.y - body_y) as usize;
+        let Some(BodyLine::Row(place)) = state.lines(self.rows).get(line).cloned() else {
+            return None;
+        };
         if place >= n {
             return None;
         }
@@ -1090,15 +1149,42 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
     // The rows in view: the active one kept in it.
     let order = state.order(table.rows);
     state.active = state.active.min(order.len() - 1);
+    let lines = state.lines(table.rows);
     let view = body.height as usize;
-    if state.active < state.offset {
-        state.offset = state.active;
-    } else if state.active >= state.offset + view {
-        state.offset = state.active + 1 - view;
+    // The active row's line kept in view, and the head over the first group in view with it.
+    let active_line = lines
+        .iter()
+        .position(|l| *l == BodyLine::Row(state.active))
+        .unwrap_or(0);
+    let lead = usize::from(active_line > 0 && matches!(lines.get(active_line - 1), Some(BodyLine::Head(..))));
+    if active_line.saturating_sub(lead) < state.offset {
+        state.offset = active_line.saturating_sub(lead);
+    } else if active_line >= state.offset + view {
+        state.offset = active_line + 1 - view;
     }
-    state.offset = state.offset.min(order.len().saturating_sub(view));
-    for (k, &row) in order.iter().enumerate().skip(state.offset).take(view) {
-        let y = body.y + (k - state.offset) as u16;
+    state.offset = state.offset.min(lines.len().saturating_sub(view));
+    for (li, line) in lines.iter().enumerate().skip(state.offset).take(view) {
+        let y = body.y + (li - state.offset) as u16;
+        let k = match line {
+            BodyLine::Head(name, n) => {
+                // A group's head, set as the column heads are, in the group's own case, a step
+                // above its rows; its count quiet after it.
+                let hg = look.paint("table.base.rest.head", "ground").unwrap_or(card);
+                let hi = look
+                    .paint("table.base.rest.head", "ink")
+                    .unwrap_or_else(|| look.color("foreground"));
+                buf.set_style(Rect::new(body.x, y, body.width, 1), Style::new().bg(t(hg)));
+                let room = body.width.saturating_sub(2 * geo.pad) as usize;
+                let name = text::truncate(name, room.saturating_sub(6), glyphs.ellipsis);
+                let style = TextRole::ColumnHead.style(look).fg(t(hi)).bg(t(hg));
+                buf.set_string(body.x + geo.pad, y, &name, style);
+                let quiet = TextRole::Help.style(look).fg(look.token("muted-foreground")).bg(t(hg));
+                buf.set_string(body.x + geo.pad + text::width(&name) as u16 + 1, y, count(*n), quiet);
+                continue;
+            }
+            BodyLine::Row(p) => *p,
+        };
+        let row = order[k];
         let key = format!("table.base.{}.row", table.row_key(row, state));
         let mut ground = look.paint(&key, "ground").unwrap_or(card);
         if key == "table.base.rest.row" && k % 2 == 1 {

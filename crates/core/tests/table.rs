@@ -305,3 +305,34 @@ fn a_toned_state_says_its_own_word_in_its_tones_colors() {
             && StatusTone::Warning.rank() > StatusTone::Good.rank()
     );
 }
+
+#[test]
+fn grouped_rows_stand_under_their_groups_heads() {
+    use ratatui::layout::Position;
+    use sokkel_tui::TableHit;
+    let look = look();
+    let c = vec![Column::new("Job"), Column::new("Project")];
+    let row = |job: &str, project: &str| Row::new([Cell::text(job), Cell::text(project)]);
+    let r = vec![
+        row("nightly-export", "harbor"),
+        row("sync-inventory", "juniper"),
+        row("send-digest", "harbor"),
+    ];
+    let table = Table::new(&look, &c, &r);
+    let mut state = TableState::default().grouped_by(1);
+    let (_, lines) = draw(&table, 80, 10, &mut state);
+    let at = |w: &str| lines.iter().position(|l| l.contains(w)).unwrap();
+    assert!(
+        at("harbor 2") < at("nightly-export") && at("send-digest") < at("juniper 1"),
+        "{lines:?}"
+    );
+    assert!(at("juniper 1") < at("sync-inventory"));
+    // A press on a group's head is no row; one on a row is its place in the drawn order.
+    let area = Rect::new(0, 0, 80, 10);
+    assert_eq!(table.hit(area, Position::new(5, at("harbor 2") as u16), &state), None);
+    assert_eq!(
+        table.hit(area, Position::new(5, at("send-digest") as u16), &state),
+        Some(TableHit::Row(1))
+    );
+    assert_eq!(state.row_at(&r, 1), Some(2), "send-digest, second in harbor");
+}
