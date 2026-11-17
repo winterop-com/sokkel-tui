@@ -6,6 +6,8 @@ parts and the shell), drawn in cells.
 
 ![Tidevann's runs with the command palette open, in tidevann dark at 120 columns](docs/assets/runs-dark-120-palette.png)
 
+That is the `07_runs` example: `cargo run --example 07_runs`, then Ctrl+K for the palette.
+
 ## What is here
 
 - `crates/core` (`sokkel-tui`): sokkel-design's resolved tokens embedded; the look (theme, scheme,
@@ -27,7 +29,7 @@ parts and the shell), drawn in cells.
   - `07_runs`: Tidevann's runs, every part together.
   - `08_gallery`: every part's sheet, browsed (t theme, s scheme, a ASCII, c no color).
 
-![Button and TextField in tidevann dark at 120 columns](docs/assets/parts-tidevann-dark-120.png)
+![Button and TextField in tidevann dark at 120 columns](docs/assets/controls-tidevann-dark-120.png)
 
 ![PageHeader, PageState and Section in tidevann dark at 120 columns](docs/assets/page-tidevann-dark-120.png)
 
