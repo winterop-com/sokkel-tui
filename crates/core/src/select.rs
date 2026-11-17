@@ -74,6 +74,8 @@ impl SelectOption {
 pub struct SelectState {
     pub open: bool,
     pub highlight: usize,
+    /// A press opened the list (not a key): it is laid over the trigger where it may be.
+    pub by_pointer: bool,
 }
 
 /// What a key did to the select.
@@ -100,6 +102,7 @@ pub struct Select<'a> {
     disabled: bool,
     read_only: bool,
     invalid: bool,
+    align_item_with_trigger: bool,
 }
 
 impl<'a> Select<'a> {
@@ -114,7 +117,15 @@ impl<'a> Select<'a> {
             disabled: false,
             read_only: false,
             invalid: false,
+            align_item_with_trigger: true,
         }
+    }
+
+    /// The list laid over the trigger, the chosen row level with the value, when a pointer opened
+    /// it and there is room (`alignItemWithTrigger`, the default); off, it always opens under it.
+    pub fn align_item_with_trigger(mut self, on: bool) -> Self {
+        self.align_item_with_trigger = on;
+        self
     }
 
     pub fn value(mut self, value: Option<usize>) -> Self {
@@ -199,6 +210,7 @@ impl<'a> Select<'a> {
             return match key.key {
                 Key::Enter | Key::Char(' ') | Key::Down | Key::Up => {
                     state.open = true;
+                    state.by_pointer = false;
                     state.highlight = self.value.unwrap_or(0);
                     SelectEvent::Opened
                 }
@@ -328,12 +340,32 @@ impl<'a> Select<'a> {
         Popup::new(self.look, PopupKind::Select, &rows).place(anchor, window, crate::cells::cols(144.0))
     }
 
+    /// Where the open list stands: over the trigger, the chosen row on the value's row, when a
+    /// pointer opened it and it fits there; else under the trigger ([`Select::list_area`]).
+    pub fn list_area_open(&self, window: Rect, anchor: Rect, state: &SelectState) -> Rect {
+        let under = self.list_area(window, anchor);
+        if !self.align_item_with_trigger || !state.by_pointer {
+            return under;
+        }
+        let k = self.value.unwrap_or(0) as u16;
+        let value_y = anchor.y + anchor.height.saturating_sub(1) / 2;
+        // The list's border is the row above its first option.
+        let Some(y) = value_y.checked_sub(1 + k).filter(|&y| y >= window.y) else {
+            return under;
+        };
+        if y + under.height > window.bottom() {
+            return under;
+        }
+        let x = anchor.x.max(window.x).min(window.right().saturating_sub(under.width));
+        Rect { x, y, ..under }
+    }
+
     /// The option a pointer at `at` is on in the open list; not a disabled one.
     pub fn option_at(&self, window: Rect, anchor: Rect, at: Position, state: &SelectState) -> Option<usize> {
         if !state.open {
             return None;
         }
-        let area = self.list_area(window, anchor);
+        let area = self.list_area_open(window, anchor, state);
         let inner = Rect::new(
             area.x + 1,
             area.y + 1,
@@ -391,10 +423,17 @@ impl<'a> Select<'a> {
                 _ => SelectEvent::Ignored,
             },
             PointerKind::Press if !state.open && !anchor.contains(p.at) => SelectEvent::Ignored,
-            PointerKind::Press if state.open && option.is_none() && self.list_area(window, anchor).contains(p.at) => {
+            PointerKind::Press
+                if state.open && option.is_none() && self.list_area_open(window, anchor, state).contains(p.at) =>
+            {
                 SelectEvent::Ignored
             }
-            PointerKind::Press => self.press(state, option),
+            PointerKind::Press => {
+                if !state.open {
+                    state.by_pointer = true;
+                }
+                self.press(state, option)
+            }
             _ => SelectEvent::Ignored,
         }
     }
@@ -408,7 +447,7 @@ impl<'a> Select<'a> {
         let popup = Popup::new(self.look, PopupKind::Select, &rows)
             .highlight(Some(state.highlight))
             .chosen(self.value);
-        let area = popup.place(anchor, window, crate::cells::cols(144.0));
+        let area = self.list_area_open(window, anchor, state);
         (&popup).render(area, buf);
     }
 }

@@ -98,6 +98,7 @@ pub fn draw(f: &mut Frame, look: &Look) {
     let open_state = SelectState {
         open: true,
         highlight: 2,
+        ..Default::default()
     };
     open.render_trigger(open_r, f.buffer_mut(), &open_state);
     let quiet = Select::new(

@@ -132,6 +132,7 @@ fn a_select_opens_on_its_choice_and_chooses() {
     let mut s = SelectState {
         open: true,
         highlight: 0,
+        ..Default::default()
     };
     assert_eq!(sel.handle(&mut s, press(Key::Escape)), SelectEvent::Closed);
 }
@@ -158,6 +159,7 @@ fn a_select_draws_its_choice_and_chevron_and_its_list_checks_it() {
     let s = SelectState {
         open: true,
         highlight: 1,
+        ..Default::default()
     };
     sel.render_trigger(Rect::new(0, 0, 20, 1), &mut buf, &s);
     sel.render_list(buf.area, Rect::new(0, 0, 20, 1), &mut buf, &s);
@@ -407,4 +409,37 @@ fn a_swatch_shows_the_color_its_option_picks() {
     s.render_trigger(buf.area, &mut buf, &SelectState::default());
     assert_eq!(buf[(1, 0)].symbol(), "■");
     assert_eq!(buf[(1, 0)].fg, look.token("kind-violet"));
+}
+
+#[test]
+fn a_select_opened_by_a_press_lays_its_list_over_the_trigger() {
+    use ratatui::layout::Position;
+    use sokkel_tui::{Pointer, PointerKind};
+    let look = look();
+    let sel = Select::new(&look, options()).value(Some(1));
+    let window = Rect::new(0, 0, 60, 20);
+    let anchor = Rect::new(4, 8, 20, 1);
+    let mut s = SelectState::default();
+    let tap = Pointer {
+        kind: PointerKind::Press,
+        at: Position::new(6, 8),
+    };
+    assert_eq!(sel.pointer(&mut s, window, anchor, tap), SelectEvent::Opened);
+    let over = sel.list_area_open(window, anchor, &s);
+    assert_eq!(
+        (over.x, over.y + 1 + 1),
+        (anchor.x, anchor.y),
+        "the chosen row on the value's row"
+    );
+    // Opened by keys, or with the option off, it opens under the trigger.
+    let mut k = SelectState::default();
+    sel.handle(&mut k, press(Key::Enter));
+    assert_eq!(sel.list_area_open(window, anchor, &k).y, anchor.bottom());
+    let off = Select::new(&look, options())
+        .value(Some(1))
+        .align_item_with_trigger(false);
+    assert_eq!(off.list_area_open(window, anchor, &s).y, anchor.bottom());
+    // No room above: under it.
+    let top = Rect::new(4, 0, 20, 1);
+    assert_eq!(sel.list_area_open(window, top, &s).y, top.bottom());
 }

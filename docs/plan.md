@@ -127,7 +127,8 @@ the contract say so that it does?
   with icon and keys, labels, separators, check rows in a gutter, destructive and disabled rows,
   one level of submenu, typeahead); the select (field and quiet triggers, its list with details
   and the chosen row's check, typeahead while closed, read only, disabled, swatches in their
-  color tokens).
+  color tokens; a list opened by a press laid over the trigger, the chosen row on the
+  value's row, where there is room: `alignItemWithTrigger`).
 - `palette`, `settings` (step 6, second half): the command palette (groups of commands with icon,
   hint or code, meta in its tone, kind and key caps, a disabled command's reason; a fuzzy filter
   over labels and keywords; a command that answers later holding it open until `busy-release`, then
