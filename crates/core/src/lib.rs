@@ -24,11 +24,13 @@
 //! - [`table`]: [`Table`], the one table.
 //! - [`rail`], [`top_bar`], [`status_line`]: the frame's parts, and [`shell`] where they go.
 //! - [`dialog`], [`menu`], [`select`]: the overlays, over the popup [`popup`] they share.
+//! - [`dashboard`]: the dashboard grid, [`DashboardPanel`] and [`StatPanel`].
 //! - [`palette`]: the command palette; [`settings`]: the settings dialog.
 
 pub mod app;
 pub mod button;
 pub mod cells;
+pub mod dashboard;
 pub mod dialog;
 pub mod focus;
 pub mod glyphs;
@@ -54,6 +56,9 @@ pub mod tokens;
 pub mod top_bar;
 
 pub use button::{Button, ButtonGroup, ButtonSize, ButtonVariant, IconPlace, Tip};
+pub use dashboard::{
+    ColorMode, DashboardPanel, PanelLayout, PanelRead, PanelTool, PanelWords, Span, StatPanel, Threshold,
+};
 pub use dialog::{Confirm, Dialog, DialogEvent, DialogFocus, DialogLayout, DialogWidth, DialogWords};
 pub use focus::{Focus, FocusId, InputKind};
 pub use glyphs::Charset;

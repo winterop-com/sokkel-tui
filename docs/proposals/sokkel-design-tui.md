@@ -121,6 +121,30 @@ the notes they could take:
 - **A select's focus.** The field variant shows focus by its focus edge, as a text field does; the
   quiet one, which draws no edge, by the bars beside it (T4).
 
+## (c4) The dashboard in cells
+
+The chart family (dashboard-panel, stat-panel, time-series-panel, chart, at 9095168) has no `cells`
+notes yet. sokkel-tui draws this reading of it, and asks for it, or a better one, as their notes:
+
+1. **The grid.** Twelve columns of the grid's own width, panels a column apart and rows a row apart
+   (none at compact). Wide from 1024 px (122 columns), tablet-wide from 640 px (76 columns),
+   phone-wide below, as the spans already say.
+2. **The panel.** A box in `panel` ground and edge; the head one row (title, subtitle a column after
+   it, the stale mark, the tools at its end, 3 columns each) over the head's rule; the body padded
+   two columns across and a row down at regular (one and none at compact), none when flush; the
+   foot a rule and a row. Loading draws the spinner and `Loading` in the content's place: a cell has
+   no half strength, so the content cannot stay under the bar.
+3. **The stat tile.** A box; the head a row (the title, the change at its end, which drops what it
+   is against before the title is cut); the value in `text.statistic` (text is one size, so large is
+   its weight) with the unit a column after; a note or the stale mark; the meter two rows (a track
+   of `rule-heavy`, the reading's color as far as it goes, `muted` past it, the tick at the target,
+   then `Target` and its figure); the sparkline the foot row. The tile's height in rows follows
+   what it holds, not 112 px.
+4. **Glyphs asked for.** A sparkline's eight levels (`▁▂▃▄▅▆▇█`, ASCII `_.-=+*#@`) and the stale mark
+   (`◷`, ASCII `!`), drawn as sokkel-tui's own until glyphs.json holds them.
+5. **The trend's faintness.** The web draws the spark area at low alpha; a cell draws the levels in
+   the reading's color (or `muted-foreground` with no reading), opaque.
+
 ## (d) Where it lives
 
 The proposals land in sokkel-design, as egui's did. sokkel-tui embeds the resolved file at a pinned

@@ -175,6 +175,11 @@ impl Focus {
             .is_some_and(|c| self.stops.iter().any(|s| s.id == c && s.kind == StopKind::Text))
     }
 
+    /// Where a stop was drawn in the last finished frame.
+    pub fn area_of(&self, id: FocusId) -> Option<Rect> {
+        self.stops.iter().find(|s| s.id == id).map(|s| s.area)
+    }
+
     /// How many stops this frame has named so far: a mark to find the first one named after it.
     pub fn mark(&self) -> usize {
         self.next.len()

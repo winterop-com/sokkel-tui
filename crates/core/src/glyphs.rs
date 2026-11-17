@@ -118,6 +118,13 @@ pub struct Glyphs {
     pub heavy_rule: &'static str,
     /// One dot of the graph tone's dot grid (`grid-dot`).
     pub dot: &'static str,
+    /// sokkel-tui's own until glyphs.json holds them (proposal c4): a sparkline's eight levels,
+    /// lowest first, and a panel's stale mark.
+    pub spark: [&'static str; 8],
+    pub stale: &'static str,
+    /// The arrows of a change, up and down (`arrow-up`, `arrow-down`).
+    pub arrow_up: &'static str,
+    pub arrow_down: &'static str,
 }
 
 fn leak(s: &str) -> &'static str {
@@ -205,6 +212,14 @@ impl Glyphs {
             bare_end: "]",
             heavy_rule: glyph("rule-heavy"),
             dot: glyph("grid-dot"),
+            spark: if charset == Charset::Unicode {
+                ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
+            } else {
+                ["_", ".", "-", "=", "+", "*", "#", "@"]
+            },
+            stale: if charset == Charset::Unicode { "◷" } else { "!" },
+            arrow_up: icon("arrow-up"),
+            arrow_down: icon("arrow-down"),
         }
     }
 }

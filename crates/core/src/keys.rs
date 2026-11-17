@@ -72,7 +72,8 @@ impl From<Key> for KeyPress {
 
 impl KeyPress {
     /// A key a script names: `tab`, `shift-tab`, `up`, `down`, `left`, `right`, `home`, `end`,
-    /// `enter`, `esc`, `space`, `backspace`, `ctrl-` and a character, or one character.
+    /// `pageup`, `pagedown`, `enter`, `esc`, `space`, `backspace`, `ctrl-` and a character, or one
+    /// character.
     pub fn named(name: &str) -> Option<KeyPress> {
         let key = |k| Some(KeyPress::new(k));
         match name {
@@ -84,6 +85,8 @@ impl KeyPress {
             "right" => key(Key::Right),
             "home" => key(Key::Home),
             "end" => key(Key::End),
+            "pageup" => key(Key::PageUp),
+            "pagedown" => key(Key::PageDown),
             "enter" => key(Key::Enter),
             "esc" => key(Key::Escape),
             "space" => key(Key::Char(' ')),

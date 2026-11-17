@@ -33,6 +33,7 @@ use ratatui::buffer::Buffer;
 use ratatui::crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event};
 use ratatui::crossterm::execute;
 use ratatui::layout::{Position, Rect};
+use ratatui::style::Style;
 use ratatui::widgets::Widget;
 use std::time::{Duration, Instant};
 
@@ -211,6 +212,12 @@ pub trait ShellApp {
     /// Draw the page in `area`, naming its stops in `cx.focus` as it draws them (after the
     /// frame's: the rail's entries, the search, the palette button).
     fn page(&mut self, f: &mut Frame, area: Rect, cx: &mut Cx);
+    /// The rows the page needs at `width` columns, when it is taller than the window can be: the
+    /// runtime then scrolls it (the wheel, PageUp and PageDown, focus kept in view) and draws a
+    /// scroller at its end. None: the page fits whatever it is given.
+    fn page_rows(&self, _look: &Look, _width: u16) -> Option<u16> {
+        None
+    }
     /// Whether the app has a layer of its own open (a dialog, a menu): keys and presses go to
     /// it first, and the frame's shortcuts keep quiet.
     fn layer_open(&self) -> bool {
@@ -360,6 +367,10 @@ struct Host<A> {
     /// What had focus when a layer opened, to get it back when it closes.
     opened_from: Option<FocusId>,
     was_open: bool,
+    /// The page's scroll, its view on screen, and its rows.
+    scroll: u16,
+    view: Rect,
+    rows: u16,
 }
 
 /// Run `app` in sokkel's frame, starting in `look`, or in the look it kept when it has an
@@ -426,6 +437,9 @@ impl<A: ShellApp> Host<A> {
             page_mark: 0,
             opened_from: None,
             was_open: false,
+            scroll: 0,
+            view: Rect::default(),
+            rows: 0,
         };
         host.route = host.app.route();
         host.keys = host.registry();
@@ -517,7 +531,56 @@ impl<A: ShellApp> Host<A> {
             now: self.now,
         };
         self.page_mark = cx.focus.mark();
-        self.app.page(f, page, &mut cx);
+        // A page taller than its view is drawn whole off screen, its stops named where they stand
+        // in it, and shown from the scroll; presses are moved by the scroll to match.
+        let rows = self
+            .app
+            .page_rows(look, page.width)
+            .unwrap_or(page.height)
+            .max(page.height);
+        self.rows = rows;
+        self.view = page;
+        if rows > page.height {
+            self.scroll = self.scroll.min(rows - page.height);
+            cx.hover = cx
+                .hover
+                .filter(|p| page.contains(*p))
+                .map(|p| Position::new(p.x, p.y + self.scroll));
+            let tall = Rect { height: rows, ..page };
+            let whole = Rect::new(0, 0, window.width, page.y + rows);
+            let mut off = ratatui::Terminal::new(ratatui::backend::TestBackend::new(whole.width, whole.height))
+                .expect("an off-screen page");
+            let ground = Style::new().bg(look.token("background")).fg(look.token("foreground"));
+            let app = &mut self.app;
+            off.draw(|g| {
+                g.buffer_mut().set_style(tall, ground);
+                app.page(g, tall, &mut cx);
+            })
+            .expect("the page");
+            let src = off.backend().buffer();
+            for y in 0..page.height {
+                for x in page.x..page.right() {
+                    f.buffer_mut()[(x, page.y + y)] = src[(x, page.y + y + self.scroll)].clone();
+                }
+            }
+            // The scroller, in the column after the page.
+            let x = page.right().min(window.right().saturating_sub(1));
+            let glyphs = look.glyphs();
+            let len = ((page.height as u32 * page.height as u32) / rows as u32).max(1) as u16;
+            let end = rows - page.height;
+            let at = (self.scroll as u32 * (page.height - len) as u32 / end.max(1) as u32) as u16;
+            for k in 0..page.height {
+                let (g, c) = if (at..at + len).contains(&k) {
+                    (glyphs.scroll_thumb, look.color("muted-foreground"))
+                } else {
+                    (glyphs.scroll_track, look.color("border"))
+                };
+                f.buffer_mut()[(x, page.y + k)].set_symbol(g).set_fg(look.terminal(c));
+            }
+        } else {
+            self.scroll = 0;
+            self.app.page(f, page, &mut cx);
+        }
         if let Some(r) = self.shell.account() {
             self.focus.stop(account_stop(), r);
             if self.focus.ring(account_stop()) {
@@ -537,6 +600,21 @@ impl<A: ShellApp> Host<A> {
             }
         }
         self.focus.end();
+        // Keyboard focus on a page stop out of view: the page scrolls to it.
+        if self.rows > self.view.height
+            && self.focus.input_kind() == crate::focus::InputKind::Keyboard
+            && let Some(r) = self.focus.current().and_then(|id| self.focus.area_of(id))
+            && r.y >= self.view.y
+            && r.x >= self.view.x
+            && r.x < self.view.right()
+        {
+            let top = self.view.y + self.scroll;
+            if r.y < top {
+                self.scroll -= top - r.y;
+            } else if r.bottom() > top + self.view.height {
+                self.scroll += r.bottom() - (top + self.view.height);
+            }
+        }
         if self.to_page {
             self.to_page = false;
             if let Some(id) = self.focus.first_after(self.page_mark) {
@@ -1031,7 +1109,26 @@ impl<A: ShellApp> Program for Host<A> {
         };
         // Escape closes the layer on top and never quits (patterns/shell): Ctrl+Q quits. With
         // nothing open and the page not taking it, Escape goes back.
-        match self.app.key(key, &mut cx) {
+        let flow = self.app.key(key, &mut cx);
+        // Keys the page leaves scroll a page that scrolls.
+        if flow == Flow::Ignored && self.rows > self.view.height {
+            let end = self.rows - self.view.height;
+            let page = self.view.height.saturating_sub(1).max(1);
+            let to = match key.key {
+                Key::PageDown => Some((self.scroll + page).min(end)),
+                Key::PageUp => Some(self.scroll.saturating_sub(page)),
+                Key::Down if !self.focus.typing() => Some((self.scroll + 1).min(end)),
+                Key::Up if !self.focus.typing() => Some(self.scroll.saturating_sub(1)),
+                Key::Home => Some(0),
+                Key::End => Some(end),
+                _ => None,
+            };
+            if let Some(to) = to {
+                self.scroll = to;
+                return false;
+            }
+        }
+        match flow {
             Flow::Quit => true,
             Flow::Ignored if key.is(Key::Escape) => {
                 self.back();
@@ -1113,6 +1210,26 @@ impl<A: ShellApp> Program for Host<A> {
                     ShellEvent::Changed => {}
                     ShellEvent::Ignored if self.shell.covers(p.at) => {}
                     ShellEvent::Ignored => {
+                        // A page that scrolls: the wheel scrolls it; a press lands where the page
+                        // drew, moved by the scroll.
+                        let tall = self.rows > self.view.height;
+                        if tall && matches!(p.kind, PointerKind::ScrollUp | PointerKind::ScrollDown) {
+                            let end = self.rows - self.view.height;
+                            self.scroll = if p.kind == PointerKind::ScrollUp {
+                                self.scroll.saturating_sub(3)
+                            } else {
+                                (self.scroll + 3).min(end)
+                            };
+                            return;
+                        }
+                        let p = if tall && self.view.contains(p.at) {
+                            Pointer {
+                                at: Position::new(p.at.x, p.at.y + self.scroll),
+                                ..p
+                            }
+                        } else {
+                            p
+                        };
                         if p.kind == PointerKind::Press {
                             cx.focus.press(p.at);
                         }

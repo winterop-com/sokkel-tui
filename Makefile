@@ -68,6 +68,11 @@ specimens:
 			if command -v rsvg-convert >/dev/null; then rsvg-convert -z 2 $$out.svg -o $$out.png; fi; \
 		done; \
 	done
+	for s in "dark 120 40" "dark 80 40" "light 120 40" "light 80 40" "dark 160 48"; do \
+		set -- $$s; out=specimens/dashboard-$$1-$$2; \
+		target/debug/examples/09_dashboard $$1 --frame $$2 $$3 $$out || exit 1; \
+		if command -v rsvg-convert >/dev/null; then rsvg-convert -z 2 $$out.svg -o $$out.png; fi; \
+	done
 
 all: fmt-check check test
 

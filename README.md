@@ -22,7 +22,7 @@ That is the `07_runs` example: `cargo run --example 07_runs`, then Ctrl+K for th
   off, and the look kept between runs. An app gives its parts, its page, its commands and its own
   layers; `app::shot` draws a frame after scripted keys, for tests and specimens.
 - The parts, each from its spec in sokkel-design: `Button`, `TextField`, `PageState`, `PageHeader`,
-  `Section`, `Table`, the frame (`Rail`, `TopBar`, `StatusLine`), and the overlays `Dialog`,
+  `Section`, `Table`, the dashboard (`DashboardPanel`, `StatPanel`), the frame (`Rail`, `TopBar`, `StatusLine`), and the overlays `Dialog`,
   `DropdownMenu`, `Select`, `CommandPalette` and `SettingsDialog`.
 - `crates/core/examples/`, a progression to run in a terminal (`-- light` for the light scheme;
   Ctrl+Q quits):
@@ -34,6 +34,8 @@ That is the `07_runs` example: `cargo run --example 07_runs`, then Ctrl+K for th
   - `06_shell`: the frame on the runtime, around one page.
   - `07_runs`: Tidevann's runs on the runtime: two pages, its commands, a menu and a dialog.
   - `08_gallery`: every part's sheet, browsed (t theme, s scheme, a ASCII, c no color).
+  - `09_dashboard`: a dashboard on the runtime: stat tiles, panels in their states, a page that
+    scrolls.
 
 ![Button and TextField in tidevann dark at 120 columns](docs/assets/controls-tidevann-dark-120.png)
 
