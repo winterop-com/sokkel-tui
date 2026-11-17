@@ -1,9 +1,9 @@
 //! The glyphs the parts draw, from sokkel-design's `glyphs.json`, in its Unicode or ASCII form.
 //!
 //! A terminal cannot choose its font, so every glyph a part draws has a form any terminal shows.
-//! A few glyphs are this renderer's own until the contract settles them, each marked below: the
-//! edge at a one-row control's ends (open-questions T3, its recommendation b), the focus ring in the
-//! cells beside a control (T4), the heavy top rule of a critical box, and a graph's dot.
+//! A few glyphs are this renderer's own until glyphs.json holds them, each marked below: the edge at
+//! a one-row control's ends and the focus ring in the cells beside it (open-questions T3 and T4, as
+//! the owner decided them on 2026-11-17), the heavy top rule of a critical box, and a graph's dot.
 
 use crate::tokens;
 use serde_json::Value;
@@ -96,10 +96,10 @@ pub struct Glyphs {
     pub box_ascii: BoxGlyphs,
     /// The required star, a typed character.
     pub required: &'static str,
-    /// sokkel-tui's own (T3, recommendation b): the edge of a one-row control at its ends.
+    /// T3 as decided (b): the edge of a one-row control at its ends; not yet in glyphs.json.
     pub edge_start: &'static str,
     pub edge_end: &'static str,
-    /// sokkel-tui's own (T4): keyboard focus on a control, in the cell beside each end.
+    /// T4 as decided: keyboard focus on a control, in the cell beside each end; not yet in glyphs.json.
     pub ring_start: &'static str,
     pub ring_end: &'static str,
     /// A control's ends where no color can show it: typed brackets.

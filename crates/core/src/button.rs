@@ -5,9 +5,9 @@
 //!
 //! In cells (the part's `cells` note) a button is one row at every size: the sizes keep their text
 //! role (`text.badge` for `xs` and `sm`, `text.action` above), and padding is one column. Its edge
-//! is drawn in its pad cells (`▏Filter▕`, open-questions T3 b). Keyboard focus draws the ring in
-//! the cell beside each end, outside its width, half a cell off the box as `focus-ring-offset`
-//! keeps it off (sokkel-tui's answer to T4); a row of buttons keeps a column between them for it.
+//! is drawn in its pad cells (`▏Filter▕`, open-questions T3, decided b). Keyboard focus draws the
+//! ring in the cell beside each end, outside its width, half a cell off the box as
+//! `focus-ring-offset` keeps it off (T4, as decided); a row of buttons keeps a column between them.
 //! A tooltip has no floating box here: [`Button::tip`] gives its words for the status line
 //! (principle 23).
 

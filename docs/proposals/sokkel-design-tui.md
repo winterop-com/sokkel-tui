@@ -65,18 +65,20 @@ sokkel-design 0cd3072 (sokkel-design #31, tokens from sokkel-ui #659) holds poin
 roles in cells, `colorDepth` with the `ansi-*` tokens and the OKLab rule for 256, glyphs.json,
 `renderers` per part, principle 23 (tips in the status line) and principle 17's terminal note.
 sokkel-tui reads all of it at that pin; its two stand-ins are gone. Still open there: T1 (sixteen
-colors), T2 (the scrim), T3 (one-row edges), T4 (focus in cells), T5 (the egui renderer's name).
+colors), T2 (the scrim), T5 (the egui renderer's name); T3 and T4 the owner has decided (below).
 
 From building Button, TextField, PageState, PageHeader and Section on it:
 
-1. **T3: recommendation b holds.** The end bars (`▏Filter▕`, brackets in ASCII) read as an edge
-   and keep the ground's width. sokkel-tui draws them.
-2. **T4: a ring beside the control, in the gap.** sokkel-tui draws keyboard focus on a button as
-   `┃` in the cell beside each end, outside its width: half a cell off the box, as
+1. **T3, decided by the owner (2026-11-17): b.** The end bars (`▏Filter▕`, brackets in ASCII) in
+   the edge's flat color, inside the padding. glyphs.json could hold them as `edge-start` and
+   `edge-end`.
+2. **T4, decided by the owner (2026-11-17).** A focused one-row control (a button, a field's mark)
+   draws a bar (`┃`, `>` and `<` in ASCII) in `ring` in the cell beside each end, outside its
+   width, in the column the parts' cells keep between controls: half a cell off the box, as
    `focus-ring-offset` keeps it off, and visible where the ring and the ground are one color
-   (tidevann dark's default button), which reverse video is not. A row of buttons keeps a column
-   between them (the parts' `gap: 1`), and only one control has focus, so the cells are free.
-   For a row of a table or a list, recommendation a (`focus-mark` at the row's start) fits.
+   (tidevann dark's default button). Without color, reverse video. A row of a table or a list takes
+   `focus-mark` in `ring` at its start (recommendation a). glyphs.json could hold the bar as
+   `focus-ring-start` and `focus-ring-end`.
 3. **A part on another surface.** `flat` is resolved over a piece's `standsOn` default. A ghost
    button in a section's head, an outline one in a popover, stands elsewhere: its hover ground's
    flat form is then off by the difference. sokkel-tui draws a fully transparent ground as no ground
