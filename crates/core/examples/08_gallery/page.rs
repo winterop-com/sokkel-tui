@@ -3,8 +3,8 @@
 
 use ratatui::{Frame, layout::Rect, style::Style};
 use sokkel_tui::{
-    Button, ButtonVariant, Look, Outcome, PageHeader, PageState, Section, SectionTone, SectionVariant, StateTone,
-    TextRole,
+    Button, ButtonVariant, IconPlace, Look, Outcome, PageHeader, PageState, Section, SectionTone, SectionVariant,
+    StateTone, TextRole,
 };
 
 fn heading(f: &mut Frame, look: &Look, x: u16, y: u16, words: &str) {
@@ -100,6 +100,20 @@ pub fn draw(f: &mut Frame, look: &Look) {
                 .back(true)
                 .trail(["Tidevann", "Runs"], false)
                 .count("failed"),
+        ),
+        (
+            "aside, lead, one line, words only",
+            PageHeader::new(look, "nightly-export, run 4812 from the schedule of every day at two")
+                .aside("n", "kind-blue")
+                .single_line(true)
+                .meta(["harbor", "ada"])
+                .lead("failed")
+                .words_only(true)
+                .items([
+                    Button::new(look, "Retry").with_icon("↻", IconPlace::Start),
+                    Button::new(look, "Logs").with_icon("≡", IconPlace::Start),
+                ])
+                .primary(Button::new(look, "Open job").with_icon("→", IconPlace::End)),
         ),
     ];
     for (name, h) in &headers {

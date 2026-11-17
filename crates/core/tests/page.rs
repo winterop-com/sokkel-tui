@@ -203,3 +203,30 @@ fn a_filled_section_scrolls_its_body_with_a_scroller_at_its_end() {
         "the thumb on its track: {column:?}"
     );
 }
+
+#[test]
+fn a_header_takes_an_aside_a_lead_one_line_and_words_only() {
+    use sokkel_tui::IconPlace;
+    let look = look();
+    let h = PageHeader::new(&look, "nightly-export, run 4812 from the schedule of every day at two")
+        .aside("n", "kind-blue")
+        .single_line(true)
+        .lead("failed")
+        .words_only(true)
+        .primary(Button::new(&look, "Open job").with_icon("→", IconPlace::End));
+    // 80 columns: wide enough (512 px) for the actions beside the title.
+    assert_eq!(h.height(80), 1, "one line, the actions beside it");
+    let (_, text) = draw(80, 1, &h);
+    assert!(
+        text.starts_with(" n  nightly-export"),
+        "the tile, then the title: {text:?}"
+    );
+    assert!(text.contains('…'), "cut short on one line");
+    assert!(
+        text.contains("● failed") && text.contains("Open job") && !text.contains('→'),
+        "{text:?}"
+    );
+    let l = h.layout(Rect::new(0, 0, 80, 1));
+    assert_eq!(l.aside, Some(Rect::new(0, 0, 3, 1)));
+    assert!(l.lead.is_some_and(|r| r.x < l.primary.unwrap().x));
+}

@@ -272,6 +272,14 @@ impl<'a> Button<'a> {
         (inner + 2) as u16
     }
 
+    /// Drawn by its words alone: its icon dropped (an icon button keeps it).
+    pub fn words_only(mut self) -> Self {
+        if !self.icon_only {
+            self.icon = None;
+        }
+        self
+    }
+
     /// The paint state its ground and ink are drawn in.
     fn ground_state(&self) -> &'static str {
         if self.icon_only && self.pressed == Some(true) {

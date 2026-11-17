@@ -45,6 +45,10 @@ impl Default for PageHeaderWords {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct HeaderLayout {
     pub back: Option<Rect>,
+    /// The lead, at the actions' start.
+    pub lead: Option<Rect>,
+    /// The aside's tile.
+    pub aside: Option<Rect>,
     /// The items shown, by their index among the items.
     pub items: Vec<(usize, Rect)>,
     /// More, while any item is folded into it.
@@ -75,6 +79,10 @@ pub struct PageHeader<'a> {
     actions: Vec<Button<'a>>,
     more_focused: bool,
     words: PageHeaderWords,
+    lead: Option<String>,
+    aside: Option<(String, String)>,
+    words_only: bool,
+    single_line: bool,
 }
 
 impl<'a> PageHeader<'a> {
@@ -95,6 +103,10 @@ impl<'a> PageHeader<'a> {
             actions: Vec::new(),
             more_focused: false,
             words: PageHeaderWords::default(),
+            lead: None,
+            aside: None,
+            words_only: false,
+            single_line: false,
         }
     }
 
@@ -164,6 +176,32 @@ impl<'a> PageHeader<'a> {
         self
     }
 
+    /// A part at the actions' start that is not a verb: a run's state, its dot and word in the
+    /// state's colors. It never folds into More.
+    pub fn lead(mut self, state: impl Into<String>) -> Self {
+        self.lead = Some(state.into());
+        self
+    }
+
+    /// A picture before the title block: in cells, a tile with `letter` on the `color` token's
+    /// ground, centered on the block's lines; after the back button where there is one.
+    pub fn aside(mut self, letter: impl Into<String>, color: impl Into<String>) -> Self {
+        self.aside = Some((letter.into(), color.into()));
+        self
+    }
+
+    /// The items and the primary drawn by their words alone, their icons kept for More.
+    pub fn words_only(mut self, on: bool) -> Self {
+        self.words_only = on;
+        self
+    }
+
+    /// The title kept to one line, cut short, rather than wrapping.
+    pub fn single_line(mut self, on: bool) -> Self {
+        self.single_line = on;
+        self
+    }
+
     pub fn words(mut self, words: PageHeaderWords) -> Self {
         self.words = words;
         self
@@ -180,9 +218,24 @@ impl<'a> PageHeader<'a> {
             .map(|f| Button::icon(self.look, self.look.glyphs().back, self.words.back.clone()).focused(f))
     }
 
-    /// Columns before the block's lines: the back button and 8 px after it.
-    fn lead(&self) -> u16 {
-        self.back_button().map_or(0, |b| b.width() + 1)
+    /// Columns before the block's lines: the back button and 8 px after it, the aside's tile
+    /// and 12 px after it.
+    fn inset(&self) -> u16 {
+        self.back_button().map_or(0, |b| b.width() + 1) + self.aside.as_ref().map_or(0, |_| 3 + cols(12.0))
+    }
+
+    /// The lead's width: its dot, a space, its word.
+    fn lead_width(&self) -> u16 {
+        self.lead.as_ref().map_or(0, |w| 2 + text::width(w) as u16)
+    }
+
+    /// An item or the primary as drawn: by its words alone under `wordsOnly`.
+    fn drawn(&self, b: &Button<'a>) -> Button<'a> {
+        if self.words_only {
+            b.clone().words_only()
+        } else {
+            b.clone()
+        }
     }
 
     fn title_text(&self) -> &str {
@@ -200,15 +253,18 @@ impl<'a> PageHeader<'a> {
     /// The actions' width with `shown` items and More if any are folded, a column apart.
     fn actions_width(&self, shown: usize) -> u16 {
         let more = (shown < self.items.len()).then(|| self.more_button());
-        let widths: Vec<u16> = self
+        let mut widths: Vec<u16> = self
             .items
             .iter()
             .take(shown)
             .chain(more.as_ref())
             .chain(self.primary.as_ref())
-            .chain(self.actions.iter())
-            .map(Button::width)
+            .map(|b| self.drawn(b).width())
+            .chain(self.actions.iter().map(Button::width))
             .collect();
+        if self.lead.is_some() {
+            widths.insert(0, self.lead_width());
+        }
         if widths.is_empty() {
             0
         } else {
@@ -226,7 +282,7 @@ impl<'a> PageHeader<'a> {
 
     /// The block's width and whether the actions stand beside it, at `width` columns.
     fn split(&self, width: u16) -> (u16, bool, usize) {
-        let width = width.saturating_sub(self.lead());
+        let width = width.saturating_sub(self.inset());
         let gap = cols(16.0);
         let wide = width as f64 * PX_PER_COL >= 512.0;
         // The block's own width: its widest line, the description at most a reading measure.
@@ -239,7 +295,10 @@ impl<'a> PageHeader<'a> {
         .into_iter()
         .max()
         .unwrap_or(0) as u16;
-        let n_actions = self.items.len() + usize::from(self.primary.is_some()) + self.actions.len();
+        let n_actions = self.items.len()
+            + usize::from(self.primary.is_some())
+            + self.actions.len()
+            + usize::from(self.lead.is_some());
         if n_actions == 0 {
             return (width, false, 0);
         }
@@ -271,7 +330,7 @@ impl<'a> PageHeader<'a> {
     fn block_lines(&self, width: u16) -> usize {
         let w = width as usize;
         let mut n = usize::from(!self.in_shell && !self.trail.is_empty());
-        n += if self.title.is_none() {
+        n += if self.title.is_none() || self.single_line {
             1
         } else {
             text::wrap(self.title_text(), w.saturating_sub(self.count_room())).len()
@@ -290,7 +349,7 @@ impl<'a> PageHeader<'a> {
     pub fn height(&self, width: u16) -> u16 {
         let (block_w, beside, _) = self.split(width);
         let lines = self.block_lines(block_w) as u16;
-        let none = self.items.is_empty() && self.primary.is_none() && self.actions.is_empty();
+        let none = self.items.is_empty() && self.primary.is_none() && self.actions.is_empty() && self.lead.is_none();
         if beside || none {
             lines
         } else {
@@ -307,10 +366,14 @@ impl<'a> PageHeader<'a> {
             wrapped: !beside,
             ..HeaderLayout::default()
         };
-        let lead = self.lead();
+        let lead = self.inset();
         if let Some(b) = self.back_button() {
             let y = area.y + u16::from(!self.in_shell && !self.trail.is_empty());
             out.back = Some(Rect::new(area.x, y, b.width(), 1));
+        }
+        if self.aside.is_some() {
+            let x = area.x + self.back_button().map_or(0, |b| b.width() + 1);
+            out.aside = Some(Rect::new(x, area.y + lines.saturating_sub(1) / 2, 3, 1));
         }
         let total = self.actions_width(shown);
         if total == 0 {
@@ -321,9 +384,14 @@ impl<'a> PageHeader<'a> {
         } else {
             (area.x + lead, area.y + lines + gap_rows(self.look, 12.0))
         };
+        if self.lead.is_some() {
+            out.lead = Some(Rect::new(x, y, self.lead_width(), 1));
+            x += self.lead_width() + 1;
+        }
         for (i, b) in self.items.iter().take(shown).enumerate() {
-            out.items.push((i, Rect::new(x, y, b.width(), 1)));
-            x += b.width() + 1;
+            let w = self.drawn(b).width();
+            out.items.push((i, Rect::new(x, y, w, 1)));
+            x += w + 1;
         }
         if shown < self.items.len() {
             let w = self.more_button().width();
@@ -331,8 +399,9 @@ impl<'a> PageHeader<'a> {
             x += w + 1;
         }
         if let Some(p) = &self.primary {
-            out.primary = Some(Rect::new(x, y, p.width(), 1));
-            x += p.width() + 1;
+            let w = self.drawn(p).width();
+            out.primary = Some(Rect::new(x, y, w, 1));
+            x += w + 1;
         }
         for (i, b) in self.actions.iter().enumerate() {
             out.actions.push((i, Rect::new(x, y, b.width(), 1)));
@@ -363,7 +432,7 @@ impl Widget for &PageHeader<'_> {
         };
         let layout = self.layout(area);
         let (block_w, _, _) = self.split(area.width);
-        let x = area.x + self.lead();
+        let x = area.x + self.inset();
         let mut y = area.y;
         let line = |buf: &mut Buffer, l: Line, y: &mut u16| {
             if *y < area.bottom() {
@@ -389,7 +458,12 @@ impl Widget for &PageHeader<'_> {
             .map(|c| Span::styled(c.clone(), TextRole::Help.style(look).fg(t(ink("count")))));
         if let Some(title) = &self.title {
             let style = TextRole::PageTitle.style(look).fg(t(ink("title")));
-            let wrapped = text::wrap(title, (block_w as usize).saturating_sub(self.count_room()));
+            let room = (block_w as usize).saturating_sub(self.count_room());
+            let wrapped = if self.single_line {
+                vec![text::truncate(title, room, glyphs.ellipsis)]
+            } else {
+                text::wrap(title, room)
+            };
             let last = wrapped.len() - 1;
             for (i, l) in wrapped.into_iter().enumerate() {
                 let mut spans = vec![Span::styled(l, style)];
@@ -441,14 +515,27 @@ impl Widget for &PageHeader<'_> {
         if let (Some(b), Some(r)) = (self.back_button(), layout.back) {
             b.render(r, buf);
         }
+        if let (Some((letter, color)), Some(r)) = (&self.aside, layout.aside) {
+            let tile = Style::new().bg(look.token(color)).fg(look.token("on-fill"));
+            buf.set_string(r.x, r.y, format!(" {letter} "), tile);
+        }
+        if let (Some(state), Some(r)) = (&self.lead, layout.lead) {
+            let has = |n: &str| look.has_color(n);
+            let (dot, word) = (format!("status-{state}"), format!("status-{state}-ink"));
+            let fallback = ink("meta");
+            let dot = if has(&dot) { look.color(&dot) } else { fallback };
+            let word = if has(&word) { look.color(&word) } else { fallback };
+            buf.set_string(r.x, r.y, glyphs.status_dot, Style::new().fg(t(dot)));
+            buf.set_string(r.x + 2, r.y, state, TextRole::Body.style(look).fg(t(word)));
+        }
         for (i, r) in &layout.items {
-            (&self.items[*i]).render(*r, buf);
+            self.drawn(&self.items[*i]).render(*r, buf);
         }
         if let Some(r) = layout.more {
             self.more_button().render(r, buf);
         }
         if let (Some(p), Some(r)) = (&self.primary, layout.primary) {
-            p.render(r, buf);
+            self.drawn(p).render(r, buf);
         }
         for (i, r) in &layout.actions {
             (&self.actions[*i]).render(*r, buf);

@@ -60,7 +60,8 @@ the contract say so that it does?
   its code parts on a chip, the problems, Try again), empty; framed or not; critical or warning.
 - `page_header` (step 3): title or code, count, code, description, meta, a back button, the trail
   outside a shell, actions beside the title's foot or wrapped under it, items folding into More
-  from the last with the primary kept, laid out by its own width.
+  from the last with the primary kept, laid out by its own width; the aside (a tile before the
+  block), the lead (a state at the actions' start, never folding), `wordsOnly`, `singleLine`.
 - `section` (step 3): boxed with its head over a joined rule, or flat; meta, description, actions;
   the critical and graph tones; `flush`; `fill` (the box takes the height given, its body scrolls with a scroller in its own
   column; `scrolled` keeps the offset in range).
