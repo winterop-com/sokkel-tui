@@ -276,16 +276,14 @@ impl sokkel_tui::app::ShellApp for Places {
 }
 
 #[test]
-fn backspace_goes_back_along_the_routes() {
+fn escape_with_nothing_open_goes_back_along_the_routes() {
     let shot = |keys: &[&str]| {
         let keys: Vec<KeyPress> = keys.iter().filter_map(|k| KeyPress::named(k)).collect();
         let app = Places { at: "a".into() };
         sokkel_tui::snapshot::text(&sokkel_tui::app::shot(app, look(), (120, 30), |_| {}, &keys))
     };
     assert!(shot(&["b"]).contains("at b"));
-    assert!(shot(&["b", "backspace"]).contains("at a"));
-    assert!(
-        shot(&["b", "backspace", "backspace"]).contains("at a"),
-        "nothing further back"
-    );
+    assert!(shot(&["b", "backspace"]).contains("at b"), "Backspace is no Back key");
+    assert!(shot(&["b", "esc"]).contains("at a"));
+    assert!(shot(&["b", "esc", "esc"]).contains("at a"), "nothing further back");
 }

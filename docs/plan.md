@@ -35,8 +35,8 @@ the contract say so that it does?
   `motion-fast`, the mouse captured while wanted); `run_shell` runs an app in the frame with the
   palette, the settings (choices it draws itself), the account menu, the shortcuts dialog, the
   search, one focus through the frame and the page, the app's own layers, and the look kept under
-  the web's keys; `shot` draws a frame after scripted keys. A back stack (an app's routes, Backspace
-  back, the settings closing first), focus to the new page's first stop on a route change and back
+  the web's keys; `shot` draws a frame after scripted keys. A back stack (an app's routes, Escape back
+  with nothing open, the settings closing first), focus to the new page's first stop on a route change and back
   to what opened a layer when it closes. Not yet: the rail's resize.
 - `button` (step 1): every variant in rest, hover, focus, busy, reason, disabled, invalid and open;
   icon buttons with `pressed`, `destructiveHover`, an icon at either end. One row at every size; the

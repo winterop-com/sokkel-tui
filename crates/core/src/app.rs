@@ -199,7 +199,8 @@ pub trait ShellApp {
         None
     }
     /// Where the app is, as a route it can go back to (`runs`, `jobs/nightly-export`). The runtime
-    /// keeps the history: Backspace goes back, the settings over it first. Empty keeps none.
+    /// keeps the history: Escape with nothing open goes back (the settings close first, as
+    /// Escape closes any layer). Empty keeps none.
     fn route(&self) -> String {
         String::new()
     }
@@ -638,7 +639,7 @@ impl<A: ShellApp> Host<A> {
             .map(|b| (b.keys.label(&words), b.does.clone()))
             .chain([
                 ("Tab".to_string(), WORDS_TAB.to_string()),
-                ("Backspace".to_string(), WORDS_BACK.to_string()),
+                ("Esc".to_string(), WORDS_BACK.to_string()),
                 (Keys::Mod('q').label(&words), WORDS_QUIT.to_string()),
             ])
             .collect()
@@ -955,12 +956,6 @@ impl<A: ShellApp> Program for Host<A> {
                 self.palette_event(event);
                 return false;
             }
-            Layer::Settings
-                if key.is(Key::Backspace) && self.settings.focus != crate::settings::SettingsFocus::Search =>
-            {
-                self.back();
-                return false;
-            }
             Layer::Settings => {
                 let mut st = std::mem::take(&mut self.settings);
                 let event = self.dialog().handle(&mut st, key);
@@ -1026,9 +1021,6 @@ impl<A: ShellApp> Program for Host<A> {
         if self.frame_key(key) {
             return false;
         }
-        if key.is(Key::Backspace) && !cx.typing && self.back() {
-            return false;
-        }
         let mut cx = Cx {
             look: &self.look,
             window: self.window,
@@ -1037,8 +1029,16 @@ impl<A: ShellApp> Program for Host<A> {
             active: true,
             now: self.now,
         };
-        // Escape closes the layer on top and never quits (patterns/shell): Ctrl+Q quits.
-        self.app.key(key, &mut cx) == Flow::Quit
+        // Escape closes the layer on top and never quits (patterns/shell): Ctrl+Q quits. With
+        // nothing open and the page not taking it, Escape goes back.
+        match self.app.key(key, &mut cx) {
+            Flow::Quit => true,
+            Flow::Ignored if key.is(Key::Escape) => {
+                self.back();
+                false
+            }
+            _ => false,
+        }
     }
 
     fn pointer(&mut self, p: Pointer) {

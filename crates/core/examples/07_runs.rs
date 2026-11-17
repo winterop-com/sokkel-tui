@@ -7,7 +7,7 @@
 //!
 //! Keys: Tab moves through the rail, the search, the palette button, the page and the account;
 //! Ctrl+K the palette; ? the shortcuts; / the search (it narrows the runs by job); G then R and G
-//! then J go to a page, Backspace back; in the table Up, Down, Home, End, PageUp, PageDown, Space selects. The
+//! then J go to a page, Escape back; in the table Up, Down, Home, End, PageUp, PageDown, Space selects. The
 //! mouse works on every row, button, entry and menu row; the wheel scrolls. Ctrl+Q quits.
 //!
 //! With `--frame` it draws one frame after the keys given (`tab`, `down`, `ctrl-k`, `enter`, a
@@ -21,7 +21,7 @@ use sokkel_tui::{
     Align, Binding, Button, ButtonVariant, Cell, Column, ColumnWidth, Command, CommandGroup, Confirm, Density, Dialog,
     DialogEvent, DialogFocus, DialogWidth, DropdownMenu, Fact, FocusId, Item, Key, KeyPress, Keys, Look, MenuEvent,
     MenuState, NoteTone, PageHeader, Pointer, PointerKind, PopupRow, Rail, RailEntry, RailFoot, RailGroup, Row,
-    RowTone, Scheme, StatusLine, Table, TableHit, TableState, TableWords, TextRole, TopBar, snapshot,
+    RowTone, Scheme, StatusLine, Table, TableEvent, TableHit, TableState, TableWords, TextRole, TopBar, snapshot,
 };
 
 #[derive(Clone)]
@@ -496,14 +496,18 @@ impl ShellApp for Runs {
             return Flow::Handled;
         }
         if cx.focus.is(at(TABLE)) {
-            if self.page == Page::Runs {
+            let event = if self.page == Page::Runs {
                 let (c, r) = (columns(), self.rows());
-                self.table.handle(&Table::new(look, &c, &r).selectable(true), key);
+                self.table.handle(&Table::new(look, &c, &r).selectable(true), key)
             } else {
                 let (c, r) = jobs();
-                self.jobs.handle(&Table::new(look, &c, &r), key);
-            }
-            return Flow::Handled;
+                self.jobs.handle(&Table::new(look, &c, &r), key)
+            };
+            return if event == TableEvent::Ignored {
+                Flow::Ignored
+            } else {
+                Flow::Handled
+            };
         }
         Flow::Ignored
     }
