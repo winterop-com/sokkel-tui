@@ -1,0 +1,11 @@
+[package]
+name = "sokkel-tui"
+description = "sokkel's design system drawn in a terminal with ratatui: the contract's tokens and paints, text roles in cells, and the parts."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ratatui.workspace = true
+serde_json.workspace = true
