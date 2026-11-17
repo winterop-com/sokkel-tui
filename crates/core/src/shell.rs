@@ -96,6 +96,7 @@ pub struct Shell<'a> {
     rail: Rail<'a>,
     top: TopBar<'a>,
     foot: StatusLine<'a>,
+    banner: Option<crate::banner::Banner<'a>>,
 }
 
 /// What lives between frames: the rail collapsed or not, the drawer open or not, and where the
@@ -148,7 +149,20 @@ pub enum ShellEvent {
 
 impl<'a> Shell<'a> {
     pub fn new(look: &'a Look, rail: Rail<'a>, top: TopBar<'a>, foot: StatusLine<'a>) -> Shell<'a> {
-        Shell { look, rail, top, foot }
+        Shell {
+            look,
+            rail,
+            top,
+            foot,
+            banner: None,
+        }
+    }
+
+    /// A banner in the shell's slot, between the top bar and the page, not scrolling: a state that
+    /// holds (the server not answering). It takes no row while there is none.
+    pub fn banner(mut self, banner: Option<crate::banner::Banner<'a>>) -> Self {
+        self.banner = banner;
+        self
     }
 
     /// Draw the frame in `window` and give back the page, where the app draws.
@@ -199,9 +213,32 @@ impl<'a> Shell<'a> {
             Position::new(r.x + 3 + text::width(&state.query).min(room) as u16, r.y)
         });
         (&top).render(shell.top, buf);
-        match &state.note {
-            Some(note) => (&self.foot.clone().note(note.clone(), NoteTone::Plain)).render(shell.foot, buf),
-            None => (&self.foot).render(shell.foot, buf),
+        // The banner's row, and the whole of its words in the status line when they are cut short.
+        let mut shell = shell;
+        let mut tip = None;
+        if let Some(b) = &self.banner
+            && shell.content.height > 1
+        {
+            b.render(
+                Rect {
+                    height: 1,
+                    ..shell.content
+                },
+                buf,
+            );
+            if b.cut(shell.content.width) {
+                tip = Some(crate::button::Tip {
+                    words: b.words().to_string(),
+                    shortcut: None,
+                });
+            }
+            shell.content.y += 1;
+            shell.content.height -= 1;
+        }
+        match (&state.note, tip) {
+            (Some(note), _) => (&self.foot.clone().note(note.clone(), NoteTone::Plain)).render(shell.foot, buf),
+            (None, Some(tip)) => (&self.foot.clone().tip(Some(tip))).render(shell.foot, buf),
+            (None, None) => (&self.foot).render(shell.foot, buf),
         }
         shell.page(look)
     }

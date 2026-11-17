@@ -45,6 +45,9 @@ the contract say so that it does?
   series' area in blocks, dashed references, the scale's steps, value and category labels, a legend
   row or table), as proposal c4 reads them. Not yet: stacked and stepped series, the chart's other
   kinds, the expanded dialog, the panel menu's own menu.
+- `banner`: `Banner` in four tones, in the shell's slot under the top bar (`Shell::banner`,
+  `ShellApp::banner`), the page a row lower while it shows, its words in the status line when cut;
+  grounds as proposal c5 reads them.
 - `app` scrolls a page taller than its view (`ShellApp::page_rows`): the wheel, PageUp and PageDown,
   keyboard focus kept in view, a scroller at its end.
 - `button` (step 1): every variant in rest, hover, focus, busy, reason, disabled, invalid and open;

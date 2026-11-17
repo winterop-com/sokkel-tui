@@ -24,10 +24,12 @@
 //! - [`table`]: [`Table`], the one table.
 //! - [`rail`], [`top_bar`], [`status_line`]: the frame's parts, and [`shell`] where they go.
 //! - [`dialog`], [`menu`], [`select`]: the overlays, over the popup [`popup`] they share.
+//! - [`banner`]: [`Banner`], a state that holds, across the top of the content.
 //! - [`dashboard`]: the dashboard grid, [`DashboardPanel`] and [`StatPanel`].
 //! - [`palette`]: the command palette; [`settings`]: the settings dialog.
 
 pub mod app;
+pub mod banner;
 pub mod button;
 pub mod cells;
 pub mod dashboard;
@@ -55,6 +57,7 @@ pub mod text_field;
 pub mod tokens;
 pub mod top_bar;
 
+pub use banner::{Banner, BannerTone};
 pub use button::{Button, ButtonGroup, ButtonSize, ButtonVariant, IconPlace, Tip};
 pub use dashboard::{
     ColorMode, DashboardPanel, Fill, Legend, PanelLayout, PanelRead, PanelTool, PanelWords, Series, Span, StatPanel,

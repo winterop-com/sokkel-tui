@@ -5,7 +5,8 @@
 //! terminal to see the spans give way.
 //!
 //! Usage: cargo run --example 09_dashboard [-- light] [-- --frame <cols> <rows> <out> [keys...]]
-//! Keys: the runtime's (Ctrl+K, `,`, `?`, Tab); `r` retries the failed panel; the wheel, PageUp and
+//! Keys: the runtime's (Ctrl+K, `,`, `?`, Tab); `r` retries the failed panel; `d` drops the connection
+//! and brings it back (a banner, the panels marked stale); the wheel, PageUp and
 //! PageDown scroll the page. Ctrl+Q quits.
 
 use ratatui::Frame;
@@ -14,10 +15,10 @@ use ratatui::widgets::Widget;
 use sokkel_tui::app::{self, Chrome, Cx, Flow, Ran, ShellApp};
 use sokkel_tui::dashboard::grid;
 use sokkel_tui::{
-    Cell, ColorMode, Column, ColumnWidth, Command, CommandGroup, DashboardPanel, Fact, Fill, Key, KeyPress, Legend,
-    Look, NoteTone, PageHeader, PanelRead, PanelTool, Pointer, PointerKind, Rail, RailEntry, RailFoot, RailGroup, Row,
-    RowTone, Scheme, Series, Span, StatPanel, StatusLine, Table, TableState, Threshold, TimeSeriesPanel, TopBar,
-    snapshot,
+    BannerTone, Cell, ColorMode, Column, ColumnWidth, Command, CommandGroup, DashboardPanel, Fact, Fill, Key, KeyPress,
+    Legend, Look, NoteTone, PageHeader, PanelRead, PanelTool, Pointer, PointerKind, Rail, RailEntry, RailFoot,
+    RailGroup, Row, RowTone, Scheme, Series, Span, StatPanel, StatusLine, Table, TableState, Threshold,
+    TimeSeriesPanel, TopBar, snapshot,
 };
 
 /// The success rate's scale: critical below 95, warning below 99, good from 99.
@@ -36,6 +37,8 @@ struct Overview {
     hosts: TableState,
     /// Where the failed panel stands, for a press on its Retry.
     failed_at: Rect,
+    /// The connection to the daemon dropped: a banner says so, the panels keep what they last read.
+    disconnected: bool,
 }
 
 impl Overview {
@@ -109,6 +112,15 @@ impl ShellApp for Overview {
         "overview".into()
     }
 
+    fn banner(&self) -> Option<(BannerTone, String)> {
+        self.disconnected.then(|| {
+            (
+                BannerTone::Critical,
+                "disconnected from https://api.example.org: connection refused (os error 61)".into(),
+            )
+        })
+    }
+
     fn chrome<'a>(&'a self, look: &'a Look) -> Chrome<'a> {
         Chrome {
             rail: Rail::new(look, "T", "Tidevann")
@@ -132,7 +144,12 @@ impl ShellApp for Overview {
                     name: "ada".into(),
                 }),
             top: TopBar::new(look).trail(["Tidevann", "Overview"]),
-            foot: StatusLine::new(look).note("Live", NoteTone::Live).live(true).facts([
+            foot: if self.disconnected {
+                StatusLine::new(look).note("Disconnected", NoteTone::Error)
+            } else {
+                StatusLine::new(look).note("Live", NoteTone::Live).live(true)
+            }
+            .facts([
                 Fact::labeled("host", "api.example.org").code(),
                 Fact::new("Updated just now"),
             ]),
@@ -159,11 +176,14 @@ impl ShellApp for Overview {
         // Hosts, as a table in a flush panel.
         let mut it = rects[tiles.len()..].iter();
         if let Some(r) = it.next() {
-            let p = DashboardPanel::new(look, "Hosts")
+            let mut p = DashboardPanel::new(look, "Hosts")
                 .subtitle("last hour")
                 .flush(true)
                 .expandable(true)
                 .menu(true);
+            if self.disconnected {
+                p = p.stale("since 12:04");
+            }
             (&p).render(r.intersection(area), f.buffer_mut());
             let body = p.layout(*r).body;
             let columns = vec![
@@ -189,8 +209,9 @@ impl ShellApp for Overview {
         let latency: Vec<f64> = (0..24)
             .map(|h| self.wave(380.0 + 8.0 * h as f64, 40.0, h as f64 / 2.0))
             .collect();
+        let stale = |p| stale_if(p, self.disconnected);
         let series = TimeSeriesPanel::new(
-            DashboardPanel::new(look, "p95 latency").subtitle("today"),
+            stale(DashboardPanel::new(look, "p95 latency").subtitle("today")),
             hours.clone(),
         )
         .series([Series::new("p95", latency)])
@@ -211,9 +232,11 @@ impl ShellApp for Overview {
             .map(|h| (self.wave(4.0, 3.0, h as f64).max(0.0)).round())
             .collect();
         let runs = TimeSeriesPanel::new(
-            DashboardPanel::new(look, "Runs per hour")
-                .subtitle("today")
-                .expandable(true),
+            stale(
+                DashboardPanel::new(look, "Runs per hour")
+                    .subtitle("today")
+                    .expandable(true),
+            ),
             hours,
         )
         .series([
@@ -279,6 +302,10 @@ impl ShellApp for Overview {
             self.command("retry");
             return Flow::Handled;
         }
+        if key.key == Key::Char('d') {
+            self.disconnected = !self.disconnected;
+            return Flow::Handled;
+        }
         Flow::Ignored
     }
 
@@ -294,12 +321,18 @@ impl ShellApp for Overview {
     }
 }
 
+/// A panel marked stale while the connection is down: it keeps what it last read.
+fn stale_if(p: DashboardPanel<'_>, disconnected: bool) -> DashboardPanel<'_> {
+    if disconnected { p.stale("since 12:04") } else { p }
+}
+
 fn overview() -> Overview {
     Overview {
         now: 0,
         retrying: None,
         hosts: TableState::default(),
         failed_at: Rect::default(),
+        disconnected: false,
     }
 }
 

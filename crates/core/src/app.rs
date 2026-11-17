@@ -207,6 +207,11 @@ pub trait ShellApp {
     }
     /// Go to a route the app gave before (Back).
     fn go(&mut self, _route: &str) {}
+    /// A banner under the top bar, for a state that holds (the server not answering): its tone and
+    /// its words, this frame. None takes no row.
+    fn banner(&self) -> Option<(crate::banner::BannerTone, String)> {
+        None
+    }
     /// The rail, the top bar and the status line, this frame.
     fn chrome<'a>(&'a self, look: &'a Look) -> Chrome<'a>;
     /// Draw the page in `area`, naming its stops in `cx.focus` as it draws them (after the
@@ -507,7 +512,13 @@ impl<A: ShellApp> Host<A> {
             .map(|c| format!("{} {} …", c.to_uppercase(), ShortcutWords::default().then));
         let page = {
             let chrome = self.app.chrome(look);
-            Shell::new(look, chrome.rail, chrome.top, chrome.foot).render(window, f.buffer_mut(), &mut self.shell)
+            let banner = self
+                .app
+                .banner()
+                .map(|(tone, words)| crate::banner::Banner::new(look, tone, words));
+            Shell::new(look, chrome.rail, chrome.top, chrome.foot)
+                .banner(banner)
+                .render(window, f.buffer_mut(), &mut self.shell)
         };
         self.focus.begin();
         if !self.shell.drawer {

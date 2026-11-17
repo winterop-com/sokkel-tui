@@ -125,6 +125,8 @@ pub struct Glyphs {
     /// The arrows of a change, up and down (`arrow-up`, `arrow-down`).
     pub arrow_up: &'static str,
     pub arrow_down: &'static str,
+    /// A banner's mark in the info tone (`info`).
+    pub info: &'static str,
 }
 
 fn leak(s: &str) -> &'static str {
@@ -220,6 +222,7 @@ impl Glyphs {
             stale: if charset == Charset::Unicode { "◷" } else { "!" },
             arrow_up: icon("arrow-up"),
             arrow_down: icon("arrow-down"),
+            info: icon("info"),
         }
     }
 }

@@ -287,3 +287,38 @@ fn escape_with_nothing_open_goes_back_along_the_routes() {
     assert!(shot(&["b", "esc"]).contains("at a"));
     assert!(shot(&["b", "esc", "esc"]).contains("at a"), "nothing further back");
 }
+
+#[test]
+fn a_banner_takes_its_row_under_the_top_bar_and_its_words_go_to_the_status_line_when_cut() {
+    use sokkel_tui::{Banner, BannerTone};
+    let look = look();
+    let words = "disconnected from https://api.example.org: connection refused (os error 61)";
+    let shell = |banner: bool| {
+        Shell::new(
+            &look,
+            Rail::new(&look, "T", "Tidevann"),
+            TopBar::new(&look),
+            StatusLine::new(&look).note("Live", NoteTone::Live),
+        )
+        .banner(banner.then(|| Banner::new(&look, BannerTone::Critical, words)))
+    };
+    let narrow = Rect::new(0, 0, 60, 20);
+    let mut buf = Buffer::empty(narrow);
+    let mut st = ShellState::default();
+    let without = shell(false).render(narrow, &mut buf, &mut st);
+    let mut buf = Buffer::empty(narrow);
+    let with = shell(true).render(narrow, &mut buf, &mut st);
+    assert_eq!(with.y, without.y + 1, "the page a row lower while it shows");
+    let text = sokkel_tui::snapshot::text(&buf);
+    let lines: Vec<&str> = text.lines().collect();
+    assert!(
+        lines[2].starts_with(" ! disconnected from") && lines[2].contains('…'),
+        "{lines:?}"
+    );
+    // The status line takes the words as its tip, in place of its note: as much as its row holds.
+    assert!(lines[19].contains("disconnected from https://api.example.org") && !lines[19].contains("Live"));
+    assert_eq!(
+        buf[(3, 2)].bg,
+        look.terminal(look.paint("page-state.base.failed.frame", "ground").unwrap())
+    );
+}

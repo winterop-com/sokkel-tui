@@ -152,6 +152,22 @@ notes yet. sokkel-tui draws this reading of it, and asks for it, or a better one
 6. **The trend's faintness.** The web draws the spark area at low alpha; a cell draws the levels in
    the reading's color (or `muted-foreground` with no reading), opaque.
 
+## (c5) A banner part
+
+The shell pattern names a `banner` slot (between the top bar and the content, not scrolling, for a
+state that holds) and sokkel-ui has a `Banner` in four tones, but the contract has no banner part
+and no banner paints. sokkel-tui draws one row there, as its reading:
+
+1. **Grounds.** The web's tone at 12 percent is a mix a renderer may not make. sokkel-tui stands a
+   critical banner on page-state's `failed` frame ground and a warning one on its `failed+warning`
+   frame, the nearest resolved tints; info and good stand on `card`. Banner paints in the contract
+   (ground, edge and ink per tone, flat) would settle it.
+2. **The row.** The tone's mark (`circle-alert`, `triangle-alert`, `info`, `check`), then the words
+   in the label role and the tone's ink, cut short; when cut, the whole of them is the status
+   line's tip. It takes no row while there is none, so the page moves down a row when it shows.
+3. **Asked for:** a `banner` part with its words, tones, paints and a `cells` note; whether a banner
+   carries actions (Retry) or a dismiss in a terminal.
+
 ## (d) Where it lives
 
 The proposals land in sokkel-design, as egui's did. sokkel-tui embeds the resolved file at a pinned

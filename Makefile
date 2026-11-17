@@ -73,6 +73,11 @@ specimens:
 		target/debug/examples/09_dashboard $$1 --frame $$2 $$3 $$out || exit 1; \
 		if command -v rsvg-convert >/dev/null; then rsvg-convert -z 2 $$out.svg -o $$out.png; fi; \
 	done
+	for s in "dark 120 24" "light 80 24"; do \
+		set -- $$s; out=specimens/dashboard-$$1-$$2-disconnected; \
+		target/debug/examples/09_dashboard $$1 --frame $$2 $$3 $$out d || exit 1; \
+		if command -v rsvg-convert >/dev/null; then rsvg-convert -z 2 $$out.svg -o $$out.png; fi; \
+	done
 
 all: fmt-check check test
 
