@@ -4,7 +4,8 @@
 //! everything the frame does is the library's (`app::run_shell`).
 //!
 //! Usage: cargo run --example 06_shell [-- light]
-//! Keys: Ctrl+K the palette, `,` the settings, Escape closes what is open; the mouse on the rail's
+//! Keys: Ctrl+K the palette, `?` the shortcuts, `/` the search (it narrows the runs by job), `,`
+//! the settings, Escape closes what is open; the mouse on the rail's
 //! collapse, its entries, the menu button below md (90 columns: resize the terminal), the palette
 //! button. Ctrl+Q quits.
 //!
@@ -76,8 +77,11 @@ fn rail<'a>(look: &'a Look, collapsed: bool) -> Rail<'a> {
         })
 }
 
-/// The runs page in sokkel's frame.
-struct Runs;
+/// The runs page in sokkel's frame, narrowed by the top bar's search.
+#[derive(Default)]
+struct Runs {
+    query: String,
+}
 
 impl ShellApp for Runs {
     fn chrome<'a>(&'a self, look: &'a Look) -> Chrome<'a> {
@@ -106,11 +110,15 @@ impl ShellApp for Runs {
             height: page.height.saturating_sub(hh + gap - 1),
             ..page
         };
-        draw_table(f, look, table, narrow);
+        draw_table(f, look, table, narrow, &self.query);
+    }
+
+    fn search(&mut self, query: &str) {
+        self.query = query.to_lowercase();
     }
 }
 
-fn draw_table(f: &mut Frame, look: &Look, area: Rect, narrow: bool) {
+fn draw_table(f: &mut Frame, look: &Look, area: Rect, narrow: bool, query: &str) {
     // The table, from the core: the runs, sorted by when they started, the failed run's row in the
     // critical tone and the selected one active, as keyboard focus left it.
     let mut columns = vec![
@@ -125,6 +133,7 @@ fn draw_table(f: &mut Frame, look: &Look, area: Rect, narrow: bool) {
     columns.push(Column::new("Took").align(Align::End));
     let rows: Vec<Row> = RUNS
         .iter()
+        .filter(|r| r.job.contains(query))
         .map(|r| {
             let mut cells = vec![Cell::text(r.job), Cell::status(r.state), Cell::maybe(r.by)];
             if !narrow {
@@ -150,7 +159,7 @@ fn draw_table(f: &mut Frame, look: &Look, area: Rect, narrow: bool) {
 fn main() -> std::io::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 6 {
-        return app::run_shell(Runs, app::look_from_args("tidevann"));
+        return app::run_shell(Runs::default(), app::look_from_args("tidevann"));
     }
     let scheme = if args[2] == "light" {
         Scheme::Light
@@ -167,7 +176,7 @@ fn main() -> std::io::Result<()> {
     shell.drawer = flag("drawer");
     let (cols, rows): (u16, u16) = (args[3].parse().unwrap(), args[4].parse().unwrap());
     let mut term = Terminal::new(TestBackend::new(cols, rows)).unwrap();
-    term.draw(|f| app::draw_shell(&mut Runs, &look, f, &mut shell, true))
+    term.draw(|f| app::draw_shell(&mut Runs::default(), &look, f, &mut shell, true))
         .unwrap();
     let buffer = term.backend().buffer();
     std::fs::write(

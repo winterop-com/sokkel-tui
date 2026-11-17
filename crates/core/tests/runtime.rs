@@ -139,3 +139,32 @@ fn a_press_on_the_account_asks_for_its_menu() {
     assert_eq!(st.account(), Some(Rect::new(0, 29, 28, 1)));
     assert_eq!(st.pointer(press((5, 29))), ShellEvent::Account);
 }
+
+#[test]
+fn the_search_takes_typing_until_enter_and_says_where_the_cursor_is() {
+    let look = look();
+    let shell = Shell::new(
+        &look,
+        Rail::new(&look, "T", "Tidevann"),
+        TopBar::new(&look).search(""),
+        StatusLine::new(&look),
+    );
+    let window = Rect::new(0, 0, 120, 30);
+    let mut buf = Buffer::empty(window);
+    let mut st = ShellState::default();
+    shell.render(window, &mut buf, &mut st);
+    assert!(st.focus_search());
+    for c in "sync".chars() {
+        assert_eq!(st.key(KeyPress::new(Key::Char(c))), ShellEvent::Search);
+    }
+    assert_eq!(st.query, "sync");
+    shell.render(window, &mut buf, &mut st);
+    let cursor = st.cursor_position().expect("a cursor while typing");
+    // The field at column 30 (the rail, its edge, a gap): edge, magnifier, a space, the query.
+    assert_eq!(cursor.x, 30 + 3 + 4, "after the magnifier and the query: {cursor:?}");
+    assert!(sokkel_tui::snapshot::text(&buf).contains("⌕ sync"));
+    assert_eq!(st.key(KeyPress::new(Key::Enter)), ShellEvent::Changed);
+    assert!(!st.searching);
+    shell.render(window, &mut buf, &mut st);
+    assert_eq!(st.cursor_position(), None);
+}

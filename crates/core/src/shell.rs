@@ -11,7 +11,8 @@ use crate::keys::{Key, KeyPress, Pointer, PointerKind};
 use crate::look::Look;
 use crate::rail::Rail;
 use crate::status_line::StatusLine;
-use crate::top_bar::TopBar;
+use crate::text;
+use crate::top_bar::{TopBar, TopBarFocus};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::Style;
@@ -104,6 +105,10 @@ pub struct ShellState {
     pub collapsed: bool,
     /// Below md: the rail open over the page.
     pub drawer: bool,
+    /// The top bar's search: what it holds, and whether it is being typed in (`/` or a press).
+    pub query: String,
+    pub searching: bool,
+    cursor: Option<Position>,
     window: Rect,
     narrow: bool,
     entries: Vec<((usize, usize), Rect)>,
@@ -124,7 +129,8 @@ pub enum ShellEvent {
     Changed,
     /// A rail entry was pressed, by (group, entry): the app goes there.
     Entry(usize, usize),
-    /// The top bar's search was pressed.
+    /// The top bar's search took focus, or its query changed: the app reads
+    /// [`ShellState::query`].
     Search,
     /// The top bar's command palette button was pressed.
     Palette,
@@ -163,9 +169,22 @@ impl<'a> Shell<'a> {
             state.collapse = l.collapse;
             state.account = l.account;
         }
-        let top = self.top.clone().window(shell.width);
+        let mut top = self.top.clone().window(shell.width);
+        if top.has_search() {
+            top = top.search(state.query.clone());
+        }
+        if state.searching {
+            top = top.focus(TopBarFocus::Search);
+        }
         let l = top.layout(shell.top);
         (state.menu, state.search, state.palette) = (l.menu, l.search, l.palette);
+        if l.search.is_none() {
+            state.searching = false;
+        }
+        state.cursor = l.search.filter(|_| state.searching).map(|r| {
+            let room = r.width.saturating_sub(4) as usize;
+            Position::new(r.x + 3 + text::width(&state.query).min(room) as u16, r.y)
+        });
         (&top).render(shell.top, buf);
         (&self.foot).render(shell.foot, buf);
         shell.page(look)
@@ -188,8 +207,34 @@ impl<'a> Shell<'a> {
 }
 
 impl ShellState {
-    /// A key the frame answers: Escape closes the drawer.
+    /// Where the terminal's cursor stands while the search is typed in.
+    pub fn cursor_position(&self) -> Option<Position> {
+        self.cursor
+    }
+
+    /// Focus the top bar's search (`/`), where the bar has one.
+    pub fn focus_search(&mut self) -> bool {
+        self.searching = self.search.is_some();
+        self.searching
+    }
+
+    /// A key the frame answers: typed into the search while it has focus (Enter, Escape or Tab
+    /// leave it), Escape closes the drawer.
     pub fn key(&mut self, key: KeyPress) -> ShellEvent {
+        if self.searching {
+            match key.key {
+                Key::Char(c) if !key.ctrl && !key.alt => self.query.push(c),
+                Key::Backspace => {
+                    self.query.pop();
+                }
+                Key::Enter | Key::Escape | Key::Tab | Key::BackTab => {
+                    self.searching = false;
+                    return ShellEvent::Changed;
+                }
+                _ => return ShellEvent::Ignored,
+            }
+            return ShellEvent::Search;
+        }
         if self.drawer && key.is(Key::Escape) {
             self.drawer = false;
             return ShellEvent::Changed;
@@ -240,7 +285,11 @@ impl ShellState {
             return ShellEvent::Account;
         }
         if hit(self.search) {
+            self.searching = true;
             return ShellEvent::Search;
+        }
+        if self.searching {
+            self.searching = false;
         }
         if hit(self.palette) {
             return ShellEvent::Palette;

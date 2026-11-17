@@ -10,6 +10,7 @@
 //!   app gives its parts, its page, its commands and settings, and answers what they do.
 
 use crate::cells::Width;
+use crate::dialog::{Dialog, DialogFocus, DialogWidth};
 use crate::glyphs::Charset;
 use crate::keys::{Key, KeyPress, Pointer, PointerKind};
 use crate::look::{Depth, Look};
@@ -21,13 +22,16 @@ use crate::settings::{
     Setting, SettingsDialog, SettingsEvent, SettingsGroup, SettingsSection, SettingsState, look_chose, look_section,
 };
 use crate::shell::{Shell, ShellEvent, ShellState};
+use crate::shortcuts::{Binding, KeyContext, Keys, ShortcutWords, Shortcuts};
 use crate::status_line::StatusLine;
+use crate::text::TextRole;
 use crate::tokens::{self, Density, Scheme};
 use crate::top_bar::TopBar;
 use ratatui::Frame;
 use ratatui::crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event};
 use ratatui::crossterm::execute;
 use ratatui::layout::Rect;
+use ratatui::widgets::Widget;
 use std::time::{Duration, Instant};
 
 /// One screen the runtime drives.
@@ -182,6 +186,17 @@ pub trait ShellApp {
     fn chose(&mut self, _id: &str, _option: usize) {}
     /// A rail entry was pressed, by (group, entry).
     fn entry(&mut self, _group: usize, _entry: usize) {}
+    /// The app's shortcuts, each answering to a command id ([`ShellApp::command`]). The runtime's
+    /// own come first: Ctrl+K the palette, `?` the shortcuts, `/` the search, `,` the settings.
+    fn shortcuts(&self) -> Vec<Binding<String>> {
+        Vec::new()
+    }
+    /// Whether the reader is typing in one of the page's fields: shortcuts are quiet then.
+    fn typing(&self) -> bool {
+        false
+    }
+    /// The top bar's search holds `query` now.
+    fn search(&mut self, _query: &str) {}
     /// The app's rows in the account menu, and its Sign out or Sign in.
     fn account(&self) -> Account {
         Account::default()
@@ -201,7 +216,26 @@ enum Layer {
     Palette,
     Settings,
     Account,
+    Shortcuts,
 }
+
+/// What a shortcut does: the runtime's own, or the app's command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Act {
+    Palette,
+    Shortcuts,
+    Search,
+    Settings,
+    App(String),
+}
+
+/// The words of the runtime's own shortcuts and the shortcuts dialog.
+const WORDS_PALETTE: &str = "Open the command palette";
+const WORDS_SHORTCUTS: &str = "Keyboard shortcuts";
+const WORDS_SEARCH: &str = "Search";
+const WORDS_SETTINGS: &str = "Settings";
+const WORDS_TAB: &str = "Move focus";
+const WORDS_QUIT: &str = "Quit";
 
 /// What a row of the account menu does.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -209,6 +243,7 @@ enum AccountAct {
     None,
     Settings,
     Appearance,
+    Shortcuts,
     Scheme(Scheme),
     App(String),
 }
@@ -249,6 +284,8 @@ struct Host<A> {
     mouse: bool,
     account: MenuState,
     window: Rect,
+    keys: Shortcuts<Act>,
+    now: u64,
 }
 
 /// Run `app` in sokkel's frame, starting in `look`.
@@ -266,11 +303,68 @@ pub fn run_shell(app: impl ShellApp, look: Look) -> std::io::Result<()> {
         mouse: true,
         account: MenuState::default(),
         window: Rect::default(),
+        keys: Shortcuts::new(),
+        now: 0,
     };
+    host.keys = host.registry();
     run(&mut host)
 }
 
 impl<A: ShellApp> Host<A> {
+    /// The runtime's shortcuts, then the app's.
+    fn registry(&self) -> Shortcuts<Act> {
+        let mut keys = Shortcuts::new()
+            .bind(Binding::new(Keys::Mod('k'), Act::Palette, WORDS_PALETTE).under_layer())
+            .bind(Binding::new(Keys::Char('?'), Act::Shortcuts, WORDS_SHORTCUTS))
+            .bind(Binding::new(Keys::Char('/'), Act::Search, WORDS_SEARCH))
+            .bind(Binding::new(Keys::Char(','), Act::Settings, WORDS_SETTINGS));
+        for b in self.app.shortcuts() {
+            let mut bound = Binding::new(b.keys, Act::App(b.action), b.does);
+            bound.in_field = b.in_field;
+            bound.under_layer = b.under_layer;
+            keys = keys.bind(bound);
+        }
+        keys
+    }
+
+    fn act(&mut self, act: Act) {
+        match act {
+            Act::Palette => self.open(Layer::Palette),
+            Act::Shortcuts => self.open(Layer::Shortcuts),
+            Act::Settings => self.open(Layer::Settings),
+            Act::Search => {
+                if self.shell.focus_search() {
+                    self.app.search(&self.shell.query.clone());
+                } else {
+                    // Below md the search gives way to the palette's button.
+                    self.open(Layer::Palette);
+                }
+            }
+            Act::App(id) => self.app.command(&id),
+        }
+    }
+
+    /// The shortcuts dialog's lines: the keys as written, and what they do.
+    fn shortcut_lines(&self) -> Vec<(String, String)> {
+        let words = ShortcutWords::default();
+        self.keys
+            .bindings()
+            .iter()
+            .map(|b| (b.keys.label(&words), b.does.clone()))
+            .chain([
+                ("Tab".to_string(), WORDS_TAB.to_string()),
+                (Keys::Mod('q').label(&words), WORDS_QUIT.to_string()),
+            ])
+            .collect()
+    }
+
+    fn shortcuts_dialog(&self) -> Dialog<'_> {
+        Dialog::new(&self.look, WORDS_SHORTCUTS)
+            .width(DialogWidth::Sm)
+            .focus(DialogFocus::Close)
+            .window(self.width)
+    }
+
     fn groups(&self) -> Vec<CommandGroup> {
         let look = &self.look;
         let mut groups = self.app.commands();
@@ -365,6 +459,14 @@ impl<A: ShellApp> Host<A> {
             Item::new(words.appearance).icon("◐").into(),
             AccountAct::Appearance,
         );
+        // Not below md, where there is no keyboard to speak of (sokkel-ui's account menu).
+        if self.width != Width::Narrow {
+            push(
+                &mut rows,
+                Item::new(words.shortcuts).icon("⌨").shortcut("?").into(),
+                AccountAct::Shortcuts,
+            );
+        }
         for (id, item) in app.rows {
             push(&mut rows, item.into(), AccountAct::App(id));
         }
@@ -403,6 +505,7 @@ impl<A: ShellApp> Host<A> {
                         }
                     }
                     AccountAct::Appearance => self.open(Layer::Settings),
+                    AccountAct::Shortcuts => self.open(Layer::Shortcuts),
                     AccountAct::Scheme(s) => {
                         self.relook(s, density, &theme);
                         self.layer = Layer::Account;
@@ -515,11 +618,22 @@ impl<A: ShellApp> Program for Host<A> {
     }
 
     fn tick(&mut self, now: u64) {
+        self.now = now;
         self.app.tick(now);
     }
 
     fn key(&mut self, key: KeyPress) -> bool {
         match self.layer {
+            Layer::Palette if key.ctrl && key.key == Key::Char('k') => {
+                self.layer = Layer::None;
+                return false;
+            }
+            Layer::Shortcuts => {
+                if key.is(Key::Escape) || key.is_press() || key.is(Key::Char('?')) {
+                    self.layer = Layer::None;
+                }
+                return false;
+            }
             Layer::Palette => {
                 let mut st = std::mem::take(&mut self.palette);
                 let event = CommandPalette::new(&self.look, self.groups())
@@ -546,25 +660,29 @@ impl<A: ShellApp> Program for Host<A> {
             }
             Layer::None => {}
         }
-        if self.shell.key(key) != ShellEvent::Ignored {
+        match self.shell.key(key) {
+            ShellEvent::Search => {
+                let query = self.shell.query.clone();
+                self.app.search(&query);
+                return false;
+            }
+            ShellEvent::Ignored if !self.shell.searching => {}
+            _ => return false,
+        }
+        let cx = KeyContext {
+            typing: self.app.typing(),
+            under_layer: false,
+            now_ms: self.now,
+        };
+        if let Some(act) = self.keys.handle(key, cx) {
+            self.act(act);
             return false;
         }
-        if key.ctrl && key.key == Key::Char('k') {
-            self.open(Layer::Palette);
+        if self.keys.pending().is_some() {
             return false;
         }
-        match self.app.key(key) {
-            Flow::Quit => true,
-            Flow::Handled => false,
-            Flow::Ignored => match key.key {
-                Key::Char(',') if !key.ctrl => {
-                    self.open(Layer::Settings);
-                    false
-                }
-                // Escape closes the layer on top and never quits (patterns/shell): Ctrl+Q quits.
-                _ => false,
-            },
-        }
+        // Escape closes the layer on top and never quits (patterns/shell): Ctrl+Q quits.
+        self.app.key(key) == Flow::Quit
     }
 
     fn pointer(&mut self, p: Pointer) {
@@ -598,6 +716,11 @@ impl<A: ShellApp> Program for Host<A> {
                 self.settings = st;
                 self.settings_event(event);
             }
+            Layer::Shortcuts => {
+                if p.kind == PointerKind::Press {
+                    self.layer = Layer::None;
+                }
+            }
             Layer::Account => {
                 let Some(anchor) = self.shell.account() else { return };
                 let (rows, acts) = self.account_menu();
@@ -627,7 +750,11 @@ impl<A: ShellApp> Program for Host<A> {
             Layer::None => match self.shell.pointer(p) {
                 ShellEvent::Account => self.open(Layer::Account),
                 ShellEvent::Entry(g, e) => self.app.entry(g, e),
-                ShellEvent::Palette | ShellEvent::Search => self.open(Layer::Palette),
+                ShellEvent::Palette => self.open(Layer::Palette),
+                ShellEvent::Search => {
+                    let query = self.shell.query.clone();
+                    self.app.search(&query);
+                }
                 ShellEvent::Changed => {}
                 ShellEvent::Ignored if self.shell.covers(p.at) => {}
                 ShellEvent::Ignored => self.app.pointer(p),
@@ -639,8 +766,11 @@ impl<A: ShellApp> Program for Host<A> {
         let window = f.area();
         self.width = Width::of(window);
         self.window = window;
-        let active = self.layer == Layer::None;
+        let active = self.layer == Layer::None && !self.shell.searching;
         draw_shell(&mut self.app, &self.look, f, &mut self.shell, active);
+        if let Some(pos) = self.shell.cursor_position() {
+            f.set_cursor_position(pos);
+        }
         self.palette_at = None;
         self.settings_at = None;
         match self.layer {
@@ -667,6 +797,39 @@ impl<A: ShellApp> Program for Host<A> {
                 drop(d);
                 self.settings = st;
                 self.settings_at = Some(r);
+            }
+            Layer::Shortcuts => {
+                let lines = self.shortcut_lines();
+                let d = self.shortcuts_dialog();
+                let area = d.area(window, lines.len() as u16);
+                (&d).render(area, f.buffer_mut());
+                let body = d.layout(area).body;
+                let look = &self.look;
+                let key_style = TextRole::Badge
+                    .style(look)
+                    .fg(look.token("muted-foreground"))
+                    .bg(look.token("muted"));
+                let does_style = TextRole::Body.style(look).fg(look.token("popover-foreground"));
+                let key_w = lines
+                    .iter()
+                    .map(|(k, _)| crate::text::width(k) as u16)
+                    .max()
+                    .unwrap_or(0)
+                    + 2;
+                for (k, (keys, does)) in lines.iter().enumerate() {
+                    let y = body.y + k as u16;
+                    if y >= body.bottom() {
+                        break;
+                    }
+                    f.buffer_mut().set_string(body.x, y, format!(" {keys} "), key_style);
+                    f.buffer_mut().set_stringn(
+                        body.x + key_w + 2,
+                        y,
+                        does,
+                        body.width.saturating_sub(key_w + 2) as usize,
+                        does_style,
+                    );
+                }
             }
             Layer::Account => {
                 if let Some(anchor) = self.shell.account() {

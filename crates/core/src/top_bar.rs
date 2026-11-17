@@ -124,6 +124,11 @@ impl<'a> TopBar<'a> {
         self
     }
 
+    /// Whether it has a search field.
+    pub fn has_search(&self) -> bool {
+        self.search.is_some()
+    }
+
     pub fn focus(mut self, focus: TopBarFocus) -> Self {
         self.focus = focus;
         self
