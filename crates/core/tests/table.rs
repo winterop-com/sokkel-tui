@@ -336,3 +336,24 @@ fn grouped_rows_stand_under_their_groups_heads() {
     );
     assert_eq!(state.row_at(&r, 1), Some(2), "send-digest, second in harbor");
 }
+
+#[test]
+fn a_rows_menu_button_asks_for_its_actions() {
+    use ratatui::layout::Position;
+    use sokkel_tui::{TableEvent, TableHit};
+    let look = look();
+    let (c, r) = (columns(), rows());
+    let table = Table::new(&look, &c, &r).row_actions(true).focused(true);
+    let mut s = TableState::default();
+    let (_, lines) = draw(&table, 80, 9, &mut s);
+    let area = Rect::new(0, 0, 80, 9);
+    let at = table.actions_area(area, &s, 1).expect("in view");
+    assert!(lines[at.y as usize].contains('…'), "{lines:?}");
+    let hit = table.hit(area, Position::new(at.x + 1, at.y), &s);
+    assert_eq!(hit, Some(TableHit::Actions(1)));
+    assert_eq!(
+        table.press(&mut s, hit.unwrap()),
+        TableEvent::Actions(s.row_at(&r, 1).unwrap())
+    );
+    assert_eq!(s.active, 1);
+}

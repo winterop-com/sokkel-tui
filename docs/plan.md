@@ -103,7 +103,8 @@ the contract say so that it does?
   cards below 69 columns of its own box; the bar (a search and the count, the selection bar with
   Clear); the list variant (wider padding, cards as soon as its heads no longer fit); unframed. Groups
   (`TableState::grouped_by`: a head naming each group with its count, in the column heads' role,
-  the groups as they first come, sorted within). Not yet: trees, details, row actions, paging, editing, resizing, reordering, the grid.
+  the groups as they first come, sorted within). Row actions (`row_actions`: a menu button at
+  each row's end, `TableEvent::Actions`, `actions_area` for the app's menu). Not yet: trees, details, row actions, paging, editing, resizing, reordering, the grid.
 - `rail`, `top_bar`, `status_line`, `shell` (step 5): the rail's head, groups, entries (icon,
   label, count, unread dot, the active bar, a description under it, parents folding their
   children under their labels, a status dot in a tone; collapsed, a parent's children in a flyout beside the rail, which

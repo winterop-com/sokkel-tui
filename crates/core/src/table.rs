@@ -291,6 +291,9 @@ pub enum TableEvent {
     Selected,
     /// A row was picked (Enter, or Space where the table does not select): its index among the rows.
     Opened(usize),
+    /// A row's actions were asked for (its menu button pressed): its index among the rows. The
+    /// app opens its menu at [`Table::actions_area`].
+    Actions(usize),
 }
 
 /// One line of the table's body: a group's head (its name and count), or a row by its place.
@@ -531,6 +534,7 @@ pub struct Table<'a> {
     words: TableWords,
     variant: TableVariant,
     framed: bool,
+    row_actions: bool,
     bar: Option<TableBar>,
 }
 
@@ -549,6 +553,7 @@ impl<'a> Table<'a> {
             words: TableWords::default(),
             variant: TableVariant::Table,
             framed: true,
+            row_actions: false,
             bar: None,
         }
     }
@@ -597,6 +602,18 @@ impl<'a> Table<'a> {
     pub fn variant(mut self, variant: TableVariant) -> Self {
         self.variant = variant;
         self
+    }
+
+    /// A menu button at each row's end (`rowActions`): a press on it is [`TableEvent::Actions`],
+    /// where the app opens the row's menu.
+    pub fn row_actions(mut self, on: bool) -> Self {
+        self.row_actions = on;
+        self
+    }
+
+    /// The columns the row actions' button takes at a row's end, and the gap before it.
+    fn actions_w(&self) -> u16 {
+        if self.row_actions { 3 + 1 } else { 0 }
     }
 
     /// In a box of its own (default), or unframed where something else frames it.
@@ -696,7 +713,7 @@ impl<'a> Table<'a> {
         let look = self.look;
         let gap = 2u16;
         let n = self.columns.len() as u16;
-        let room = room.saturating_sub(2 * self.pad() + self.select_w() + gap * n.saturating_sub(1));
+        let room = room.saturating_sub(2 * self.pad() + self.select_w() + self.actions_w() + gap * n.saturating_sub(1));
         let head_w = |c: &Column| text::width(&c.header) as u16 + if c.sortable { 2 } else { 0 };
         let mut w: Vec<u16> = self
             .columns
@@ -827,6 +844,8 @@ pub enum TableHit {
     Search,
     /// The selection bar's Clear.
     Clear,
+    /// A row's menu button, by its place.
+    Actions(usize),
 }
 
 impl TableState {
@@ -899,11 +918,26 @@ impl Table<'_> {
         if place >= n {
             return None;
         }
+        if self.row_actions && at.x + 3 + g.pad > inner.right() {
+            return Some(TableHit::Actions(place));
+        }
         Some(if in_box {
             TableHit::SelectBox(place)
         } else {
             TableHit::Row(place)
         })
+    }
+
+    /// Where a row's menu button stands, for a row at `place` drawn in `area` (its menu opens
+    /// there), while it is in view.
+    pub fn actions_area(&self, area: Rect, state: &TableState, place: usize) -> Option<Rect> {
+        if !self.row_actions || state.stacked {
+            return None;
+        }
+        let g = self.geom(area);
+        let line = state.lines(self.rows).iter().position(|l| *l == BodyLine::Row(place))?;
+        let y = g.body.y + line.checked_sub(state.offset)? as u16;
+        (y < g.body.bottom()).then(|| Rect::new(g.inner.right().saturating_sub(g.pad + 3), y, 3, 1))
     }
 
     /// A press on what [`Table::hit`] found: a row becomes active (and is picked where the table
@@ -946,6 +980,13 @@ impl Table<'_> {
                     _ => Some((c, SortDir::Ascending)),
                 };
                 TableEvent::Sorted
+            }
+            TableHit::Actions(p) => {
+                state.active = p;
+                match state.row_at(self.rows, p) {
+                    Some(r) => TableEvent::Actions(r),
+                    None => TableEvent::Ignored,
+                }
             }
             TableHit::Head(_) | TableHit::Search => TableEvent::Ignored,
             TableHit::Clear => {
@@ -1225,6 +1266,13 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
                 cx += text::width(&s) as u16;
             }
             x += w + 2;
+        }
+        // The row's menu button at its end: quiet, in the row's ink while the row is active.
+        if table.row_actions {
+            let bx = body.right().saturating_sub(geo.pad + 2);
+            let quiet = look.color("muted-foreground");
+            let ink = if k == state.active && table.focused { ink } else { quiet };
+            buf.set_string(bx, y, glyphs.more, Style::new().fg(t(ink)).bg(t(ground)));
         }
     }
 

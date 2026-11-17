@@ -7,7 +7,7 @@
 //!
 //! Keys: Tab moves through the rail, the search, the palette button, the page and the account;
 //! Ctrl+K the palette; ? the shortcuts; / the search (it narrows the runs by job); G then R and G
-//! then J go to a page, Escape back; in the table Up, Down, Home, End, PageUp, PageDown, Space selects. The
+//! then J go to a page, Escape back; `m` (or a press on a row's ⋯) opens a run's actions; in the table Up, Down, Home, End, PageUp, PageDown, Space selects. The
 //! mouse works on every row, button, entry and menu row; the wheel scrolls. Ctrl+Q quits.
 //!
 //! With `--frame` it draws one frame after the keys given (`tab`, `down`, `ctrl-k`, `enter`, a
@@ -144,6 +144,10 @@ struct Runs {
     table: TableState,
     jobs: TableState,
     menu: MenuState,
+    /// A run's actions while open: its row, the menu, and where it opens.
+    row_menu: Option<(usize, MenuState, Rect)>,
+    /// What the last action did, for the status line.
+    said: Option<String>,
     dialog: Option<DialogFocus>,
     busy_since: Option<u64>,
     /// Where the last frame drew what a press can hit.
@@ -163,6 +167,8 @@ impl Runs {
             table: TableState::default(),
             jobs: TableState::default(),
             menu: MenuState::default(),
+            row_menu: None,
+            said: None,
             dialog: None,
             busy_since: None,
             filter_at: None,
@@ -245,6 +251,21 @@ impl Runs {
         }
     }
 
+    /// What a run's action does: here it says so in the status line.
+    fn row_menu_event(&mut self, event: MenuEvent) {
+        let Some((row, _, _)) = self.row_menu else { return };
+        match event {
+            MenuEvent::Closed => self.row_menu = None,
+            MenuEvent::Action(i, _) => {
+                let job = self.shown().get(row).map_or(String::new(), |r| r.job.clone());
+                let verb = ["Retried", "Cancelled", "Opened"].get(i).copied().unwrap_or("");
+                self.said = Some(format!("{verb} {job}"));
+                self.row_menu = None;
+            }
+            _ => {}
+        }
+    }
+
     fn go_to(&mut self, page: Page) {
         self.page = page;
         self.menu = MenuState::default();
@@ -287,7 +308,11 @@ impl ShellApp for Runs {
                     name: "ada".into(),
                 }),
             top: TopBar::new(look).trail(["Tidevann", title]).search(""),
-            foot: StatusLine::new(look).note("Live", NoteTone::Live).live(true).facts([
+            foot: match &self.said {
+                Some(said) => StatusLine::new(look).note(said.clone(), NoteTone::Plain),
+                None => StatusLine::new(look).note("Live", NoteTone::Live).live(true),
+            }
+            .facts([
                 Fact::labeled("host", "api.example.org").code(),
                 Fact::labeled("?", "Shortcuts"),
                 Fact::labeled("Ctrl K", "Commands"),
@@ -348,6 +373,7 @@ impl ShellApp for Runs {
                 let (columns, rows) = (columns(), self.rows());
                 let table = Table::new(look, &columns, &rows)
                     .selectable(true)
+                    .row_actions(true)
                     .focused(focused)
                     .total(rows.len());
                 let hovered = hover
@@ -434,7 +460,7 @@ impl ShellApp for Runs {
     }
 
     fn layer_open(&self) -> bool {
-        self.menu.open || self.dialog.is_some()
+        self.menu.open || self.dialog.is_some() || self.row_menu.is_some()
     }
 
     fn layer_scrim(&self) -> bool {
@@ -443,6 +469,9 @@ impl ShellApp for Runs {
 
     fn layer(&mut self, f: &mut Frame, cx: &mut Cx) {
         let look = cx.look;
+        if let Some((_, st, at)) = &self.row_menu {
+            row_menu(look).render(cx.window, *at, f.buffer_mut(), st);
+        }
         if let (true, Some(anchor)) = (self.menu.open, self.filter_at) {
             self.filter_menu(look)
                 .render(cx.window, anchor, f.buffer_mut(), &self.menu);
@@ -468,6 +497,32 @@ impl ShellApp for Runs {
 
     fn key(&mut self, key: KeyPress, cx: &mut Cx) -> Flow {
         let look = cx.look;
+        if let Some((row, mut st, at)) = self.row_menu.take() {
+            let event = row_menu(look).handle(&mut st, key);
+            self.row_menu = Some((row, st, at));
+            self.row_menu_event(event);
+            return Flow::Handled;
+        }
+        // m on the active run opens its actions, as a press on its menu button does.
+        if key.key == Key::Char('m') && self.page == Page::Runs && cx.focus.is(FocusId::new(TABLE)) {
+            let (c, r) = (columns(), self.rows());
+            let table = Table::new(look, &c, &r).selectable(true).row_actions(true);
+            if let (Some(row), Some(at)) = (
+                self.table.row_at(&r, self.table.active),
+                table.actions_area(self.table_at, &self.table, self.table.active),
+            ) {
+                self.row_menu = Some((
+                    row,
+                    MenuState {
+                        open: true,
+                        highlight: 0,
+                        sub: None,
+                    },
+                    at,
+                ));
+            }
+            return Flow::Handled;
+        }
         let at = |n: &str| FocusId::new(n);
         if let Some(focus) = self.dialog {
             if matches!(key.key, Key::Tab | Key::BackTab | Key::Left | Key::Right) {
@@ -502,7 +557,8 @@ impl ShellApp for Runs {
         if cx.focus.is(at(TABLE)) {
             let event = if self.page == Page::Runs {
                 let (c, r) = (columns(), self.rows());
-                self.table.handle(&Table::new(look, &c, &r).selectable(true), key)
+                self.table
+                    .handle(&Table::new(look, &c, &r).selectable(true).row_actions(true), key)
             } else {
                 let (c, r) = jobs();
                 self.jobs.handle(&Table::new(look, &c, &r), key)
@@ -518,6 +574,12 @@ impl ShellApp for Runs {
 
     fn pointer(&mut self, p: Pointer, cx: &mut Cx) {
         let look = cx.look;
+        if let Some((row, mut st, at)) = self.row_menu.take() {
+            let event = row_menu(look).pointer(&mut st, cx.window, at, p);
+            self.row_menu = Some((row, st, at));
+            self.row_menu_event(event);
+            return;
+        }
         if self.dialog.is_some() {
             if let Some((area, _)) = self.dialog_at.clone() {
                 let event = self
@@ -545,10 +607,21 @@ impl ShellApp for Runs {
                 let by: isize = if p.kind == PointerKind::ScrollUp { -3 } else { 3 };
                 if self.page == Page::Runs {
                     let (c, r) = (columns(), self.rows());
-                    let table = Table::new(look, &c, &r).selectable(true);
+                    let table = Table::new(look, &c, &r).selectable(true).row_actions(true);
                     if p.kind == PointerKind::Press {
-                        if let Some(hit) = table.hit(self.table_at, p.at, &self.table) {
-                            table.press(&mut self.table, hit);
+                        if let Some(hit) = table.hit(self.table_at, p.at, &self.table)
+                            && let TableEvent::Actions(row) = table.press(&mut self.table, hit)
+                            && let Some(at) = table.actions_area(self.table_at, &self.table, self.table.active)
+                        {
+                            self.row_menu = Some((
+                                row,
+                                MenuState {
+                                    open: true,
+                                    highlight: 0,
+                                    sub: None,
+                                },
+                                at,
+                            ));
                         }
                     } else {
                         table.scroll(&mut self.table, by);
@@ -592,6 +665,18 @@ fn entry(label: &str, icon: &str, count: Option<String>, active: bool) -> RailEn
 
 fn count(n: usize) -> String {
     sokkel_tui::table::count(n)
+}
+
+/// A run's actions, from its menu button.
+fn row_menu(look: &Look) -> DropdownMenu<'_> {
+    DropdownMenu::new(
+        look,
+        [
+            Item::new("Retry").icon("↻").into(),
+            Item::new("Cancel run").destructive().into(),
+            Item::new("Open job").into(),
+        ],
+    )
 }
 
 fn columns() -> Vec<Column> {
