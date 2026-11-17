@@ -14,7 +14,7 @@ help:
 	@echo "make fmt           format the workspace"
 	@echo "make check         clippy with warnings denied"
 	@echo "make test          every test"
-	@echo "make specimens     draw the spike's specimens into specimens/ as SVG, PNG and text"
+	@echo "make specimens     draw the spike and the parts sheet into specimens/ as SVG, PNG and text"
 	@echo "make all           fmt-check, check and test"
 	@echo "make clean         remove the build and the specimens"
 
@@ -45,6 +45,12 @@ specimens:
 		cargo run -q -p sokkel-tui-spike -- $$1 $$2 $$3 $$4 specimens/$$1-$$2-$$3 || exit 1; \
 		if command -v rsvg-convert >/dev/null; then rsvg-convert -z 2 specimens/$$1-$$2-$$3.svg -o specimens/$$1-$$2-$$3.png; fi; \
 	done
+	for s in "tidevann dark 120 40" "tidevann dark 80 52" "tidevann light 120 40" "tidevann light 80 52" "terminal dark 120 40"; do \
+		set -- $$s; \
+		cargo run -q -p sokkel-tui-parts -- $$1 $$2 $$3 $$4 specimens/parts-$$1-$$2-$$3 || exit 1; \
+		if command -v rsvg-convert >/dev/null; then rsvg-convert -z 2 specimens/parts-$$1-$$2-$$3.svg -o specimens/parts-$$1-$$2-$$3.png; fi; \
+	done
+	cargo run -q -p sokkel-tui-parts -- tidevann dark 80 52 specimens/parts-ascii-nocolor-80 ascii nocolor
 
 all: fmt-check check test
 

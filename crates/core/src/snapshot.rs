@@ -64,24 +64,30 @@ pub fn svg(buffer: &Buffer, ground: Color, ink: Color) -> String {
         for x in 0..w {
             let cell = &buffer[(x, y)];
             let symbol = cell.symbol();
-            if symbol.trim().is_empty() {
-                continue;
-            }
             let reversed = cell.modifier.contains(Modifier::REVERSED);
             let fg = if reversed {
                 hex(cell.bg).unwrap_or(ground.clone())
             } else {
                 hex(cell.fg).unwrap_or(ink.clone())
             };
+            // An underline runs under every cell it covers, blanks too, as a terminal draws it.
+            if cell.modifier.contains(Modifier::UNDERLINED) {
+                out += &format!(
+                    "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"1\" fill=\"{fg}\"/>",
+                    x as f32 * CELL_W,
+                    y as f32 * CELL_H + BASELINE + 2.0,
+                    CELL_W + 0.4
+                );
+            }
+            if symbol.trim().is_empty() {
+                continue;
+            }
             let mut attrs = String::new();
             if cell.modifier.contains(Modifier::BOLD) {
                 attrs += " font-weight=\"700\"";
             }
             if cell.modifier.contains(Modifier::ITALIC) {
                 attrs += " font-style=\"italic\"";
-            }
-            if cell.modifier.contains(Modifier::UNDERLINED) {
-                attrs += " text-decoration=\"underline\"";
             }
             if cell.modifier.contains(Modifier::DIM) {
                 attrs += " opacity=\"0.6\"";

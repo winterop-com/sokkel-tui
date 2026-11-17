@@ -1286,6 +1286,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sokkel-tui-parts"
+version = "0.1.0"
+dependencies = [
+ "ratatui",
+ "sokkel-tui",
+]
+
+[[package]]
 name = "sokkel-tui-spike"
 version = "0.1.0"
 dependencies = [

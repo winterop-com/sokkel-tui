@@ -13,7 +13,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
 };
 use sokkel_tui::cells::{Width, page_inset};
-use sokkel_tui::{Look, Scheme, TextRole, snapshot};
+use sokkel_tui::{Button, ButtonVariant, Look, Scheme, TextRole, snapshot};
 
 struct RunRow {
     job: &'static str,
@@ -235,27 +235,22 @@ fn draw_page(f: &mut Frame, look: &Look, body: Rect, narrow: bool) {
     let count = TextRole::Help
         .style(look)
         .fg(look.paint("page-header.base.rest.count", "ink", "background"));
-    let button = |variant: &str| {
-        let key = format!("button.{variant}.rest.container");
-        TextRole::Action
-            .style(look)
-            .bg(look.paint(&key, "ground", "background"))
-            .fg(look.paint(&key, "ink", "background"))
-    };
-    let line = spread(
-        vec![
-            Span::styled("Runs", title),
-            Span::raw("  "),
-            Span::styled("1,200 runs", count),
-        ],
-        vec![
-            Span::styled(" Filter ", button("secondary")),
-            Span::raw(" "),
-            Span::styled(" New ", button("default")),
-        ],
-        head.width,
-    );
+    let line = Line::from(vec![
+        Span::styled("Runs", title),
+        Span::raw("  "),
+        Span::styled("1,200 runs", count),
+    ]);
     f.render_widget(Paragraph::new(line), head);
+    // The actions, the primary last, at the header's end. A button's width counts its ring cells.
+    let actions = [
+        Button::new(look, "Filter").variant(ButtonVariant::Secondary),
+        Button::new(look, "New"),
+    ];
+    let mut x = head.right() + 1;
+    for b in actions.iter().rev() {
+        x -= b.width();
+        f.render_widget(b, Rect::new(x, head.y, b.width(), 1));
+    }
     draw_table(f, look, table, narrow);
 }
 

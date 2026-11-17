@@ -11,14 +11,18 @@ parts and the shell), drawn in cells.
 - `crates/core` (`sokkel-tui`): sokkel-design's resolved tokens embedded; the look (theme, scheme,
   density, color depth: truecolor, 256 or none); text roles as a cell shows them; px in columns
   and the breakpoints in columns (`md` about 90, `lg` about 120); a buffer as SVG and as text.
+- The parts, each from its spec in sokkel-design: `Button` and `TextField` so far.
 - `examples/spike`: the shell and the runs table drawn from the paints, static, written to
   `specimens/` as SVG, PNG and text.
+- `examples/parts`: the parts sheet, every part in its variants and states.
+
+![Button and TextField in tidevann dark at 120 columns](docs/assets/parts-tidevann-dark-120.png)
 
 ## Use
 
 ```
 make all          # fmt-check, clippy, tests
-make specimens    # specimens/*.svg, *.png (with rsvg-convert) and *.txt
+make specimens    # the spike and the parts sheet: specimens/*.svg, *.png (with rsvg-convert) and *.txt
 make tokens       # fetch sokkel-design's resolved tokens at the pinned commit (REF=<commit> moves it)
 ```
 

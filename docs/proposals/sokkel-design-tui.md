@@ -58,6 +58,26 @@ show up here first.
 9. **The scrim.** One rule for what is under a layer in cells: drawn faint, or each cell's colors
    flattened under the scrim at run time as the one allowed blend.
 
+## (c2) What building Button and TextField settled
+
+How the first two parts read in cells, for the per-part cell note in point 2:
+
+- **One row.** Every button size and the text field's control are one row. A size keeps its text
+  role (`badge` for `xs` and `sm`, `action` above); padding is one column.
+- **An edge in the pad cells.** A one-row control cannot draw a box, so its edge is a thin bar at
+  each end (`▏Filter▕`, `|` in ASCII), in the paint's edge color, where the edge is not transparent.
+- **The focus ring outside, in a reserved cell.** A focused button draws `┃` in the cell outside
+  each end: half a cell off the box, as `focus-ring-offset` keeps the outline off it, and visible
+  where the ring and the ground are one color (tidevann dark's default button). The width counts
+  those cells, so focus never moves anything. Without color, focus is reversed.
+- **The issue mark** takes three columns inside the control's end (`density.control-sm` is about
+  three columns); its focus ring hugs the glyph. The critical and warning glyphs differ in shape, not
+  only ink (`✖` and `▲`, `x` and `!` in ASCII).
+- **Disabled.** `disabled-opacity` laid over the surface, as the flattening stand-in does. Without
+  color, the faint attribute is the one cue left; the opaque disabled paints of point 1 would
+  replace both.
+- **A paint's ink of `inherit`** is the ink of the surface the part says it stands on (`on`).
+
 ## (d) Where it lives
 
 The proposals land in sokkel-design, as egui's did. sokkel-tui embeds the resolved file at a pinned

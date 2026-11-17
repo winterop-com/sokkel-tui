@@ -11,6 +11,7 @@
 //! - **Fewer colors.** For a terminal without truecolor, [`Depth::Ansi256`] picks the nearest of
 //!   xterm's 256. The contract's ANSI map would replace it.
 
+use crate::glyphs::{Charset, Glyphs};
 use crate::tokens::{Density, Scheme, resolved};
 use ratatui::style::Color;
 use ratatui::widgets::BorderType;
@@ -75,6 +76,7 @@ pub struct Look {
     scheme: Scheme,
     density: Density,
     depth: Depth,
+    charset: Charset,
     tokens: &'static Value,
     paints: &'static Value,
 }
@@ -90,6 +92,7 @@ impl Look {
             scheme,
             density: Density::default(),
             depth: Depth::TrueColor,
+            charset: Charset::Unicode,
             tokens,
             paints,
         })
@@ -163,7 +166,7 @@ impl Look {
 
     /// A paint field drawn over another paint's ground (a row over its table's frame).
     pub fn paint_over(&self, key: &str, field: &str, over_key: &str, over_field: &str) -> Color {
-        let under = self.surface(self.paint_hex(over_key, over_field));
+        let under = self.opaque(self.paint_hex(over_key, over_field));
         self.terminal(flat(self.parse(self.paint_hex(key, field)), under))
     }
 
@@ -171,13 +174,13 @@ impl Look {
     pub fn surface_of(&self, key: &str, field: &str, over: &str) -> Rgba {
         flat(
             self.parse(self.paint_hex(key, field)),
-            self.surface(self.color_hex(over)),
+            self.opaque(self.color_hex(over)),
         )
     }
 
     /// Draw `hex` over `under`, both written as the resolved file writes colors.
     pub fn draw(&self, hex: &str, under: &str) -> Color {
-        self.terminal(flat(self.parse(hex), self.surface(under)))
+        self.terminal(flat(self.parse(hex), self.opaque(under)))
     }
 
     /// An opaque color in the terminal's depth.
@@ -208,6 +211,26 @@ impl Look {
         &self.tokens["text"][role]
     }
 
+    /// A box's lines and corners: the radius ladder as one bit, rounded or square, in the look's
+    /// character set (`+`, `-` and `|` in ASCII).
+    pub fn border_set(&self, role: &str) -> ratatui::symbols::border::Set<'static> {
+        use ratatui::symbols::border;
+        match (self.charset, self.corners(role)) {
+            (Charset::Ascii, _) => border::Set {
+                top_left: "+",
+                top_right: "+",
+                bottom_left: "+",
+                bottom_right: "+",
+                vertical_left: "|",
+                vertical_right: "|",
+                horizontal_top: "-",
+                horizontal_bottom: "-",
+            },
+            (Charset::Unicode, BorderType::Rounded) => border::ROUNDED,
+            (Charset::Unicode, _) => border::PLAIN,
+        }
+    }
+
     /// Corners in cells: the radius ladder is one bit, rounded or square.
     pub fn corners(&self, role: &str) -> BorderType {
         if self.length(role) > 0.0 {
@@ -217,18 +240,100 @@ impl Look {
         }
     }
 
+    /// A color token as a surface other colors lie on (`background`, `card`, `popover`, `sidebar`).
+    pub fn surface(&self, name: &str) -> Rgba {
+        self.opaque(self.color_hex(name))
+    }
+
+    /// A color token laid over a surface.
+    pub fn color_on(&self, name: &str, under: Rgba) -> Rgba {
+        flat(self.parse(self.color_hex(name)), under)
+    }
+
+    /// A paint field laid over a surface. `None` where the contract writes no color there
+    /// (`inherit`, or a field the paint lacks).
+    pub fn paint_on(&self, key: &str, field: &str, under: Rgba) -> Option<Rgba> {
+        if !self.has_paint(key, field) {
+            return None;
+        }
+        Rgba::parse(self.paint_hex(key, field)).map(|c| flat(c, under))
+    }
+
+    /// The color of a paint's `ring` or `outline` (`{color, width, offset}`), laid over a surface.
+    pub fn paint_ring_on(&self, key: &str, field: &str, under: Rgba) -> Option<Rgba> {
+        let hex = self.paints.get(key)?.get(field)?.get("color")?.as_str()?;
+        Rgba::parse(hex).map(|c| flat(c, under))
+    }
+
+    /// Whether a paint field is drawn at all: present, a color, and not fully transparent.
+    pub fn paint_shows(&self, key: &str, field: &str) -> bool {
+        self.has_paint(key, field) && Rgba::parse(self.paint_hex(key, field)).is_some_and(|c| c.3 > 0)
+    }
+
+    /// A color as a disabled control shows it: laid over its surface at `disabled-opacity`.
+    /// A stand-in, as [`flat`] is, until the resolver writes disabled paints opaque.
+    pub fn faded(&self, color: Rgba, under: Rgba) -> Rgba {
+        let a = (self.number("disabled-opacity") * 255.0).round() as u8;
+        flat(Rgba(color.0, color.1, color.2, a), under)
+    }
+
+    /// A number token (`disabled-opacity`).
+    pub fn number(&self, name: &str) -> f64 {
+        self.tokens["numbers"][name]
+            .as_f64()
+            .unwrap_or_else(|| panic!("the contract has no number {name}"))
+    }
+
+    /// A duration token in milliseconds (`motion-fast`, `busy-release`, `tip-hold`).
+    pub fn duration_ms(&self, name: &str) -> u64 {
+        self.tokens["durations"][name]
+            .as_u64()
+            .unwrap_or_else(|| panic!("the contract has no duration {name}"))
+    }
+
+    /// The glyphs this look draws with.
+    pub fn glyphs(&self) -> &'static Glyphs {
+        self.charset.glyphs()
+    }
+
+    pub fn charset(&self) -> Charset {
+        self.charset
+    }
+
+    pub fn with_charset(mut self, charset: Charset) -> Look {
+        self.charset = charset;
+        self
+    }
+
+    /// The spinner frame to draw after `elapsed_ms` of busy: one frame per `motion-fast`.
+    pub fn spinner_frame(&self, elapsed_ms: u64) -> &'static str {
+        let frames = self.glyphs().spinner;
+        frames[((elapsed_ms / self.duration_ms("motion-fast").max(1)) as usize) % frames.len()]
+    }
+
     fn parse(&self, hex: &str) -> Rgba {
         Rgba::parse(hex).unwrap_or_else(|| panic!("not a resolved color: {hex}"))
     }
 
     /// A surface is opaque by the time anything lies on it; a translucent one lies on `background`.
-    fn surface(&self, hex: &str) -> Rgba {
+    fn opaque(&self, hex: &str) -> Rgba {
         let c = self.parse(hex);
         if c.is_opaque() {
             c
         } else {
             flat(c, self.parse(self.color_hex("background")))
         }
+    }
+}
+
+/// The ink of what a piece stands on, for a paint whose ink is `inherit`: `foreground` on the
+/// page, `popover-foreground` in a popup, `sidebar-foreground` on the rail.
+pub fn ink_on(surface: &str) -> &'static str {
+    match surface {
+        "card" => "card-foreground",
+        "popover" => "popover-foreground",
+        "sidebar" => "sidebar-foreground",
+        _ => "foreground",
     }
 }
 
