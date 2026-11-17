@@ -349,3 +349,31 @@ fn fields_in_a_row_share_their_description_rows() {
     let lines: Vec<String> = snapshot::text(&buf).lines().map(String::from).collect();
     assert!(lines[3].starts_with("▏0"), "the control on the fourth row: {lines:?}");
 }
+
+#[test]
+fn a_button_group_shares_its_dividers_and_rings_on_them() {
+    use sokkel_tui::{ButtonGroup, ButtonVariant};
+    let look = look();
+    let words = ["Today", "Week", "Ever"];
+    let group = |focus: usize| {
+        ButtonGroup::new(
+            &look,
+            words.iter().enumerate().map(|(k, w)| {
+                Button::new(&look, *w)
+                    .variant(ButtonVariant::Outline)
+                    .focused(k == focus)
+            }),
+        )
+    };
+    let g = group(9);
+    assert_eq!(g.width(), 7 + 6 + 6 - 2, "two shared cells");
+    let mut buf = Buffer::empty(Rect::new(0, 0, 21, 1));
+    ratatui::widgets::Widget::render(&g, Rect::new(1, 0, 19, 1), &mut buf);
+    assert_eq!(snapshot::text(&buf).trim_end(), " ▏Today│Week│Ever▕");
+    // The middle one focused: its ring on its own dividers, the neighbors' words untouched.
+    let mut buf = Buffer::empty(Rect::new(0, 0, 21, 1));
+    ratatui::widgets::Widget::render(&group(1), Rect::new(1, 0, 19, 1), &mut buf);
+    assert_eq!(snapshot::text(&buf).trim_end(), " ▏Today┃Week┃Ever▕");
+    let areas = group(9).areas(Rect::new(1, 0, 19, 1));
+    assert_eq!(areas[1], Rect::new(7, 0, 6, 1));
+}

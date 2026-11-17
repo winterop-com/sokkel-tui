@@ -21,8 +21,8 @@ use ratatui::{
     text::{Line, Span},
 };
 use sokkel_tui::{
-    Button, ButtonSize, ButtonVariant, Charset, Depth, FieldFocus, FieldState, IconPlace, Issue, Look, RequiredMark,
-    Scheme, TextField, TextRole, snapshot,
+    Button, ButtonGroup, ButtonSize, ButtonVariant, Charset, Depth, FieldFocus, FieldState, IconPlace, Issue, Look,
+    RequiredMark, Scheme, TextField, TextRole, snapshot,
 };
 
 mod overlays;
@@ -161,6 +161,31 @@ fn draw_controls(f: &mut Frame, look: &Look) {
     }
     y += 4;
 
+    // Buttons in a group: touching, one divider between neighbors.
+    let mut x = x0;
+    for (name, variant, focus) in [
+        ("group", ButtonVariant::Outline, None),
+        ("focus", ButtonVariant::Outline, Some(1)),
+        ("secondary", ButtonVariant::Secondary, None),
+    ] {
+        let group = ButtonGroup::new(
+            look,
+            ["Today", "Week", "Ever"]
+                .iter()
+                .enumerate()
+                .map(|(k, w)| Button::new(look, *w).variant(variant).focused(focus == Some(k))),
+        );
+        let w = group.width();
+        if x + w + 1 > area.right() {
+            x = x0;
+            y += 3;
+        }
+        f.buffer_mut().set_string(x + 1, y, name, quiet(look));
+        f.render_widget(&group, Rect::new(x + 1, y + 1, w, 1));
+        x += w + 3;
+    }
+    y += 4;
+
     // Text fields, in two columns where there is room.
     heading(f, look, x0, y, "TextField");
     y += 2;
@@ -265,7 +290,7 @@ fn draw_controls(f: &mut Frame, look: &Look) {
 
 /// The sheets, and the rows each takes at a wide and at a narrow width.
 const SHEETS: [(&str, u16, u16); 5] = [
-    ("controls", 44, 66),
+    ("controls", 48, 70),
     ("page", 84, 120),
     ("table", 90, 90),
     ("overlays", 56, 90),

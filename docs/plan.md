@@ -35,6 +35,8 @@ the contract say so that it does?
   icon buttons with `pressed`, `destructiveHover`, an icon at either end. One row at every size; the
   edge in the pad cells; the focus ring in the cell beside each end; the tip for the status line.
   Disabled in its `faded` paint; a transparent ground draws none, keeping the cell's own.
+  `ButtonGroup` (`inGroup`): the buttons touch, one divider in the cell two neighbors share (the
+  squared inner corners), the focus ring on the focused button's own dividers.
 - `text_field` (step 1): the frame (label, required star or word, hint or key hint, description,
   control, help, fallback), the issue mark in the control's end with critical and warning tones,
   its popover drawn last, editing with a cursor that scrolls the value, wide glyphs measured, read

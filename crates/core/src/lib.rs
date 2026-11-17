@@ -49,7 +49,7 @@ pub mod text_field;
 pub mod tokens;
 pub mod top_bar;
 
-pub use button::{Button, ButtonSize, ButtonVariant, IconPlace, Tip};
+pub use button::{Button, ButtonGroup, ButtonSize, ButtonVariant, IconPlace, Tip};
 pub use dialog::{Confirm, Dialog, DialogEvent, DialogFocus, DialogLayout, DialogWidth, DialogWords};
 pub use focus::{Focus, FocusId, InputKind};
 pub use glyphs::Charset;

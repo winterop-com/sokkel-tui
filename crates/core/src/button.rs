@@ -457,3 +457,95 @@ impl Widget for &Button<'_> {
         }
     }
 }
+
+/// Buttons in a group (`inGroup`): they touch, the group squaring their inner corners, so one
+/// divider stands between two neighbors, in the cell they share. Keyboard focus draws its ring on
+/// the focused button's own dividers (the cells beside it at the group's ends), never on a
+/// neighbor's words.
+#[derive(Debug, Clone)]
+pub struct ButtonGroup<'a> {
+    look: &'a Look,
+    buttons: Vec<Button<'a>>,
+}
+
+impl<'a> ButtonGroup<'a> {
+    pub fn new(look: &'a Look, buttons: impl IntoIterator<Item = Button<'a>>) -> ButtonGroup<'a> {
+        ButtonGroup {
+            look,
+            buttons: buttons.into_iter().collect(),
+        }
+    }
+
+    /// Its width: the buttons' widths, less the cell each two neighbors share.
+    pub fn width(&self) -> u16 {
+        let sum: u16 = self.buttons.iter().map(Button::width).sum();
+        sum.saturating_sub(self.buttons.len().saturating_sub(1) as u16)
+    }
+
+    /// Where each button stands in a group drawn at `area`, for the pointer.
+    pub fn areas(&self, area: Rect) -> Vec<Rect> {
+        let mut x = area.x;
+        self.buttons
+            .iter()
+            .map(|b| {
+                let r = Rect::new(x, area.y, b.width(), 1).intersection(area);
+                x += b.width().saturating_sub(1);
+                r
+            })
+            .collect()
+    }
+}
+
+impl Widget for &ButtonGroup<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let area = area.intersection(buf.area);
+        if area.height == 0 || self.buttons.is_empty() {
+            return;
+        }
+        let look = self.look;
+        let glyphs = look.glyphs();
+        let bare = look.depth() == Depth::None;
+        let t = |c: Rgba| look.terminal(c);
+        let areas = self.areas(area);
+        let mut focused = None;
+        for (k, (b, r)) in self.buttons.iter().zip(&areas).enumerate() {
+            let mut b = b.clone();
+            if b.focused && !bare {
+                focused = Some((k, b.variant_key()));
+                b.focused = false;
+            }
+            (&b).render(*r, buf);
+        }
+        // The dividers, in the cells neighbors share: the first one's edge, or the border.
+        let page = look.color("background");
+        let line = self.buttons[0].colors().2.unwrap_or_else(|| look.color("border"));
+        for r in areas.iter().skip(1) {
+            buf[(r.x, r.y)]
+                .set_symbol(look.box_glyphs("radius-control").down)
+                .set_style(Style::new().fg(t(line)).bg(t(page)));
+        }
+        if let Some((k, variant)) = focused {
+            let ring = look
+                .ring(&format!("button.{variant}.focus.container"), "outline")
+                .unwrap_or_else(|| look.color("ring"));
+            let r = areas[k];
+            let y = r.y;
+            let start = if k == 0 {
+                r.x.checked_sub(1).filter(|x| *x >= buf.area.x)
+            } else {
+                Some(r.x)
+            };
+            let end = if k + 1 == areas.len() {
+                Some(r.right()).filter(|x| *x < buf.area.right())
+            } else {
+                Some(r.right() - 1)
+            };
+            if let Some(x) = start {
+                buf[(x, y)].set_symbol(glyphs.ring_start).set_fg(t(ring));
+            }
+            if let Some(x) = end {
+                buf[(x, y)].set_symbol(glyphs.ring_end).set_fg(t(ring));
+            }
+        }
+    }
+}
