@@ -89,7 +89,9 @@ until then this crate reads the resolved JSON directly.
 
 1. **Hover.** Mouse motion is reported only when asked for, and many readers never move a mouse in a
    terminal. Hover paints are kept but nothing may rely on them.
-2. **Keyboard-only focus.** Focus is shown on any focus; the keyboard is the main input.
+2. **Keyboard-only focus.** Kept as the spec has it: the ring shows on keyboard focus, and a press
+   of the pointer (where the terminal reports one) focuses without it. The keyboard is the main
+   input, so the ring shows almost always.
 3. **Motion.** Spinners and durations work (frames on `motion-fast` and `motion-base`); transitions
    between layouts do not.
 4. **Scheme detection.** The terminal's background is asked for (OSC 11), never assumed; a terminal

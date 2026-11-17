@@ -37,6 +37,12 @@ the contract say so that it does?
   control, help, fallback), the issue mark in the control's end with critical and warning tones,
   its popover drawn last, editing with a cursor that scrolls the value, wide glyphs measured, read
   only and disabled. Not yet: multiline, `inRow`, the proposed busy state.
+- `focus` (step 2): stops named each frame in tab order, Tab and Shift+Tab round the top layer, a
+  layer that keeps Tab inside and gives focus back on close, a press of the pointer focusing the
+  stop under it, the ring on keyboard focus only, and whether the reader is typing.
+- `shortcuts` (step 2): a registry of typed characters, Mod (Ctrl) chords and two-key sequences
+  (the second within a second), quiet in a field and under a layer unless the binding asks; never
+  an Alt chord; labels in words that are fields (`Ctrl K`, `G then R`).
 - `examples/spike`: the shell and the table drawn by hand from the paints, in every theme and
   scheme, below and above the md line; its page header's buttons come from the core.
 - `examples/parts`: the parts sheet, every part in its variants and states, in color, in ASCII and
@@ -50,7 +56,7 @@ then drawn by the spike in place of its hand-drawn copy.
 | Step | Parts | Notes |
 |---|---|---|
 | 1 | Button, TextField (built) | Every other part uses them. Busy keeps its label with a spinner in the icon's place; a disabled button with a reason stays focusable and says the reason in the status line; a field's issue mark sits at its control's end |
-| 2 | Focus and keys | Tab order, the last input kind, a shortcuts registry matching typed characters, quiet in a field and under an overlay; Mod as Ctrl |
+| 2 | Focus and keys (built) | Tab order, the last input kind, a shortcuts registry matching typed characters, quiet in a field and under an overlay; Mod as Ctrl |
 | 3 | PageState, PageHeader, Section | Loading, failed (headed by what the server answered), empty, the content |
 | 4 | Table | The one table: head, sort by keys, selection, tones, the quiet dash, the foot's range, drawing only the visible rows, cards below its own stack width |
 | 5 | Shell: Rail, TopBar, StatusLine | The drawer below about 90 columns, the trail in the top bar only, the account level with the foot |
