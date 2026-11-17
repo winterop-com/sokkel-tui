@@ -10,6 +10,8 @@ use ratatui::layout::Rect;
 
 /// The px a column stands for, for the readings below.
 pub const PX_PER_COL: f64 = 8.4;
+/// The px a row stands for: one line of 14 px text.
+pub const PX_PER_ROW: f64 = 18.0;
 
 /// Below this many columns the window is drawn as a phone draws it: `breakpoint-md` (768).
 pub const MD_COLS: u16 = 90;
@@ -49,6 +51,11 @@ pub fn cols(px: f64) -> u16 {
     } else {
         ((px / PX_PER_COL).round() as u16).max(1)
     }
+}
+
+/// A vertical px length in whole rows: a gap of 12 or more is a blank row, a smaller one none.
+pub fn rows(px: f64) -> u16 {
+    (px / PX_PER_ROW).round().max(0.0) as u16
 }
 
 /// The page's side inset: `density.page-inset-wide` when the content box is 640 px wide or more,

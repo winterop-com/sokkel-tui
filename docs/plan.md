@@ -43,10 +43,17 @@ the contract say so that it does?
 - `shortcuts` (step 2): a registry of typed characters, Mod (Ctrl) chords and two-key sequences
   (the second within a second), quiet in a field and under a layer unless the binding asks; never
   an Alt chord; labels in words that are fields (`Ctrl K`, `G then R`).
+- `page_state` (step 3): loading, failed (headed by what the server answered, the diagnostic with
+  its code parts on a chip, the problems, Try again), empty; framed or not; critical or warning.
+- `page_header` (step 3): title or code, count, code, description, meta, a back button, the trail
+  outside a shell, actions beside the title's foot or wrapped under it, items folding into More
+  from the last with the primary kept, laid out by its own width.
+- `section` (step 3): boxed with its head over a joined rule, or flat; meta, description, actions;
+  the critical and graph tones; `flush`. Not yet: `fill` (a body that scrolls).
 - `examples/spike`: the shell and the table drawn by hand from the paints, in every theme and
   scheme, below and above the md line; its page header's buttons come from the core.
-- `examples/parts`: the parts sheet, every part in its variants and states, in color, in ASCII and
-  without color.
+- `examples/parts`: the parts sheets (`controls`, `page`), every part in its variants and states, in
+  color, in ASCII and without color.
 
 ## What comes next, in order
 
@@ -57,7 +64,7 @@ then drawn by the spike in place of its hand-drawn copy.
 |---|---|---|
 | 1 | Button, TextField (built) | Every other part uses them. Busy keeps its label with a spinner in the icon's place; a disabled button with a reason stays focusable and says the reason in the status line; a field's issue mark sits at its control's end |
 | 2 | Focus and keys (built) | Tab order, the last input kind, a shortcuts registry matching typed characters, quiet in a field and under an overlay; Mod as Ctrl |
-| 3 | PageState, PageHeader, Section | Loading, failed (headed by what the server answered), empty, the content |
+| 3 | PageState, PageHeader, Section (built) | Loading, failed (headed by what the server answered), empty, the content |
 | 4 | Table | The one table: head, sort by keys, selection, tones, the quiet dash, the foot's range, drawing only the visible rows, cards below its own stack width |
 | 5 | Shell: Rail, TopBar, StatusLine | The drawer below about 90 columns, the trail in the top bar only, the account level with the foot |
 | 6 | Overlays: Dialog, CommandPalette, Select, DropdownMenu, SettingsDialog | A back stack for settings; focus returned on close; the palette on Ctrl+K, busy release after `busy-release` |

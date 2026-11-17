@@ -136,3 +136,64 @@ pub fn wrap(s: &str, max: usize) -> Vec<String> {
     }
     lines
 }
+
+/// One piece of a line that may hold code: the words and whether they are code.
+pub type Piece = (String, bool);
+
+/// `s` in lines of at most `max` cells, its backticked parts kept whole as code (a written
+/// diagnostic's `0 2 * * *`), broken between words elsewhere.
+pub fn wrap_code(s: &str, max: usize) -> Vec<Vec<Piece>> {
+    let max = max.max(1);
+    // Atoms: a word, or a code part kept whole; `joined` when no space stood before it.
+    let mut atoms: Vec<(String, bool, bool)> = Vec::new();
+    for (i, seg) in s.split('`').enumerate() {
+        let code = i % 2 == 1;
+        if code {
+            if !seg.is_empty() {
+                let joined = !atoms.is_empty() && !s.split('`').nth(i - 1).unwrap_or("").ends_with(' ');
+                atoms.push((seg.to_string(), true, joined));
+            }
+            continue;
+        }
+        let mut first = true;
+        for w in seg.split(' ') {
+            if w.is_empty() {
+                first = false;
+                continue;
+            }
+            let joined = first && !atoms.is_empty();
+            atoms.push((w.to_string(), false, joined));
+            first = false;
+        }
+    }
+    let mut lines: Vec<Vec<Piece>> = Vec::new();
+    let mut line: Vec<Piece> = Vec::new();
+    let mut used = 0;
+    for (words, code, joined) in atoms {
+        let w = width(&words);
+        let sep = usize::from(used > 0 && !joined);
+        if used > 0 && used + sep + w > max {
+            // An atom joined to the one before it (a period after code) takes that one along.
+            let mut carry = Vec::new();
+            if joined && line.len() > 1 {
+                carry.push(line.pop().unwrap_or_default());
+                if line.last().is_some_and(|(s, c)| !c && s == " ") {
+                    line.pop();
+                }
+            }
+            lines.push(std::mem::take(&mut line));
+            used = carry.iter().map(|(s, _)| width(s)).sum();
+            line = carry;
+        }
+        if used > 0 && !joined {
+            line.push((" ".into(), false));
+            used += 1;
+        }
+        used += w;
+        line.push((words, code));
+    }
+    if !line.is_empty() || lines.is_empty() {
+        lines.push(line);
+    }
+    lines
+}

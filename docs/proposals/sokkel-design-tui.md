@@ -78,6 +78,20 @@ How the first two parts read in cells, for the per-part cell note in point 2:
   replace both.
 - **A paint's ink of `inherit`** is the ink of the surface the part says it stands on (`on`).
 
+And from PageState, PageHeader and Section:
+
+- **Rows from px.** A vertical gap of 12 or more is a blank row, a smaller one none (`cells::rows`,
+  18 px a row). So the page state's pieces 12 apart are a row apart and its lines 4 apart are not;
+  a section's body padding is a row at regular density and none at compact.
+- **A boxed section's head rule** takes a row of its own, joined to the box's sides (`├──┤`); a
+  critical box draws its top line heavy in `critical`.
+- **A missing paint.** `page-state`'s warning tone (`warning/8` ground, `warning/35` edge) has no
+  resolved paint for its frame: `page-state.base.failed.frame` is the only failed frame. sokkel-tui
+  draws a warning in the failed frame, its triangle and heading saying the tone. The resolver could
+  add `page-state.base.failedWarning.frame` (and the mark's `warning-ink`), as the other tones are.
+- **A page header's widths** read 512 px as 61 columns, 256 as 30 and 128 as 15, measured on the
+  header's own width; the block's own width is its widest line, the description at most 65.
+
 ## (d) Where it lives
 
 The proposals land in sokkel-design, as egui's did. sokkel-tui embeds the resolved file at a pinned

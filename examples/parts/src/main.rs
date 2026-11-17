@@ -1,7 +1,9 @@
 //! The parts sheet: every part the core holds, in its variants and states, drawn from the library
 //! alone and written out as SVG and text, cell for cell.
 //!
-//! Usage: sokkel-tui-parts <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]
+//! Usage: sokkel-tui-parts <controls|page> <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]
+//!
+//! `controls` is Button and TextField; `page` is PageState, PageHeader and Section.
 
 use ratatui::{
     Frame, Terminal,
@@ -14,6 +16,8 @@ use sokkel_tui::{
     Button, ButtonSize, ButtonVariant, Charset, Depth, FieldFocus, FieldState, IconPlace, Issue, Look, RequiredMark,
     Scheme, TextField, TextRole, snapshot,
 };
+
+mod page;
 
 const STATES: [&str; 7] = ["rest", "focus", "hover", "busy", "reason", "invalid", "open"];
 
@@ -43,7 +47,7 @@ fn quiet(look: &Look) -> Style {
         .fg(look.color("muted-foreground", "background"))
 }
 
-fn draw(f: &mut Frame, look: &Look) {
+fn draw_controls(f: &mut Frame, look: &Look) {
     let area = f.area();
     f.buffer_mut().set_style(
         area,
@@ -232,31 +236,36 @@ fn draw(f: &mut Frame, look: &Look) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() < 6 {
+    if args.len() < 7 {
         eprintln!(
-            "usage: sokkel-tui-parts <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]"
+            "usage: sokkel-tui-parts <controls|page> <theme> <light|dark> <cols> <rows> <out-without-extension> [ascii] [nocolor]"
         );
         std::process::exit(2);
     }
-    let scheme = if args[2] == "light" {
+    let sheet = args[1].as_str();
+    let scheme = if args[3] == "light" {
         Scheme::Light
     } else {
         Scheme::Dark
     };
-    let mut look = Look::new(&args[1], scheme).unwrap_or_else(|| panic!("the contract has no theme {}", args[1]));
-    if args[6..].iter().any(|a| a == "ascii") {
+    let mut look = Look::new(&args[2], scheme).unwrap_or_else(|| panic!("the contract has no theme {}", args[2]));
+    if args[7..].iter().any(|a| a == "ascii") {
         look = look.with_charset(Charset::Ascii);
     }
-    if args[6..].iter().any(|a| a == "nocolor") {
+    if args[7..].iter().any(|a| a == "nocolor") {
         look = look.with_depth(Depth::None);
     }
-    let (cols, rows): (u16, u16) = (args[3].parse().unwrap(), args[4].parse().unwrap());
+    let (cols, rows): (u16, u16) = (args[4].parse().unwrap(), args[5].parse().unwrap());
     let mut term = Terminal::new(TestBackend::new(cols, rows)).unwrap();
-    term.draw(|f| draw(f, &look)).unwrap();
+    term.draw(|f| match sheet {
+        "page" => page::draw(f, &look),
+        _ => draw_controls(f, &look),
+    })
+    .unwrap();
     let buffer = term.backend().buffer();
-    let plain = Look::new(&args[1], scheme).unwrap();
+    let plain = Look::new(&args[2], scheme).unwrap();
     let ground = plain.color("background", "background");
     let ink = plain.color("foreground", "background");
-    std::fs::write(format!("{}.svg", args[5]), snapshot::svg(buffer, ground, ink)).unwrap();
-    std::fs::write(format!("{}.txt", args[5]), snapshot::text(buffer)).unwrap();
+    std::fs::write(format!("{}.svg", args[6]), snapshot::svg(buffer, ground, ink)).unwrap();
+    std::fs::write(format!("{}.txt", args[6]), snapshot::text(buffer)).unwrap();
 }

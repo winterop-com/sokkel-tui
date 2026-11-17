@@ -57,6 +57,20 @@ pub struct Glyphs {
     pub required: &'static str,
     /// Where words are cut short.
     pub ellipsis: &'static str,
+    /// Before each item of a list.
+    pub bullet: &'static str,
+    /// Try again's turning arrow.
+    pub retry: &'static str,
+    /// The back button's chevron.
+    pub back: &'static str,
+    /// More: the button that holds what did not fit.
+    pub more: &'static str,
+    /// After each crumb of a trail.
+    pub chevron: &'static str,
+    /// One dot of a graph's dot grid.
+    pub dot: &'static str,
+    /// A box's top rule, drawn heavy for a critical tone.
+    pub heavy_rule: &'static str,
 }
 
 pub static UNICODE: Glyphs = Glyphs {
@@ -71,6 +85,13 @@ pub static UNICODE: Glyphs = Glyphs {
     issue_warning: "▲",
     required: "*",
     ellipsis: "…",
+    bullet: "•",
+    retry: "↻",
+    back: "‹",
+    more: "⋯",
+    chevron: "›",
+    dot: "·",
+    heavy_rule: "━",
 };
 
 pub static ASCII: Glyphs = Glyphs {
@@ -85,4 +106,11 @@ pub static ASCII: Glyphs = Glyphs {
     issue_warning: "!",
     required: "*",
     ellipsis: "~",
+    bullet: "-",
+    retry: "",
+    back: "<",
+    more: ":",
+    chevron: ">",
+    dot: ".",
+    heavy_rule: "=",
 };

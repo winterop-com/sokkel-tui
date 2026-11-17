@@ -15,6 +15,9 @@
 //! The parts, each from its spec in sokkel-design's `parts/` (`docs/plan.md`):
 //! - [`button`]: [`Button`], with words, an icon and words, or an icon alone.
 //! - [`text_field`]: [`TextField`], the field frame around a one-line input.
+//! - [`page_state`]: [`PageState`], a read that is loading, failed or empty.
+//! - [`page_header`]: [`PageHeader`], a page's head.
+//! - [`section`]: [`Section`], a titled part of a page.
 
 pub mod button;
 pub mod cells;
@@ -22,6 +25,9 @@ pub mod focus;
 pub mod glyphs;
 pub mod keys;
 pub mod look;
+pub mod page_header;
+pub mod page_state;
+pub mod section;
 pub mod shortcuts;
 pub mod snapshot;
 pub mod text;
@@ -33,6 +39,9 @@ pub use focus::{Focus, FocusId, InputKind};
 pub use glyphs::Charset;
 pub use keys::{Key, KeyPress};
 pub use look::{Depth, Look, Rgba};
+pub use page_header::{HeaderLayout, PageHeader, PageHeaderWords};
+pub use page_state::{Outcome, PageState, PageStateWords, StateTone};
+pub use section::{Section, SectionTone, SectionVariant};
 pub use shortcuts::{Binding, KeyContext, Keys, ShortcutWords, Shortcuts};
 pub use text::TextRole;
 pub use text_field::{FieldEvent, FieldFocus, FieldState, FieldWords, Issue, RequiredMark, TextField, Tone};

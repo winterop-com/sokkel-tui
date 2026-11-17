@@ -11,12 +11,17 @@ parts and the shell), drawn in cells.
 - `crates/core` (`sokkel-tui`): sokkel-design's resolved tokens embedded; the look (theme, scheme,
   density, color depth: truecolor, 256 or none); text roles as a cell shows them; px in columns
   and the breakpoints in columns (`md` about 90, `lg` about 120); a buffer as SVG and as text.
-- The parts, each from its spec in sokkel-design: `Button` and `TextField` so far.
+- Focus and keys: tab order, layers, the ring on keyboard focus, a shortcuts registry by typed
+  character.
+- The parts, each from its spec in sokkel-design: `Button`, `TextField`, `PageState`, `PageHeader`
+  and `Section` so far.
 - `examples/spike`: the shell and the runs table drawn from the paints, static, written to
   `specimens/` as SVG, PNG and text.
-- `examples/parts`: the parts sheet, every part in its variants and states.
+- `examples/parts`: the parts sheets, every part in its variants and states.
 
 ![Button and TextField in tidevann dark at 120 columns](docs/assets/parts-tidevann-dark-120.png)
+
+![PageHeader, PageState and Section in tidevann dark at 120 columns](docs/assets/page-tidevann-dark-120.png)
 
 ## Use
 
