@@ -61,6 +61,8 @@ pub struct Command {
     pub keywords: Vec<String>,
     /// Disabled, and why: the reason stands in the hint's place.
     pub disabled: Option<String>,
+    /// A second line under the label: a two-line row, drawn as a search result.
+    pub detail: Option<String>,
 }
 
 impl Command {
@@ -108,6 +110,12 @@ impl Command {
         self
     }
 
+    /// A second line under the label, making it a two-line row (a search result).
+    pub fn detail(mut self, words: impl Into<String>) -> Self {
+        self.detail = Some(words.into());
+        self
+    }
+
     pub fn disabled(mut self, why: impl Into<String>) -> Self {
         self.disabled = Some(why.into());
         self
@@ -140,6 +148,9 @@ pub struct PaletteWords {
     pub running: String,
     pub refused: String,
     pub stop_waiting: String,
+    /// The foot's word for the active row's verb, beside Enter.
+    pub run: String,
+    pub enter: String,
     pub keys: ShortcutWords,
 }
 
@@ -153,6 +164,8 @@ impl Default for PaletteWords {
             running: "Running".into(),
             refused: "The command did not run.".into(),
             stop_waiting: "Stop waiting".into(),
+            run: "Run".into(),
+            enter: "Enter".into(),
             keys: ShortcutWords::default(),
         }
     }
@@ -250,6 +263,8 @@ enum Line {
     Title(usize),
     Separator,
     Command(usize, usize),
+    /// A two-line row's second line.
+    Detail(usize, usize),
 }
 
 /// The command palette. Build it each frame; draw it last, over the frame.
@@ -260,6 +275,8 @@ pub struct CommandPalette<'a> {
     sheet: bool,
     width_px: f64,
     words: PaletteWords,
+    /// The foot: the app's name, and the keys that open the palette.
+    foot: Option<(String, Option<Keys>)>,
 }
 
 impl<'a> CommandPalette<'a> {
@@ -270,6 +287,7 @@ impl<'a> CommandPalette<'a> {
             sheet: false,
             width_px: 384.0,
             words: PaletteWords::default(),
+            foot: None,
         }
     }
 
@@ -283,6 +301,17 @@ impl<'a> CommandPalette<'a> {
     pub fn width_px(mut self, px: f64) -> Self {
         self.width_px = px;
         self
+    }
+
+    /// The strip at its foot: the app's `name`, the active row's verb beside Enter, and
+    /// "Command palette" beside the `keys` that open it.
+    pub fn foot(mut self, name: impl Into<String>, keys: Option<Keys>) -> Self {
+        self.foot = Some((name.into(), keys));
+        self
+    }
+
+    fn foot_rows(&self) -> u16 {
+        if self.foot.is_some() { 2 } else { 0 }
     }
 
     pub fn words(mut self, words: PaletteWords) -> Self {
@@ -439,6 +468,9 @@ impl<'a> CommandPalette<'a> {
             out.push(Line::Title(g));
             for c in cs {
                 out.push(Line::Command(g, c));
+                if self.groups[g].commands[c].detail.is_some() {
+                    out.push(Line::Detail(g, c));
+                }
             }
         }
         out
@@ -455,7 +487,7 @@ impl<'a> CommandPalette<'a> {
         let list_max = (window.height as usize * 6 / 10).max(3);
         let lines = self.lines(state).len().max(1).min(list_max) as u16;
         let refusal = if state.refusal.is_some() { 2 } else { 0 };
-        let h = (2 + 1 + 1 + lines + refusal).min(window.height);
+        let h = (2 + 1 + 1 + lines + refusal + self.foot_rows()).min(window.height);
         let x = window.x + (window.width - w) / 2;
         let y = if self.sheet {
             window.y + 1
@@ -486,7 +518,7 @@ impl CommandPalette<'_> {
         let refusal = if state.refusal.is_some() { 2 } else { 0 };
         let list = Rect {
             y: inner.y + 2,
-            height: inner.height.saturating_sub(2 + refusal),
+            height: inner.height.saturating_sub(2 + refusal + self.foot_rows()),
             ..inner
         };
         if !list.contains(at) {
@@ -496,7 +528,9 @@ impl CommandPalette<'_> {
         let rows = self.rows(&state.query);
         match self.lines(state).get(k)? {
             Line::StopWaiting => Some(PaletteHit::StopWaiting),
-            Line::Command(g, c) => rows.iter().position(|r| *r == (*g, *c)).map(PaletteHit::Command),
+            Line::Command(g, c) | Line::Detail(g, c) => {
+                rows.iter().position(|r| *r == (*g, *c)).map(PaletteHit::Command)
+            }
             _ => None,
         }
     }
@@ -593,7 +627,7 @@ impl CommandPalette<'_> {
         let refusal_rows = if state.refusal.is_some() { 2 } else { 0 };
         let list = Rect {
             y: inner.y + 2,
-            height: inner.height.saturating_sub(2 + refusal_rows),
+            height: inner.height.saturating_sub(2 + refusal_rows + self.foot_rows()),
             ..inner
         };
         let lines = self.lines(state);
@@ -617,14 +651,16 @@ impl CommandPalette<'_> {
                 })
                 .unwrap_or(0);
             let view = list.height as usize;
+            let active_end = active_line + usize::from(matches!(lines.get(active_line + 1), Some(Line::Detail(..))));
             if active_line < state.scroll {
                 state.scroll = active_line;
-            } else if active_line >= state.scroll + view {
-                state.scroll = active_line + 1 - view;
+            } else if active_end >= state.scroll + view {
+                state.scroll = active_end + 1 - view;
             }
             for (k, line) in lines.iter().enumerate().skip(state.scroll).take(view) {
                 let y = list.y + (k - state.scroll) as u16;
-                self.draw_line(buf, list, y, *line, k == active_line, state);
+                let active = k == active_line || (k == active_line + 1 && matches!(line, Line::Detail(..)));
+                self.draw_line(buf, list, y, *line, active, state);
             }
         }
 
@@ -632,7 +668,7 @@ impl CommandPalette<'_> {
         if let Some(why) = &state.refusal {
             let ri = p("refused.refusal", "ink").unwrap_or_else(|| look.color("critical-ink"));
             let rule = p("refused.refusal", "rule").unwrap_or(edge);
-            let ry = inner.bottom() - 2;
+            let ry = inner.bottom() - 2 - self.foot_rows();
             for x in inner.x..inner.right() {
                 buf[(x, ry)].set_symbol(glyphs.rule).set_fg(t(rule));
             }
@@ -643,6 +679,43 @@ impl CommandPalette<'_> {
                 text::truncate(why, inner.width.saturating_sub(4) as usize, glyphs.ellipsis),
                 TextRole::Body.style(look).fg(t(ri)),
             );
+        }
+        // The foot: a rule, the app's name, the active row's verb beside Enter, the keys.
+        if let Some((name, keys)) = &self.foot {
+            let rule = p("rest.foot", "rule").unwrap_or(edge);
+            let fi = p("rest.foot", "ink").unwrap_or(quiet);
+            let fy = inner.bottom() - 2;
+            for x in inner.x..inner.right() {
+                buf[(x, fy)].set_symbol(glyphs.rule).set_fg(t(rule));
+            }
+            let help = TextRole::Help.style(look).fg(t(fi));
+            let kg = p("rest.keys", "ground").unwrap_or(ground);
+            let cap = TextRole::Badge.style(look).fg(t(fi)).bg(t(kg));
+            let name = text::truncate(name, inner.width as usize / 3, glyphs.ellipsis);
+            buf.set_string(inner.x + 1, fy + 1, &name, help);
+            let name_end = inner.x + 1 + text::width(&name) as u16 + 2;
+            let mut pieces = vec![(self.words.enter.clone(), self.words.run.clone())];
+            if let Some(k) = keys {
+                pieces.push((k.label(&self.words.keys), self.words.title.clone()));
+            }
+            // The pieces kept from the first (Enter's verb) while they fit after the name.
+            let width = |(k, w): &(String, String)| text::width(k) as u16 + 2 + 1 + text::width(w) as u16 + 2;
+            let mut keep = 0;
+            let mut used = 0;
+            for piece in &pieces {
+                if name_end + used + width(piece) > inner.right() {
+                    break;
+                }
+                used += width(piece);
+                keep += 1;
+            }
+            let mut x = inner.right().saturating_sub(used);
+            for (key, words) in pieces.iter().take(keep) {
+                buf.set_string(x, fy + 1, format!(" {key} "), cap);
+                x += text::width(key) as u16 + 3;
+                buf.set_string(x, fy + 1, words, help);
+                x += text::width(words) as u16 + 2;
+            }
         }
     }
 
@@ -684,6 +757,23 @@ impl CommandPalette<'_> {
                     &self.words.stop_waiting,
                     TextRole::Body.style(look).fg(t(ri)),
                 );
+            }
+            Line::Detail(g, c) => {
+                let cmd = &self.groups[g].commands[c];
+                let st = if active { "active" } else { "rest" };
+                let rg = p(&format!("{st}.row"), "ground").unwrap_or(ground);
+                let hi = p(&format!("{st}.hint"), "ink").unwrap_or(quiet);
+                buf.set_style(Rect::new(list.x, y, list.width, 1), Style::new().bg(t(rg)));
+                let x = list.x + 1 + cmd.icon.as_ref().map_or(2, |i| text::width(i) as u16 + 1);
+                let room = list.right().saturating_sub(x + 1) as usize;
+                if let Some(d) = &cmd.detail {
+                    buf.set_string(
+                        x,
+                        y,
+                        text::truncate(d, room, glyphs.ellipsis),
+                        TextRole::Help.style(look).fg(t(hi)).bg(t(rg)),
+                    );
+                }
             }
             Line::Command(g, c) => {
                 let cmd = &self.groups[g].commands[c];

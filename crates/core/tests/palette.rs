@@ -208,3 +208,37 @@ fn below_md_it_is_a_list_then_a_section_with_back() {
     assert_eq!(d.handle(&mut s, press(Key::Escape)), SettingsEvent::Changed);
     assert!(!s.in_section, "Escape goes back to the list first");
 }
+
+#[test]
+fn a_two_line_row_says_its_detail_and_the_foot_its_verb() {
+    use sokkel_tui::{Command, CommandGroup, CommandPalette, Keys, PaletteHit, PaletteState};
+    let look = Look::new("tidevann", Scheme::Dark).unwrap();
+    let p = CommandPalette::new(
+        &look,
+        [CommandGroup::new(
+            "Runs",
+            [
+                Command::new("a", "nightly-export").detail("harbor, every day at 02:00"),
+                Command::new("b", "sync-inventory"),
+            ],
+        )],
+    )
+    .width_px(672.0)
+    .foot("Tidevann", Some(Keys::Mod('k')));
+    let window = Rect::new(0, 0, 120, 30);
+    let mut st = PaletteState::default();
+    let area = p.area(window, &st);
+    let mut buf = Buffer::empty(window);
+    p.render(area, &mut buf, &mut st);
+    let text = snapshot::text(&buf);
+    assert!(text.contains("harbor, every day at 02:00"), "{text}");
+    assert!(text.contains("Tidevann") && text.contains("Enter") && text.contains("Command palette"));
+    // The detail's row is its command's: a press there runs it.
+    let lines: Vec<&str> = text.lines().collect();
+    let y = lines.iter().position(|l| l.contains("harbor, every day")).unwrap() as u16;
+    let x = lines[y as usize].find("harbor").unwrap() as u16;
+    assert_eq!(
+        p.hit(area, ratatui::layout::Position::new(x, y), &st),
+        Some(PaletteHit::Command(0))
+    );
+}

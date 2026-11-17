@@ -779,6 +779,15 @@ impl<A: ShellApp> Host<A> {
             .window(self.width)
     }
 
+    /// The palette as the runtime shows it: the app's commands and its own, its foot saying the
+    /// app's name, Enter's verb and the keys that open it.
+    fn palette_part(&self) -> CommandPalette<'_> {
+        let name = self.app.chrome(&self.look).rail.name().to_string();
+        CommandPalette::new(&self.look, self.groups())
+            .window(self.width)
+            .foot(name, Some(Keys::Mod('k')))
+    }
+
     fn groups(&self) -> Vec<CommandGroup> {
         let look = &self.look;
         let mut groups = self.app.commands();
@@ -1128,9 +1137,7 @@ impl<A: ShellApp> Program for Host<A> {
             }
             Layer::Palette => {
                 let mut st = std::mem::take(&mut self.palette);
-                let event = CommandPalette::new(&self.look, self.groups())
-                    .window(self.width)
-                    .handle(&mut st, key);
+                let event = self.palette_part().handle(&mut st, key);
                 self.palette = st;
                 self.palette_event(event);
                 return false;
@@ -1244,7 +1251,7 @@ impl<A: ShellApp> Program for Host<A> {
             Layer::Palette => {
                 let Some(area) = self.palette_at else { return };
                 let mut st = std::mem::take(&mut self.palette);
-                let pal = CommandPalette::new(&self.look, self.groups()).window(self.width);
+                let pal = self.palette_part();
                 let hit = pal.hit(area, p.at, &st);
                 let event = match (p.kind, hit) {
                     (PointerKind::Move, Some(h)) => {
@@ -1366,7 +1373,7 @@ impl<A: ShellApp> Program for Host<A> {
         match self.layer {
             Layer::Palette => {
                 let mut st = std::mem::take(&mut self.palette);
-                let pal = CommandPalette::new(&self.look, self.groups()).window(self.width);
+                let pal = self.palette_part();
                 let r = pal.area(window, &st);
                 pal.render(r, f.buffer_mut(), &mut st);
                 if let Some(pos) = st.cursor_position() {

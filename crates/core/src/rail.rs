@@ -207,6 +207,11 @@ impl<'a> Rail<'a> {
         self
     }
 
+    /// The app's name, as its head writes it.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     /// The account's name in the foot cell, where it has one.
     pub fn account_name(&self) -> Option<String> {
         self.foot.as_ref().map(|f| f.name.clone())

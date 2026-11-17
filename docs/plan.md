@@ -122,8 +122,9 @@ the contract say so that it does?
   where the layout puts it, Reset to defaults asking first, below md a list then a section with
   Back); radio rows (`Item::radio`, the account menu's scheme). A dialog's header bar (`header(rows)`,
   its title on the footer's ground), its status row (a status line or a refusal) and the nested
-  shade (`Dialog::shade`); what lies under a layer under the scrim (T2). Not yet: the palette's app
-  search and two-line rows and foot.
+  shade (`Dialog::shade`); what lies under a layer under the scrim (T2). The palette's two-line rows
+  (`Command::detail`) and its foot (`foot(name, keys)`: the app's name, Enter's verb, the keys that
+  open it, as many as fit). Not yet: the palette's app search.
 - The pointer, where the terminal reports it (`keys::Pointer`): the table says what a position
   hits (a row, its box, the head's box, a head, a card) and acts on a press; the menu, the select's
   list and the palette say which row is under it; every part already reports where its controls
