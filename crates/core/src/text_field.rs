@@ -272,7 +272,7 @@ impl FieldState {
                     self.cursor = self.value.len();
                     FieldEvent::Moved
                 }
-                _ if field.read_only => FieldEvent::Ignored,
+                _ if field.holds() => FieldEvent::Ignored,
                 Key::Char(c) => {
                     self.value.insert(self.cursor, c);
                     self.cursor += c.len_utf8();
@@ -299,7 +299,7 @@ impl FieldState {
     /// Text pasted at the cursor: control characters left out, and newlines too in a one-line
     /// input (a text area keeps them).
     pub fn paste(&mut self, field: &TextField, text: &str) -> FieldEvent {
-        if field.disabled || field.read_only || self.focus != FieldFocus::Control {
+        if field.disabled || field.holds() || self.focus != FieldFocus::Control {
             return FieldEvent::Ignored;
         }
         let keep = |c: char| !c.is_control() || (c == '\n' && field.multiline.is_some());
@@ -348,7 +348,7 @@ impl FieldState {
                 self.cursor = lines[at].1;
                 FieldEvent::Moved
             }
-            Key::Enter if !field.read_only => {
+            Key::Enter if !field.holds() => {
                 self.value.insert(self.cursor, '\n');
                 self.cursor += 1;
                 FieldEvent::Edited
@@ -361,7 +361,7 @@ impl FieldState {
                 self.cursor = self.next_boundary();
                 FieldEvent::Moved
             }
-            _ if field.read_only => FieldEvent::Ignored,
+            _ if field.holds() => FieldEvent::Ignored,
             Key::Char(c) => {
                 self.value.insert(self.cursor, c);
                 self.cursor += c.len_utf8();
@@ -398,6 +398,8 @@ pub struct TextField<'a> {
     issues: Vec<Issue>,
     placeholder: Option<String>,
     read_only: bool,
+    /// Work on the value under way, for this many ms: its text held, a spinner at the end.
+    busy: Option<u64>,
     disabled: bool,
     words: FieldWords,
     multiline: Option<(u16, u16)>,
@@ -421,6 +423,7 @@ impl<'a> TextField<'a> {
             issues: Vec::new(),
             placeholder: None,
             read_only: false,
+            busy: None,
             disabled: false,
             words: FieldWords::default(),
             multiline: None,
@@ -484,6 +487,19 @@ impl<'a> TextField<'a> {
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.placeholder = Some(placeholder.into());
         self
+    }
+
+    /// Work on the value under way (a save, a check), for `elapsed_ms` so far (`busy`, proposed
+    /// in the spec): its text held as read only holds it, a spinner at the control's end, focus
+    /// kept.
+    pub fn busy(mut self, busy: bool, elapsed_ms: u64) -> Self {
+        self.busy = busy.then_some(elapsed_ms);
+        self
+    }
+
+    /// Whether the value is held from edits: read only, or busy.
+    fn holds(&self) -> bool {
+        self.read_only || self.busy.is_some()
     }
 
     pub fn read_only(mut self, read_only: bool) -> Self {
@@ -824,8 +840,9 @@ impl StatefulWidget for &TextField<'_> {
             // The mark: one column, one from the control's end; the value's room ends three
             // columns before the end while an issue shows.
             let mark_w: u16 = if self.has_issues() { 2 } else { 0 };
+            let busy_w: u16 = if self.busy.is_some() { 2 } else { 0 };
             let start = row.x + 1;
-            let room = row.width.saturating_sub(2 + mark_w) as usize;
+            let room = row.width.saturating_sub(2 + mark_w + busy_w) as usize;
             let body = TextRole::Body.style(look);
             if state.value.is_empty() {
                 if let Some(p) = &self.placeholder {
@@ -862,6 +879,13 @@ impl StatefulWidget for &TextField<'_> {
             if focus {
                 let at = self.shown_width(&state.value[..state.cursor]);
                 state.cursor_at = Some(Position::new(start + (at - state.scroll) as u16, y));
+            }
+
+            // Busy: the spinner at the control's end, before the issue mark where one shows.
+            if let Some(ms) = self.busy {
+                let sx = row.right().saturating_sub(2 + if mark_w > 0 { 3 } else { 0 });
+                let quiet = look.color("muted-foreground");
+                buf.set_string(sx, y, look.spinner_frame(ms), Style::new().bg(t(ground)).fg(t(quiet)));
             }
 
             // The issue mark, inside the control's end.

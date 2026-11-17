@@ -237,6 +237,12 @@ fn draw_controls(f: &mut Frame, look: &Look) {
                 .help("Enter starts a line; it grows to five."),
             FieldState::new("sync-inventory failed twice at 11:58.\nAsk grace before the next run."),
         ),
+        (
+            TextField::new(look, "Callback")
+                .busy(true, 400)
+                .help("Checking that the host answers."),
+            FieldState::new("api.example.org/hooks").focused(FieldFocus::Control),
+        ),
     ];
     let mut states = Vec::new();
     let top = y;

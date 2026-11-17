@@ -417,3 +417,20 @@ fn a_prompt_submits_its_value_and_cancels() {
         "outside"
     );
 }
+
+#[test]
+fn a_busy_field_holds_its_text_and_spins_at_its_end() {
+    use sokkel_tui::{FieldEvent, FieldFocus, FieldState, Key, KeyPress, TextField};
+    let look = look();
+    let field = TextField::new(&look, "Callback").busy(true, 0);
+    let mut state = FieldState::new("api.example.org").focused(FieldFocus::Control);
+    assert_eq!(state.handle(&field, KeyPress::new(Key::Char('x'))), FieldEvent::Ignored);
+    assert_eq!(state.paste(&field, "/hooks"), FieldEvent::Ignored);
+    assert_eq!(state.value(), "api.example.org", "held");
+    let buf = draw(30, 3, |f| {
+        f.render_stateful_widget(&field, Rect::new(0, 0, 30, 2), &mut state)
+    });
+    let control = row(&buf, 1);
+    assert!(control.contains(look.spinner_frame(0)), "{control}");
+    assert!(state.cursor_position().is_some(), "focus kept");
+}
