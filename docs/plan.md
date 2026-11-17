@@ -105,8 +105,9 @@ the contract say so that it does?
   (`TableState::grouped_by`: a head naming each group with its count, in the column heads' role,
   the groups as they first come, sorted within). Row actions (`row_actions`: a menu button at
   each row's end, `TableEvent::Actions`, `actions_area` for the app's menu). Paging (`paging(page, pages)`: a pager on the foot's start,
-  `TableEvent::Page`; `starting_at` counts the range from the page; `load_more` a button). Not yet:
-  trees, details, editing, resizing, reordering, the grid.
+  `TableEvent::Page`; `starting_at` counts the range from the page; `load_more` a button). Details (`Row::detail`: labeled lines
+  opened under the row by Enter, Right or a press, closed by Left, `TableEvent::Detail`; no
+  disclosure chevron yet). Not yet: trees, editing, resizing, reordering, the grid.
 - `rail`, `top_bar`, `status_line`, `shell` (step 5): the rail's head, groups, entries (icon,
   label, count, unread dot, the active bar, a description under it, parents folding their
   children under their labels, a status dot in a tone; collapsed, a parent's children in a flyout beside the rail, which

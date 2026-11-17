@@ -114,6 +114,27 @@ pub fn draw(f: &mut Frame, look: &Look) {
         &mut y,
     );
 
+    // A row's detail, open under it.
+    let detailed: Vec<Row> = self::rows()
+        .into_iter()
+        .enumerate()
+        .map(|(i, r)| {
+            if i == 1 {
+                r.detail([
+                    ("Host", "juniper.example.org"),
+                    ("Failed at", "fetching the inventory: api.example.org refused the token"),
+                ])
+            } else {
+                r
+            }
+        })
+        .collect();
+    let table = Table::new(look, &columns, &detailed).focused(true);
+    let mut state = TableState::default();
+    state.active = 1;
+    state.expanded.insert(1);
+    place(f, "a row's detail, open under it", 12, &table, &mut state, &mut y);
+
     // A pager at the foot: the second page of three, the range counted from it.
     let table = Table::new(look, &columns, &rows)
         .paging(2, 3)

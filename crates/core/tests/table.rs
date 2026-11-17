@@ -385,3 +385,35 @@ fn the_pager_asks_for_the_pages_beside_this_one() {
     let last = Table::new(&look, &c, &r).paging(3, 3);
     assert_eq!(last.press(&mut s, TableHit::PageNext), TableEvent::Ignored);
 }
+
+#[test]
+fn a_rows_detail_opens_under_it() {
+    use ratatui::layout::Position;
+    use sokkel_tui::{Key, KeyPress, TableEvent, TableHit};
+    let look = look();
+    let c = vec![Column::new("Job"), Column::new("Project")];
+    let r = vec![
+        Row::new([Cell::text("nightly-export"), Cell::text("harbor")]).detail([("Host", "harbor.example.org")]),
+        Row::new([Cell::text("send-digest"), Cell::text("juniper")]),
+    ];
+    let table = Table::new(&look, &c, &r).focused(true);
+    let mut s = TableState::default();
+    assert_eq!(s.handle(&table, KeyPress::new(Key::Right)), TableEvent::Detail(0, true));
+    let (_, lines) = draw(&table, 80, 9, &mut s);
+    let at = |w: &str| lines.iter().position(|l| l.contains(w)).unwrap();
+    assert_eq!(at("harbor.example.org"), at("nightly-export") + 1, "{lines:?}");
+    assert_eq!(at("send-digest"), at("harbor.example.org") + 1);
+    // A press on the detail is no row; Left closes it.
+    let area = Rect::new(0, 0, 80, 9);
+    assert_eq!(
+        table.hit(area, Position::new(4, at("harbor.example.org") as u16), &s),
+        None
+    );
+    assert_eq!(s.handle(&table, KeyPress::new(Key::Left)), TableEvent::Detail(0, false));
+    // A press on the row opens it again.
+    let hit = table
+        .hit(area, Position::new(4, at("nightly-export") as u16), &s)
+        .unwrap();
+    assert_eq!(hit, TableHit::Row(0));
+    assert_eq!(table.press(&mut s, hit), TableEvent::Detail(0, true));
+}

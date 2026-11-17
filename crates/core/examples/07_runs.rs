@@ -704,6 +704,15 @@ fn jobs() -> (Vec<Column>, Vec<Row>) {
             Cell::text(schedule),
             Cell::status(last),
         ])
+        // Its detail, opened under it with Enter, Right or a press.
+        .detail([
+            ("Host", format!("{project}.example.org")),
+            (
+                "Owner",
+                ["ada", "grace", "linus", "margaret"][name.len() % 4].to_string(),
+            ),
+            ("Command", format!("tidevann run {name}")),
+        ])
     };
     let rows = vec![
         job("nightly-export", "harbor", "every night at 02:00", "running"),

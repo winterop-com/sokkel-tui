@@ -209,6 +209,8 @@ pub enum RowTone {
 pub struct Row {
     pub cells: Vec<Cell>,
     pub tone: RowTone,
+    /// The row's detail (`detail`): labeled lines it opens under itself.
+    pub detail: Vec<(String, String)>,
 }
 
 impl Row {
@@ -216,7 +218,14 @@ impl Row {
         Row {
             cells: cells.into_iter().collect(),
             tone: RowTone::Plain,
+            detail: Vec::new(),
         }
+    }
+
+    /// A detail the row opens under itself: Enter, Right or a press opens it, Left closes it.
+    pub fn detail(mut self, lines: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>) -> Self {
+        self.detail = lines.into_iter().map(|(l, v)| (l.into(), v.into())).collect();
+        self
     }
 
     pub fn tone(mut self, tone: RowTone) -> Self {
@@ -298,6 +307,8 @@ pub enum TableEvent {
     /// A row's actions were asked for (its menu button pressed): its index among the rows. The
     /// app opens its menu at [`Table::actions_area`].
     Actions(usize),
+    /// A row's detail opened (true) or closed: its index among the rows.
+    Detail(usize, bool),
     /// The pager asked for this page (counted from 1): the app loads it and gives its rows.
     Page(usize),
     /// Load more was pressed: the app gives the rows after these.
@@ -309,6 +320,8 @@ pub enum TableEvent {
 enum BodyLine {
     Head(String, usize),
     Row(usize),
+    /// A line of an open row's detail: the row's place and the line.
+    Detail(usize, usize),
 }
 
 /// The words a row's cell in `column` gives its group.
@@ -333,6 +346,8 @@ pub struct TableState {
     pub head: Option<usize>,
     /// The row picked for a detail beside the list.
     pub opened: Option<usize>,
+    /// The rows whose detail is open, by their index among the rows.
+    pub expanded: BTreeSet<usize>,
     /// Rows grouped by this column's value (`groupBy`), each group under its head, the groups in
     /// the order they first come, sorted within.
     pub group: Option<usize>,
@@ -358,8 +373,19 @@ impl TableState {
     /// rows alone, each by its place.
     fn lines(&self, rows: &[Row]) -> Vec<BodyLine> {
         let order = self.order(rows);
+        let detail = |place: usize| {
+            let row = order[place];
+            let n = if self.expanded.contains(&row) {
+                rows[row].detail.len()
+            } else {
+                0
+            };
+            (0..n).map(move |i| BodyLine::Detail(place, i))
+        };
         let Some(g) = self.group else {
-            return (0..order.len()).map(BodyLine::Row).collect();
+            return (0..order.len())
+                .flat_map(|p| std::iter::once(BodyLine::Row(p)).chain(detail(p)))
+                .collect();
         };
         let mut out = Vec::new();
         let mut last: Option<String> = None;
@@ -371,6 +397,7 @@ impl TableState {
                 last = Some(key);
             }
             out.push(BodyLine::Row(place));
+            out.extend(detail(place));
         }
         out
     }
@@ -469,6 +496,27 @@ impl TableState {
             Key::PageUp => moved(self, self.active.saturating_sub(page)),
             Key::Home => moved(self, 0),
             Key::End => moved(self, last),
+            Key::Right | Key::Left | Key::Enter
+                if self
+                    .active_row(table.rows)
+                    .is_some_and(|r| !table.rows[r].detail.is_empty()) =>
+            {
+                let r = self.active_row(table.rows).unwrap_or(0);
+                let open = match key.key {
+                    Key::Right => true,
+                    Key::Left => false,
+                    _ => !self.expanded.contains(&r),
+                };
+                if open == self.expanded.contains(&r) {
+                    return TableEvent::Ignored;
+                }
+                if open {
+                    self.expanded.insert(r);
+                } else {
+                    self.expanded.remove(&r);
+                }
+                TableEvent::Detail(r, open)
+            }
             Key::Char(' ') if table.selectable => {
                 if let Some(r) = self.active_row(table.rows)
                     && !self.selected.remove(&r)
@@ -1026,6 +1074,16 @@ impl Table<'_> {
         match hit {
             TableHit::Row(p) | TableHit::Card(p) => {
                 state.active = p;
+                // A row with a detail opens or closes it.
+                if let Some(r) = state.row_at(self.rows, p)
+                    && !self.rows[r].detail.is_empty()
+                {
+                    let open = !state.expanded.remove(&r);
+                    if open {
+                        state.expanded.insert(r);
+                    }
+                    return TableEvent::Detail(r, open);
+                }
                 match (self.selectable, state.row_at(self.rows, p)) {
                     (false, Some(r)) => {
                         state.opened = Some(r);
@@ -1287,8 +1345,16 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
     let lead = usize::from(active_line > 0 && matches!(lines.get(active_line - 1), Some(BodyLine::Head(..))));
     if active_line.saturating_sub(lead) < state.offset {
         state.offset = active_line.saturating_sub(lead);
-    } else if active_line >= state.offset + view {
-        state.offset = active_line + 1 - view;
+    } else {
+        // The active row and its open detail in view, the row first where both do not fit.
+        let shown = lines[active_line + 1..]
+            .iter()
+            .take_while(|l| matches!(l, BodyLine::Detail(p, _) if *p == state.active))
+            .count();
+        let end = active_line + shown;
+        if end >= state.offset + view {
+            state.offset = (end + 1 - view).min(active_line);
+        }
     }
     state.offset = state.offset.min(lines.len().saturating_sub(view));
     for (li, line) in lines.iter().enumerate().skip(state.offset).take(view) {
@@ -1308,6 +1374,28 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
                 buf.set_string(body.x + geo.pad, y, &name, style);
                 let quiet = TextRole::Help.style(look).fg(look.token("muted-foreground")).bg(t(hg));
                 buf.set_string(body.x + geo.pad + text::width(&name) as u16 + 1, y, count(*n), quiet);
+                continue;
+            }
+            BodyLine::Detail(p, i) => {
+                // An open row's detail: labeled lines on the panel's ground, from the first cell.
+                let (label, value) = &table.rows[order[*p]].detail[*i];
+                let dg = look.color("panel-ground");
+                buf.set_style(Rect::new(body.x, y, body.width, 1), Style::new().bg(t(dg)));
+                let x = body.x + geo.pad + table.select_w();
+                let lw = table.rows[order[*p]]
+                    .detail
+                    .iter()
+                    .map(|(l, _)| text::width(l))
+                    .max()
+                    .unwrap_or(0) as u16;
+                let quiet = TextRole::Help.style(look).fg(look.token("muted-foreground")).bg(t(dg));
+                buf.set_stringn(x, y, label, body.right().saturating_sub(x) as usize, quiet);
+                let vx = x + lw + 2;
+                if vx < body.right() {
+                    let ink = TextRole::Body.style(look).fg(look.token("foreground")).bg(t(dg));
+                    let room = body.right().saturating_sub(vx + geo.pad) as usize;
+                    buf.set_string(vx, y, text::truncate(value, room, glyphs.ellipsis), ink);
+                }
                 continue;
             }
             BodyLine::Row(p) => *p,
