@@ -284,3 +284,47 @@ fn a_strip_is_its_icons_over_short_labels_and_never_resizes() {
     shell.render(window, &mut Buffer::empty(window), &mut state);
     assert_eq!(state.edge_area(), None, "no edge to drag");
 }
+
+#[test]
+fn a_side_panel_stands_at_the_contents_end_and_covers_the_page_below_md() {
+    use sokkel_tui::{Shell, ShellState};
+    let look = look();
+    let shell = Shell::new(&look, rail(&look), TopBar::new(&look), StatusLine::new(&look)).panel(Some(40));
+    let mut state = ShellState::default();
+    let wide = Rect::new(0, 0, 140, 30);
+    let page = shell.render(wide, &mut Buffer::empty(wide), &mut state);
+    let panel = state.panel_area().expect("a panel");
+    assert_eq!(panel.right(), 140, "at the content's end");
+    assert_eq!(panel.width, 39, "40 behind its edge");
+    assert!(page.right() < panel.x, "the page beside it");
+    let narrow = Rect::new(0, 0, 80, 24);
+    let page = shell.render(narrow, &mut Buffer::empty(narrow), &mut state);
+    assert_eq!(state.panel_area().unwrap().width, 80, "below md it covers the page");
+    assert_eq!(page.height, 0);
+}
+
+#[test]
+fn a_detail_pane_sets_its_terms_in_one_column_and_presses_its_verbs() {
+    use ratatui::layout::Position;
+    use sokkel_tui::{Button, DetailPane, PaneSection};
+    let look = look();
+    let pane = DetailPane::new(&look)
+        .sections([
+            PaneSection::new("Run").facts([("State", Some("failed")), ("Started by", None)]),
+            PaneSection::new("Host").facts([("Host", Some("juniper.example.org"))]),
+        ])
+        .actions([Button::new(&look, "Retry"), Button::new(&look, "Cancel run")]);
+    let area = Rect::new(0, 0, 40, pane.height(40));
+    let lines = draw(40, area.height, &pane);
+    let at = |w: &str| lines.iter().position(|l| l.contains(w)).unwrap();
+    assert!(lines[at("RUN")].starts_with("  RUN"), "upper case, padded: {lines:?}");
+    let col = |w: &str| lines[at(w)].find(w).unwrap();
+    assert_eq!(
+        col("failed"),
+        lines[at("Started by")].find('—').unwrap(),
+        "values in one column"
+    );
+    let l = pane.layout(area);
+    let (_, cancel) = l.actions[1];
+    assert_eq!(pane.press(area, Position::new(cancel.x + 1, cancel.y)), Some(1));
+}

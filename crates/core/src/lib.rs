@@ -34,6 +34,7 @@ pub mod banner;
 pub mod button;
 pub mod cells;
 pub mod dashboard;
+pub mod detail_pane;
 pub mod dialog;
 pub mod focus;
 pub mod glyphs;
@@ -65,6 +66,7 @@ pub use dashboard::{
     ColorMode, DashboardPanel, Fill, Legend, PanelLayout, PanelRead, PanelTool, PanelWords, Series, Span, StatPanel,
     Threshold, TimeSeriesPanel,
 };
+pub use detail_pane::{DetailLayout, DetailPane, PaneSection};
 pub use dialog::{Confirm, Dialog, DialogEvent, DialogFocus, DialogLayout, DialogWidth, DialogWords};
 pub use focus::{Focus, FocusId, InputKind};
 pub use glyphs::Charset;

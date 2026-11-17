@@ -97,6 +97,7 @@ pub struct Shell<'a> {
     top: TopBar<'a>,
     foot: StatusLine<'a>,
     banner: Option<crate::banner::Banner<'a>>,
+    panel: Option<u16>,
 }
 
 /// What lives between frames: the rail collapsed or not, the drawer open or not, and where the
@@ -137,6 +138,7 @@ pub struct ShellState {
     palette: Option<Rect>,
     account: Option<Rect>,
     drawer_at: Option<Rect>,
+    panel: Option<Rect>,
 }
 
 /// What a key or a press did to the frame.
@@ -166,6 +168,7 @@ impl<'a> Shell<'a> {
             top,
             foot,
             banner: None,
+            panel: None,
         }
     }
 
@@ -173,6 +176,14 @@ impl<'a> Shell<'a> {
     /// holds (the server not answering). It takes no row while there is none.
     pub fn banner(mut self, banner: Option<crate::banner::Banner<'a>>) -> Self {
         self.banner = banner;
+        self
+    }
+
+    /// A side panel at the content's end, `width` columns wide (at most half the content), on the
+    /// `sidebar` ground behind an edge in `sidebar-border`; below md it covers the page. Its room
+    /// is [`ShellState::panel_area`], for the app to draw in.
+    pub fn panel(mut self, width: Option<u16>) -> Self {
+        self.panel = width;
         self
     }
 
@@ -276,6 +287,47 @@ impl<'a> Shell<'a> {
             }
             shell.content.y += 1;
             shell.content.height -= 1;
+        }
+        // The side panel at the content's end, or over the page below md.
+        state.panel = None;
+        if let Some(w) = self.panel.filter(|_| !state.kiosk && shell.content.width > 8) {
+            let narrow = shell.width == Width::Narrow;
+            let w = if narrow {
+                shell.content.width
+            } else {
+                w.min(shell.content.width / 2)
+            };
+            let r = Rect {
+                x: shell.content.right() - w,
+                width: w,
+                ..shell.content
+            };
+            let ground = look.color("sidebar");
+            buf.set_style(r, Style::new().bg(look.terminal(ground)));
+            let edge = look.color("sidebar-border");
+            let glyphs = look.glyphs();
+            if !narrow {
+                for y in r.y..r.bottom() {
+                    buf[(r.x, y)]
+                        .set_symbol(glyphs.scroll_track)
+                        .set_fg(look.terminal(edge))
+                        .set_bg(look.terminal(ground));
+                }
+            }
+            let inner = if narrow {
+                r
+            } else {
+                Rect {
+                    x: r.x + 1,
+                    width: r.width - 1,
+                    ..r
+                }
+            };
+            state.panel = Some(inner);
+            shell.content.width -= w;
+            if narrow {
+                shell.content.height = 0;
+            }
         }
         match (&state.note, tip) {
             (Some(note), _) => (&self.foot.clone().note(note.clone(), NoteTone::Plain)).render(shell.foot, buf),
@@ -446,6 +498,11 @@ impl ShellState {
     /// Where the account control was drawn: the account menu opens over it.
     pub fn account(&self) -> Option<Rect> {
         self.account
+    }
+
+    /// The side panel's room, while one shows: the app draws its content there.
+    pub fn panel_area(&self) -> Option<Rect> {
+        self.panel
     }
 
     /// Where the rail's edge stands, while it resizes the rail.

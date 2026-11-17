@@ -232,6 +232,15 @@ pub trait ShellApp {
     /// Draw the page in `area`, naming its stops in `cx.focus` as it draws them (after the
     /// frame's: the rail's entries, the search, the palette button).
     fn page(&mut self, f: &mut Frame, area: Rect, cx: &mut Cx);
+    /// A side panel at the page's end while this says how wide it is, in columns (40, 320 px, is
+    /// the usual): the runtime makes the room and [`ShellApp::panel`] draws in it. Below md it
+    /// covers the page.
+    fn panel_width(&self) -> Option<u16> {
+        None
+    }
+    /// Draw the side panel's content in `area` (a [`crate::DetailPane`], say), after the page,
+    /// naming its stops in `cx.focus`.
+    fn panel(&mut self, _f: &mut Frame, _area: Rect, _cx: &mut Cx) {}
     /// The rows the page needs at `width` columns, when it is taller than the window can be: the
     /// runtime then scrolls it (the wheel, PageUp and PageDown, focus kept in view) and draws a
     /// scroller at its end. None: the page fits whatever it is given.
@@ -604,6 +613,7 @@ impl<A: ShellApp> Host<A> {
                 .map(|(tone, words)| crate::banner::Banner::new(look, tone, words));
             Shell::new(look, chrome.rail, chrome.top, chrome.foot)
                 .banner(banner)
+                .panel(self.app.panel_width())
                 .render(window, f.buffer_mut(), &mut self.shell)
         };
         self.focus.begin();
@@ -681,6 +691,10 @@ impl<A: ShellApp> Host<A> {
         } else {
             self.scroll = 0;
             self.app.page(f, page, &mut cx);
+        }
+        // The side panel, after the page: its stops follow the page's.
+        if let Some(r) = self.shell.panel_area() {
+            self.app.panel(f, r, &mut cx);
         }
         if let Some(r) = self.shell.account() {
             self.focus.stop(account_stop(), r);

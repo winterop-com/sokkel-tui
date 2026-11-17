@@ -18,10 +18,11 @@ use ratatui::layout::Rect;
 use ratatui::widgets::Widget;
 use sokkel_tui::app::{self, Chrome, Cx, Flow, Ran, ShellApp};
 use sokkel_tui::{
-    Align, Binding, Button, ButtonVariant, Cell, Column, ColumnWidth, Command, CommandGroup, Confirm, Density, Dialog,
-    DialogEvent, DialogFocus, DialogWidth, DropdownMenu, Fact, FocusId, Item, Key, KeyPress, Keys, Look, MenuEvent,
-    MenuState, NoteTone, PageHeader, Pointer, PointerKind, PopupRow, Rail, RailEntry, RailFoot, RailGroup, Row,
-    RowTone, Scheme, StatusLine, Table, TableEvent, TableHit, TableState, TableWords, TextRole, TopBar, snapshot,
+    Align, Binding, Button, ButtonVariant, Cell, Column, ColumnWidth, Command, CommandGroup, Confirm, Density,
+    DetailPane, Dialog, DialogEvent, DialogFocus, DialogWidth, DropdownMenu, Fact, FocusId, Item, Key, KeyPress, Keys,
+    Look, MenuEvent, MenuState, NoteTone, PageHeader, PaneSection, Pointer, PointerKind, PopupRow, Rail, RailEntry,
+    RailFoot, RailGroup, Row, RowTone, Scheme, StatusLine, Table, TableEvent, TableHit, TableState, TableWords,
+    TextRole, TopBar, snapshot,
 };
 
 #[derive(Clone)]
@@ -148,6 +149,8 @@ struct Runs {
     row_menu: Option<(usize, MenuState, Rect)>,
     /// What the last action did, for the status line.
     said: Option<String>,
+    /// Where the side panel's detail pane stood, for its verbs.
+    panel_at: Rect,
     dialog: Option<DialogFocus>,
     busy_since: Option<u64>,
     /// Where the last frame drew what a press can hit.
@@ -169,6 +172,7 @@ impl Runs {
             menu: MenuState::default(),
             row_menu: None,
             said: None,
+            panel_at: Rect::default(),
             dialog: None,
             busy_since: None,
             filter_at: None,
@@ -459,6 +463,21 @@ impl ShellApp for Runs {
         self.table.selected.clear();
     }
 
+    /// The side panel, while a run is opened (Enter on it): its detail.
+    fn panel_width(&self) -> Option<u16> {
+        (self.page == Page::Runs && self.table.opened.is_some()).then_some(40)
+    }
+
+    fn panel(&mut self, f: &mut Frame, area: Rect, cx: &mut Cx) {
+        let Some(run) = self.table.opened.and_then(|r| self.shown().get(r).copied()) else {
+            return;
+        };
+        let pane = run_pane(cx.look, run);
+        let h = pane.height(area.width).min(area.height);
+        self.panel_at = Rect { height: h, ..area };
+        f.render_widget(&pane, self.panel_at);
+    }
+
     fn layer_open(&self) -> bool {
         self.menu.open || self.dialog.is_some() || self.row_menu.is_some()
     }
@@ -497,6 +516,11 @@ impl ShellApp for Runs {
 
     fn key(&mut self, key: KeyPress, cx: &mut Cx) -> Flow {
         let look = cx.look;
+        // Escape closes a run's detail first.
+        if key.is(Key::Escape) && self.page == Page::Runs && self.table.opened.is_some() && self.dialog.is_none() {
+            self.table.opened = None;
+            return Flow::Handled;
+        }
         if let Some((row, mut st, at)) = self.row_menu.take() {
             let event = row_menu(look).handle(&mut st, key);
             self.row_menu = Some((row, st, at));
@@ -574,6 +598,17 @@ impl ShellApp for Runs {
 
     fn pointer(&mut self, p: Pointer, cx: &mut Cx) {
         let look = cx.look;
+        // The detail pane's verbs.
+        if p.kind == PointerKind::Press
+            && self.panel_at.contains(p.at)
+            && let Some(run) = self.table.opened.and_then(|r| self.shown().get(r).copied())
+        {
+            let job = run.job.clone();
+            if let Some(k) = run_pane(look, run).press(self.panel_at, p.at) {
+                self.said = Some(format!("{} {job}", ["Retried", "Cancelled"][k]));
+            }
+            return;
+        }
         if let Some((row, mut st, at)) = self.row_menu.take() {
             let event = row_menu(look).pointer(&mut st, cx.window, at, p);
             self.row_menu = Some((row, st, at));
@@ -609,8 +644,13 @@ impl ShellApp for Runs {
                     let (c, r) = (columns(), self.rows());
                     let table = Table::new(look, &c, &r).selectable(true).row_actions(true);
                     if p.kind == PointerKind::Press {
-                        if let Some(hit) = table.hit(self.table_at, p.at, &self.table)
-                            && let TableEvent::Actions(row) = table.press(&mut self.table, hit)
+                        let hit = table.hit(self.table_at, p.at, &self.table);
+                        let event = hit.map(|h| table.press(&mut self.table, h));
+                        // While a run's detail shows, a press on a row shows that run's.
+                        if self.table.opened.is_some() && event == Some(TableEvent::Moved) {
+                            self.table.opened = self.table.row_at(&r, self.table.active);
+                        }
+                        if let Some(TableEvent::Actions(row)) = event
                             && let Some(at) = table.actions_area(self.table_at, &self.table, self.table.active)
                         {
                             self.row_menu = Some((
@@ -665,6 +705,29 @@ fn entry(label: &str, icon: &str, count: Option<String>, active: bool) -> RailEn
 
 fn count(n: usize) -> String {
     sokkel_tui::table::count(n)
+}
+
+/// A run's detail, for the side panel: what ran and where, then its verbs.
+fn run_pane<'a>(look: &'a Look, run: &Run) -> DetailPane<'a> {
+    DetailPane::new(look)
+        .sections([
+            PaneSection::new("Run")
+                .summary(format!("{} {} in {}.", run.job, run.state, run.project))
+                .facts([
+                    ("State", Some(run.state.clone())),
+                    ("Started by", run.by.clone()),
+                    ("Started", Some(run.started.clone())),
+                    ("Took", run.took.as_ref().map(|(t, _)| t.clone())),
+                ]),
+            PaneSection::new("Host").facts([
+                ("Host", Some(format!("{}.example.org", run.project))),
+                ("Command", Some(format!("tidevann run {}", run.job))),
+            ]),
+        ])
+        .actions([
+            Button::new(look, "Retry").variant(ButtonVariant::Secondary),
+            Button::new(look, "Cancel run").variant(ButtonVariant::Outline),
+        ])
 }
 
 /// A run's actions, from its menu button.
