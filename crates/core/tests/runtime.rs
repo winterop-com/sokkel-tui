@@ -469,3 +469,48 @@ fn left_and_right_go_back_and_forward_along_the_routes() {
     assert!(shot(&["b", "esc", "b", "right"]).contains("at b"));
     assert!(shot(&["b", "esc", "b", "left"]).contains("at a"));
 }
+
+/// Places whose page holds one control.
+struct Stopped(Places);
+
+impl sokkel_tui::app::ShellApp for Stopped {
+    fn route(&self) -> String {
+        self.0.route()
+    }
+    fn go(&mut self, route: &str) {
+        self.0.go(route)
+    }
+    fn chrome<'a>(&'a self, look: &'a Look) -> sokkel_tui::app::Chrome<'a> {
+        self.0.chrome(look)
+    }
+    fn page(&mut self, f: &mut ratatui::Frame, area: Rect, cx: &mut sokkel_tui::app::Cx) {
+        self.0.page(f, area, cx);
+        cx.focus.stop(
+            sokkel_tui::FocusId::new("control"),
+            Rect {
+                y: area.y + 1,
+                height: 1,
+                ..area
+            },
+        );
+    }
+    fn shortcuts(&self) -> Vec<sokkel_tui::Binding<String>> {
+        self.0.shortcuts()
+    }
+    fn command(&mut self, id: &str) -> sokkel_tui::app::Ran {
+        self.0.command(id)
+    }
+}
+
+#[test]
+fn a_focused_control_on_the_page_keeps_its_arrows() {
+    let shot = |keys: &[&str]| {
+        let keys: Vec<KeyPress> = keys.iter().filter_map(|k| KeyPress::named(k)).collect();
+        let app = Stopped(Places { at: "a".into() });
+        sokkel_tui::snapshot::text(&sokkel_tui::app::shot(app, look(), (120, 30), |_| {}, &keys))
+    };
+    // On b, focus moves to the page's control: Left is the control's, though it leaves it.
+    assert!(shot(&["b", "left"]).contains("at b"));
+    // Escape still goes back.
+    assert!(shot(&["b", "esc"]).contains("at a"));
+}

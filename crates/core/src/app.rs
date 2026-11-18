@@ -440,6 +440,8 @@ struct Host<A> {
     /// The routes Back left, to go forward to again; a new route clears them, as a browser does.
     forward: Vec<String>,
     going_forward: bool,
+    /// An arrow went along the routes: focus stays where it was.
+    stay: bool,
     /// The page's first stop gets focus after this frame (a route change).
     to_page: bool,
     page_mark: usize,
@@ -528,6 +530,7 @@ impl<A: ShellApp> Host<A> {
             going_back: false,
             forward: Vec::new(),
             going_forward: false,
+            stay: false,
             to_page: false,
             page_mark: 0,
             opened_from: None,
@@ -610,6 +613,17 @@ impl<A: ShellApp> Host<A> {
         }
     }
 
+    /// Whether a control on the page has focus (not one of the frame's: the rail's entries and
+    /// edge, the search, the palette's button, the account).
+    fn page_focused(&self) -> bool {
+        let Some(id) = self.focus.current() else {
+            return false;
+        };
+        let frame = [search_stop(), palette_stop(), account_stop(), edge_stop()];
+        let entry = self.shell.entries().iter().any(|&((g, e), _)| entry_stop(g, e) == id);
+        !frame.contains(&id) && !entry
+    }
+
     /// Forward to a route Back left.
     fn go_forward(&mut self) -> bool {
         match self.forward.pop() {
@@ -637,8 +651,10 @@ impl<A: ShellApp> Host<A> {
             if !self.going_back && !self.going_forward {
                 self.forward.clear();
             }
-            self.to_page = true;
+            // Focus moves to the new page, unless an arrow went there from the frame.
+            self.to_page = !self.stay;
         }
+        self.stay = false;
         self.going_back = false;
         self.going_forward = false;
         // A layer opening keeps what had focus; closing gives it back.
@@ -1479,13 +1495,15 @@ impl<A: ShellApp> Program for Host<A> {
                 self.back();
                 false
             }
-            // Left and Right the page leaves go back and forward along the routes.
-            Flow::Ignored if key.is(Key::Left) && !self.app.typing() => {
-                self.go_back();
+            // Left and Right go back and forward along the routes while no control on the page
+            // has focus: a focused table, field or button keeps its arrows, even ones it leaves.
+            // Focus stays in the frame, so the next arrow goes on along the routes.
+            Flow::Ignored if key.is(Key::Left) && !self.app.typing() && !self.page_focused() => {
+                self.stay = self.go_back();
                 false
             }
-            Flow::Ignored if key.is(Key::Right) && !self.app.typing() => {
-                self.go_forward();
+            Flow::Ignored if key.is(Key::Right) && !self.app.typing() && !self.page_focused() => {
+                self.stay = self.go_forward();
                 false
             }
             _ => false,
