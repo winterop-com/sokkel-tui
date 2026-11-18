@@ -499,3 +499,52 @@ fn an_editable_cell_opens_saves_and_moves_on() {
     s.handle(&table, key(Key::Escape));
     assert!(s.edit.is_none());
 }
+
+#[test]
+fn a_resizable_columns_edge_follows_a_drag_and_the_keys() {
+    use ratatui::layout::Position;
+    use sokkel_tui::{Key, KeyPress, Pointer, PointerKind, TableHit};
+    let look = look();
+    let c = vec![
+        Column::new("Job").width(ColumnWidth::Fill(1)).resizable().sortable(),
+        Column::new("State").sortable(),
+    ];
+    let r = vec![Row::new([Cell::text("nightly-export"), Cell::status("running")])];
+    let table = Table::new(&look, &c, &r).focused(true);
+    let mut s = TableState::default();
+    let area = Rect::new(0, 0, 80, 6);
+    let (_, lines) = draw(&table, 80, 6, &mut s);
+    let head_y = lines.iter().position(|l| l.contains("Job")).unwrap() as u16;
+    let state_x = lines[head_y as usize].find("State").unwrap() as u16;
+    // The gap before State is Job's edge.
+    let edge = (0..state_x)
+        .rev()
+        .find(|&x| table.hit(area, Position::new(x, head_y), &s) == Some(TableHit::Edge(0)))
+        .expect("an edge before State");
+    assert!(state_x - edge <= 3, "right before State");
+    let hit = table.hit(area, Position::new(edge, head_y), &s);
+    assert_eq!(hit, Some(TableHit::Edge(0)));
+    table.press(&mut s, hit.unwrap());
+    let at = |kind, x| Pointer {
+        kind,
+        at: Position::new(x, head_y),
+    };
+    table.drag(area, &mut s, at(PointerKind::Drag, 30));
+    let w = s.sizes[&0];
+    let (_, lines) = draw(&table, 80, 6, &mut s);
+    assert!(
+        lines[head_y as usize].find("State").unwrap() < state_x as usize,
+        "narrower: {lines:?}"
+    );
+    table.drag(area, &mut s, at(PointerKind::Release, 30));
+    assert_eq!(s.resizing, None);
+    // A drag after the release moves nothing.
+    table.drag(area, &mut s, at(PointerKind::Drag, 60));
+    assert_eq!(s.sizes[&0], w);
+    // With its head chosen: > widens it 2, = puts it back.
+    s.head = Some(0);
+    s.handle(&table, KeyPress::new(Key::Char('>')));
+    assert_eq!(s.sizes[&0], w + 2);
+    s.handle(&table, KeyPress::new(Key::Char('=')));
+    assert!(!s.sizes.contains_key(&0));
+}

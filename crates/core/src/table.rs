@@ -657,7 +657,7 @@ impl TableState {
                             });
                         let min = (text::width(&table.columns[h].header) as u16 + 2).max(4);
                         let to = if k == '<' { now.saturating_sub(2) } else { now + 2 };
-                        self.sizes.insert(h, to.clamp(min, cols(320.0).max(min)));
+                        self.sizes.insert(h, to.clamp(min, self.room.max(min)));
                     }
                     TableEvent::Moved
                 }
@@ -1319,7 +1319,7 @@ impl Table<'_> {
     }
 
     /// A drag or release after a press took a column's edge ([`TableHit::Edge`]): the column
-    /// follows the pointer, between its head's width and 320 px, and lets go on release.
+    /// follows the pointer, between its head's width and the table's room, and lets go on release.
     pub fn drag(&self, area: Rect, state: &mut TableState, p: crate::keys::Pointer) -> TableEvent {
         use crate::keys::PointerKind;
         let Some(c) = state.resizing else {
@@ -1331,7 +1331,7 @@ impl Table<'_> {
                 let widths = self.widths_sized(g.inner.width, &state.sizes);
                 let x0 = g.inner.x + g.pad + self.select_w() + widths[..c].iter().map(|w| w + 2).sum::<u16>();
                 let min = (text::width(&self.columns[c].header) as u16 + 2).max(4);
-                let to = p.at.x.saturating_sub(x0).clamp(min, cols(320.0).max(min));
+                let to = p.at.x.saturating_sub(x0).clamp(min, state.room.max(min));
                 state.sizes.insert(c, to);
                 TableEvent::Moved
             }
