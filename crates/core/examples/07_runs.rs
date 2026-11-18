@@ -23,7 +23,7 @@ use sokkel_tui::{
     Align, Binding, Button, ButtonVariant, Cell, Column, ColumnWidth, Command, CommandGroup, Confirm, Density,
     DetailPane, Dialog, DialogEvent, DialogFocus, DialogWidth, DropdownMenu, Fact, FocusId, Item, Key, KeyPress, Keys,
     Look, MenuEvent, MenuState, NoteTone, PageHeader, PaneSection, Pointer, PointerKind, PopupRow, Rail, RailEntry,
-    RailFoot, RailGroup, Row, RowTone, Scheme, StatusLine, Table, TableEvent, TableHit, TableState, TableWords,
+    RailFoot, RailGroup, Row, RowTone, Scheme, Status, StatusLine, Table, TableEvent, TableHit, TableState, TableWords,
     TextRole, TopBar, snapshot,
 };
 
@@ -813,8 +813,8 @@ fn run_pane<'a>(look: &'a Look, run: &Run) -> DetailPane<'a> {
         .sections([
             PaneSection::new("Run")
                 .summary(format!("{} {} in {}.", run.job, run.state, run.project))
+                .status("State", Status::of(run.state.clone()))
                 .facts([
-                    ("State", Some(run.state.clone())),
                     ("Started by", run.by.clone()),
                     ("Started", Some(run.started.clone())),
                     ("Took", run.took.as_ref().map(|(t, _)| t.clone())),

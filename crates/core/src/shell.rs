@@ -98,6 +98,7 @@ pub struct Shell<'a> {
     foot: StatusLine<'a>,
     banner: Option<crate::banner::Banner<'a>>,
     panel: Option<u16>,
+    page_needs: Option<u16>,
 }
 
 /// What lives between frames: the rail collapsed or not, the drawer open or not, and where the
@@ -128,6 +129,10 @@ pub struct ShellState {
     dragging: bool,
     edge_hover: bool,
     rail_own: u16,
+    /// The rail collapsed this frame to give the page room, and whether the reader then kept it
+    /// open (pressed expand on it).
+    gave_way: bool,
+    pub kept_open: bool,
     edge: Option<Rect>,
     cursor: Option<Position>,
     window: Rect,
@@ -170,6 +175,7 @@ impl<'a> Shell<'a> {
             foot,
             banner: None,
             panel: None,
+            page_needs: None,
         }
     }
 
@@ -183,6 +189,14 @@ impl<'a> Shell<'a> {
     /// A side panel at the content's end, `width` columns wide (at most half the content), on the
     /// `sidebar` ground behind an edge in `sidebar-border`; below md it covers the page. Its room
     /// is [`ShellState::panel_area`], for the app to draw in.
+    /// The columns the page needs (a table's stack width, say): the rail gives way to it,
+    /// narrowing toward minSize and then collapsing to its icons, unless the reader dragged its
+    /// edge or kept it open.
+    pub fn page_needs(mut self, cols: Option<u16>) -> Self {
+        self.page_needs = cols;
+        self
+    }
+
     pub fn panel(mut self, width: Option<u16>) -> Self {
         self.panel = width;
         self
@@ -195,13 +209,36 @@ impl<'a> Shell<'a> {
             window,
             Style::new().bg(look.token("background")).fg(look.token("foreground")),
         );
-        let rail = self
+        let mut rail = self
             .rail
             .clone()
             .collapsed(state.collapsed, true)
             .focused(state.rail_focus)
             .size(state.rail_size.or(self.rail.size))
             .edge(state.dragging || state.edge_hover || state.edge_focus);
+        // The rail gives way to a page that needs more room: narrower, down to minSize, then
+        // collapsed to its icons. A width the reader dragged, or a rail they kept open, wins.
+        state.gave_way = false;
+        if let Some(need) = self.page_needs
+            && !state.kiosk
+            && !state.collapsed
+            && !state.kept_open
+            && state.rail_size.is_none()
+            && Width::of(window) != Width::Narrow
+        {
+            let page_w = |rail_w: u16| ShellLayout::new(look, window, rail_w).page(look).width;
+            if page_w(rail.width()) < need {
+                let (min, _, _) = Rail::sizes();
+                let fits = (min..rail.width()).rev().find(|&w| page_w(w) >= need);
+                rail = match fits {
+                    Some(w) => rail.size(Some(w)),
+                    None => {
+                        state.gave_way = true;
+                        rail.collapsed(true, true)
+                    }
+                };
+            }
+        }
         let shell = if state.kiosk {
             let foot_h = StatusLine::height(look).min(window.height);
             ShellLayout {
@@ -464,7 +501,12 @@ impl ShellState {
             };
         }
         if hit(self.collapse) {
-            self.collapsed = !self.collapsed;
+            // Expand on a rail that gave way keeps it open; else the control turns it.
+            if self.gave_way {
+                self.kept_open = true;
+            } else {
+                self.collapsed = !self.collapsed;
+            }
             return ShellEvent::Changed;
         }
         if hit(self.menu) {
@@ -512,6 +554,11 @@ impl ShellState {
     /// The side panel's room, while one shows: the app draws its content there.
     pub fn panel_area(&self) -> Option<Rect> {
         self.panel
+    }
+
+    /// Whether the rail collapsed to its icons this frame to give the page room.
+    pub fn gave_way(&self) -> bool {
+        self.gave_way
     }
 
     /// Whether the rail's edge is being dragged.

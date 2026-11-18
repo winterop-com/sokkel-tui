@@ -172,6 +172,15 @@ impl Cell {
     }
 
     /// A state the app names (ok, warn, fail), its dot and word in `tone`'s colors.
+    /// A status, as the header's lead and a pane's fact say it too: by the contract's maps, or
+    /// in the app's own tone.
+    pub fn state(status: crate::status::Status) -> Cell {
+        match status.tone() {
+            Some(tone) => Cell::toned(status.words().to_string(), tone),
+            None => Cell::status(status.words().to_string()),
+        }
+    }
+
     pub fn toned(state: impl Into<String>, tone: StatusTone) -> Cell {
         Cell {
             value: CellValue::Toned(state.into(), tone),
@@ -1207,11 +1216,8 @@ impl<'a> Table<'a> {
                 ]
             }
             CellValue::Status(state) => {
-                let dot = format!("status-{state}");
-                let word = format!("status-{state}-ink");
-                let has = |n: &str| look.has_color(n);
-                let dot_ink = if has(&dot) { look.color(&dot) } else { ink };
-                let word_ink = if has(&word) { look.color(&word) } else { ink };
+                // Through the contract's statuses: a run's state, a health check's, else neutral.
+                let (dot_ink, word_ink) = crate::status::Status::of(state.clone()).colors(look);
                 vec![
                     (format!("{} ", glyphs.status_dot), body.fg(t(dot_ink))),
                     (

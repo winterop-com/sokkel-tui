@@ -27,12 +27,19 @@ pub struct PaneSection {
     pub summary: Option<String>,
     /// Terms beside their values; `None` is the quiet dash.
     pub facts: Vec<(String, Option<String>)>,
+    /// Facts that are a status, by their place among the facts: drawn as a dot and its word.
+    pub statuses: Vec<(usize, crate::status::Status)>,
     /// Rows left after the facts for the app's own content (a preview, a run's steps): see
     /// [`DetailLayout::content`].
     pub content_rows: u16,
 }
 
 impl PaneSection {
+    /// The columns between a term and its value (12 px).
+    fn gap() -> u16 {
+        2
+    }
+
     pub fn new(title: impl Into<String>) -> PaneSection {
         PaneSection {
             title: title.into(),
@@ -46,7 +53,17 @@ impl PaneSection {
     }
 
     pub fn facts<T: Into<String>, V: Into<String>>(mut self, facts: impl IntoIterator<Item = (T, Option<V>)>) -> Self {
-        self.facts = facts.into_iter().map(|(t, v)| (t.into(), v.map(Into::into))).collect();
+        // Added after those given before (a status among them), in order.
+        self.facts
+            .extend(facts.into_iter().map(|(t, v)| (t.into(), v.map(Into::into))));
+        self
+    }
+
+    /// A fact that is a status (a health check's, a run's): its dot and its word in the status's
+    /// colors, as a table cell and a page header's lead say it.
+    pub fn status(mut self, term: impl Into<String>, status: crate::status::Status) -> Self {
+        self.statuses.push((self.facts.len(), status.clone()));
+        self.facts.push((term.into(), Some(format!("  {}", status.words()))));
         self
     }
 
@@ -98,6 +115,35 @@ impl<'a> DetailPane<'a> {
         by_density(self.look, 1, 0)
     }
 
+    /// The terms' column at `width`: the longest term, at most 40 percent of the section.
+    fn term_w(s: &PaneSection, width: u16) -> u16 {
+        let w = width.saturating_sub(4);
+        (s.facts.iter().map(|(t, _)| text::width(t)).max().unwrap_or(0) as u16).min(w * 2 / 5)
+    }
+
+    /// Each fact's value as drawn at `width`: wrapped in its column (a URL broken where it reaches
+    /// the end), so a long value reads whole; a missing one is one row.
+    fn fact_lines(s: &PaneSection, width: u16) -> Vec<Vec<String>> {
+        let room = width
+            .saturating_sub(4)
+            .saturating_sub(PaneSection::gap() + DetailPane::term_w(s, width));
+        s.facts
+            .iter()
+            .map(|(_, v)| match v {
+                Some(v) => text::wrap(v, room as usize),
+                None => vec![String::new()],
+            })
+            .collect()
+    }
+
+    /// The rows a section's facts take at `width`.
+    fn fact_rows(&self, s: &PaneSection, width: u16) -> u16 {
+        DetailPane::fact_lines(s, width)
+            .iter()
+            .map(|l| l.len().max(1) as u16)
+            .sum()
+    }
+
     /// The summary's lines at `width`.
     fn summary_lines(&self, s: &PaneSection, width: u16) -> Vec<String> {
         s.summary
@@ -128,7 +174,7 @@ impl<'a> DetailPane<'a> {
         let pad = self.pad_y();
         let mut h = 0;
         for (i, s) in self.sections.iter().enumerate() {
-            h += pad + 1 + self.summary_lines(s, width).len() as u16 + s.facts.len() as u16 + s.content_rows + pad;
+            h += pad + 1 + self.summary_lines(s, width).len() as u16 + self.fact_rows(s, width) + s.content_rows + pad;
             if i + 1 < self.sections.len() {
                 h += 1;
             }
@@ -147,7 +193,7 @@ impl<'a> DetailPane<'a> {
         let (x, w) = (area.x + 2, area.width.saturating_sub(4));
         let mut y = area.y;
         for (i, s) in self.sections.iter().enumerate() {
-            y += pad + 1 + self.summary_lines(s, area.width).len() as u16 + s.facts.len() as u16;
+            y += pad + 1 + self.summary_lines(s, area.width).len() as u16 + self.fact_rows(s, area.width);
             if s.content_rows > 0 {
                 out.content
                     .push((i, Rect::new(x, y, w, s.content_rows).intersection(area)));
@@ -213,10 +259,12 @@ impl Widget for &DetailPane<'_> {
                 put(buf, y, x, &line, w, body);
                 y += 1;
             }
-            // The terms in one column: the longest, at most 40 percent of the section.
-            let term_w = (s.facts.iter().map(|(t, _)| text::width(t)).max().unwrap_or(0) as u16).min(w * 2 / 5);
+            // The terms in one column: the longest, at most 40 percent of the section; each value
+            // wrapped in its own column beside it.
+            let term_w = DetailPane::term_w(s, area.width);
             let term = TextRole::Help.style(look).fg(t(look.color("muted-foreground")));
-            for (k, v) in &s.facts {
+            let wrapped = DetailPane::fact_lines(s, area.width);
+            for (i, ((k, v), lines)) in s.facts.iter().zip(&wrapped).enumerate() {
                 put(
                     buf,
                     y,
@@ -225,17 +273,30 @@ impl Widget for &DetailPane<'_> {
                     term_w,
                     term,
                 );
-                let vx = x + term_w + 2;
+                let vx = x + term_w + PaneSection::gap();
                 let room = (x + w).saturating_sub(vx);
+                let status = s.statuses.iter().find(|(at, _)| *at == i).map(|(_, st)| st);
                 match v {
-                    Some(v) => put(
-                        buf,
-                        y,
-                        vx,
-                        &text::truncate(v, room as usize, glyphs.ellipsis),
-                        room,
-                        body,
-                    ),
+                    // A status: its dot, then its word in its ink.
+                    Some(_) if let Some(status) = status => {
+                        let (dot, ink) = status.colors(look);
+                        put(buf, y, vx, glyphs.status_dot, room, Style::new().fg(t(dot)));
+                        let words = text::truncate(status.words(), room.saturating_sub(2) as usize, glyphs.ellipsis);
+                        put(
+                            buf,
+                            y,
+                            vx + 2,
+                            &words,
+                            room.saturating_sub(2),
+                            TextRole::Body.style(look).fg(t(ink)),
+                        );
+                    }
+                    Some(_) => {
+                        for (n, line) in lines.iter().enumerate() {
+                            put(buf, y + n as u16, vx, line, room, body);
+                        }
+                        y += (lines.len().max(1) - 1) as u16;
+                    }
                     None => put(
                         buf,
                         y,

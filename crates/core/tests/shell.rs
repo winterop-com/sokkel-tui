@@ -367,3 +367,101 @@ fn the_rails_width_is_kept_across_runs() {
     write_rail_size(&look_path, None).unwrap();
     assert_eq!(read_rail_size(&look_path), None, "its own width again");
 }
+
+#[test]
+fn a_detail_panes_long_fact_wraps_in_its_column() {
+    use sokkel_tui::{DetailPane, PaneSection};
+    let look = look();
+    let url = "https://climate-demo.dhis2.example.org/api/routes/run";
+    let pane = DetailPane::new(&look)
+        .sections([PaneSection::new("Check").facts([("URL", Some(url)), ("State", Some("failed"))])]);
+    let width = 40;
+    let h = pane.height(width);
+    let lines = draw(width, h, &pane);
+    // The whole URL, over two rows in the value's column, and the next fact under it.
+    let joined: String = lines.iter().map(|l| l.trim()).collect::<Vec<_>>().join("");
+    assert!(joined.replace("URL", "").contains(url), "{lines:?}");
+    let at = |w: &str| lines.iter().position(|l| l.contains(w)).unwrap();
+    assert!(at("State") >= at("URL") + 2, "{lines:?}");
+    let col = lines[at("URL")].find("https").unwrap();
+    assert_eq!(
+        lines[at("URL") + 1].find(|c: char| c != ' ').unwrap(),
+        col,
+        "in the value's column"
+    );
+}
+
+#[test]
+fn the_rail_gives_way_to_a_page_that_needs_the_room() {
+    use ratatui::layout::Position;
+    use sokkel_tui::{Pointer, PointerKind, Shell, ShellState};
+    let look = look();
+    let shell = Shell::new(&look, rail(&look).fit(), TopBar::new(&look), StatusLine::new(&look)).page_needs(Some(69));
+    let page = |w: u16, state: &mut ShellState| {
+        let window = Rect::new(0, 0, w, 30);
+        shell.render(window, &mut Buffer::empty(window), state)
+    };
+    // Room enough: the rail as it is.
+    let mut s = ShellState::default();
+    assert!(page(140, &mut s).width >= 69 && !s.gave_way());
+    // Short: narrower first, then its icons, the page keeping what it needs.
+    let p = page(100, &mut s);
+    assert!(p.width >= 69 && !s.gave_way(), "narrowed: {p:?}");
+    let p = page(90, &mut s);
+    assert!(p.width >= 69 && s.gave_way(), "collapsed: {p:?}");
+    // Expand on a rail that gave way keeps it open, the page then as it may.
+    let mark = Position::new(1, 0);
+    s.pointer(Pointer {
+        kind: PointerKind::Press,
+        at: mark,
+    });
+    assert!(s.kept_open && !s.collapsed);
+    page(90, &mut s);
+    assert!(!s.gave_way());
+    // A width the reader dragged wins too.
+    let mut dragged = ShellState::default();
+    dragged.rail_size = Some(Rail::sizes().2);
+    page(100, &mut dragged);
+    assert!(!dragged.gave_way() && dragged.edge_area().unwrap().x == Rail::sizes().2 - 1);
+}
+
+#[test]
+fn a_status_reads_the_same_in_a_cell_a_header_and_a_pane() {
+    use sokkel_tui::{Cell, DetailPane, PageHeader, PaneSection, Status, StatusTone};
+    let look = look();
+    let color = |t: &str| look.color(t);
+    // Health states through the contract's map: ok good, warn warning, fail and error critical.
+    assert_eq!(Status::of("ok").colors(&look).0, color("good"));
+    assert_eq!(Status::of("warn").colors(&look).0, color("warning"));
+    assert_eq!(Status::of("fail").colors(&look).0, color("critical"));
+    assert_eq!(Status::of("error").colors(&look).0, color("critical"));
+    // A run's state by its own color; one no map knows in neutral; an app's own tone wins.
+    assert_eq!(Status::of("failed").colors(&look).0, color("status-failed"));
+    assert_eq!(Status::of("completed-with-errors").words(), "completed-with-errors");
+    assert_eq!(Status::of("unheard-of").colors(&look).0, color("faint"));
+    assert_eq!(
+        Status::toned("degraded", StatusTone::Warning).colors(&look).0,
+        color("warning")
+    );
+    // The same status as a cell, a header's lead and a pane's fact: its dot in its color.
+    let dot = look.glyphs().status_dot;
+    let warn = Status::of("warn");
+    let ink_at = |buf: &Buffer| {
+        buf.content()
+            .iter()
+            .find(|c| c.symbol() == dot)
+            .map(|c| c.fg)
+            .expect("a dot")
+    };
+    let want = look.terminal(color("warning"));
+    let header = PageHeader::new(&look, "climate-demo-niger").lead_status(warn.clone());
+    let mut buf = Buffer::empty(Rect::new(0, 0, 60, 4));
+    (&header).render(buf.area, &mut buf);
+    assert_eq!(ink_at(&buf), want, "the header's lead");
+    let pane = DetailPane::new(&look).sections([PaneSection::new("Check").status("Health", warn.clone())]);
+    let mut buf = Buffer::empty(Rect::new(0, 0, 40, pane.height(40)));
+    (&pane).render(buf.area, &mut buf);
+    assert_eq!(ink_at(&buf), want, "the pane's fact");
+    assert!(lines(&buf).iter().any(|l| l.contains("warn")));
+    assert_eq!(Cell::state(warn).words(), "warn");
+}

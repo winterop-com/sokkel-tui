@@ -246,6 +246,12 @@ pub trait ShellApp {
     fn panel_width(&self) -> Option<u16> {
         None
     }
+    /// The columns the page needs to show itself as it means to (a table's 69, before its rows
+    /// turn into cards): the rail gives way to it, narrowing and then collapsing to its icons,
+    /// unless the reader dragged its edge or kept it open.
+    fn page_width(&self) -> Option<u16> {
+        None
+    }
     /// Draw the side panel's content in `area` (a [`crate::DetailPane`], say), after the page,
     /// naming its stops in `cx.focus`.
     fn panel(&mut self, _f: &mut Frame, _area: Rect, _cx: &mut Cx) {}
@@ -550,7 +556,10 @@ impl<A: ShellApp> Host<A> {
         let rail = self.app.chrome(&self.look).rail;
         let children = rail.children(g, e);
         // A collapsed rail or a strip opens a parent's children in a flyout beside it.
-        if (self.shell.collapsed || rail.is_strip()) && !self.shell.drawer && !children.is_empty() {
+        if (self.shell.collapsed || self.shell.gave_way() || rail.is_strip())
+            && !self.shell.drawer
+            && !children.is_empty()
+        {
             self.layer = Layer::Flyout(g, e);
             self.flyout = MenuState {
                 open: true,
@@ -696,6 +705,7 @@ impl<A: ShellApp> Host<A> {
             Shell::new(look, chrome.rail, chrome.top, chrome.foot)
                 .banner(banner)
                 .panel(self.app.panel_width())
+                .page_needs(self.app.page_width())
                 .render(window, f.buffer_mut(), &mut self.shell)
         };
         self.focus.begin();

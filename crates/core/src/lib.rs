@@ -53,6 +53,7 @@ pub mod settings;
 pub mod shell;
 pub mod shortcuts;
 pub mod snapshot;
+pub mod status;
 pub mod status_line;
 pub mod table;
 pub mod text;
@@ -89,6 +90,7 @@ pub use settings::{
 };
 pub use shell::{Shell, ShellEvent, ShellLayout, ShellState};
 pub use shortcuts::{Binding, KeyContext, Keys, ShortcutWords, Shortcuts};
+pub use status::Status;
 pub use status_line::{Fact, NoteTone, StatusLine};
 pub use table::{
     Align, Cell, CellValue, Column, ColumnWidth, Row, RowTone, SortDir, StatusTone, Table, TableBar, TableEvent,

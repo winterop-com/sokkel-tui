@@ -144,6 +144,11 @@ impl ShellApp for Runs {
         self.query = query.to_lowercase();
     }
 
+    /// The runs table needs 69 columns before its rows turn into cards: the rail gives way.
+    fn page_width(&self) -> Option<u16> {
+        Some(69)
+    }
+
     fn settings(&self, _look: &Look) -> Vec<SettingsSection> {
         vec![
             SettingsSection::new(

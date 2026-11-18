@@ -79,7 +79,7 @@ pub struct PageHeader<'a> {
     actions: Vec<Button<'a>>,
     more_focused: bool,
     words: PageHeaderWords,
-    lead: Option<String>,
+    lead: Option<crate::status::Status>,
     aside: Option<(String, String)>,
     words_only: bool,
     single_line: bool,
@@ -179,7 +179,13 @@ impl<'a> PageHeader<'a> {
     /// A part at the actions' start that is not a verb: a run's state, its dot and word in the
     /// state's colors. It never folds into More.
     pub fn lead(mut self, state: impl Into<String>) -> Self {
-        self.lead = Some(state.into());
+        self.lead = Some(crate::status::Status::of(state));
+        self
+    }
+
+    /// The lead as a [`crate::Status`]: a health state, or the app's own word in a tone.
+    pub fn lead_status(mut self, status: crate::status::Status) -> Self {
+        self.lead = Some(status);
         self
     }
 
@@ -226,7 +232,7 @@ impl<'a> PageHeader<'a> {
 
     /// The lead's width: its dot, a space, its word.
     fn lead_width(&self) -> u16 {
-        self.lead.as_ref().map_or(0, |w| 2 + text::width(w) as u16)
+        self.lead.as_ref().map_or(0, |s| 2 + text::width(s.words()) as u16)
     }
 
     /// An item or the primary as drawn: by its words alone under `wordsOnly`.
@@ -519,14 +525,10 @@ impl Widget for &PageHeader<'_> {
             let tile = Style::new().bg(look.token(color)).fg(look.token("on-fill"));
             buf.set_string(r.x, r.y, format!(" {letter} "), tile);
         }
-        if let (Some(state), Some(r)) = (&self.lead, layout.lead) {
-            let has = |n: &str| look.has_color(n);
-            let (dot, word) = (format!("status-{state}"), format!("status-{state}-ink"));
-            let fallback = ink("meta");
-            let dot = if has(&dot) { look.color(&dot) } else { fallback };
-            let word = if has(&word) { look.color(&word) } else { fallback };
+        if let (Some(status), Some(r)) = (&self.lead, layout.lead) {
+            let (dot, word) = status.colors(look);
             buf.set_string(r.x, r.y, glyphs.status_dot, Style::new().fg(t(dot)));
-            buf.set_string(r.x + 2, r.y, state, TextRole::Body.style(look).fg(t(word)));
+            buf.set_string(r.x + 2, r.y, status.words(), TextRole::Body.style(look).fg(t(word)));
         }
         for (i, r) in &layout.items {
             self.drawn(&self.items[*i]).render(*r, buf);
