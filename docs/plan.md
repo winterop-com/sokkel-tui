@@ -123,7 +123,9 @@ the contract say so that it does?
   search field, trail, palette button with its keys and actions, and below md the menu button, the
   last crumb and the search icon; the status line's note with its live dot and tones, its facts,
   and a focused control's tip in the note's place (principle 23); `ShellLayout` placing them, the
-  drawer below md. The rail's edge resizes it (a drag, or Tab to it and Left, Right, Home, End,
+  drawer below md. The rail fits its longest label (`Rail::fit`, up to `maxSize`) or takes the app's
+  `Rail::size`; a focused entry cut short says its whole label in the status line; a width the
+  edge left is kept across runs (`layout.json` beside the kept look). The rail's edge resizes it (a drag, or Tab to it and Left, Right, Home, End,
   Enter; `ShellState::rail_size`, between `minSize` and `maxSize`). The strip (`Rail::strip`: 9
   columns, each entry its icon over its short label, a parent's children in a flyout; it neither
   collapses nor resizes). A side panel (`ShellApp::panel_width`/`panel`, `Shell::panel`: at the content's end on the

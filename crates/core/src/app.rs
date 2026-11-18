@@ -426,6 +426,8 @@ struct Host<A> {
     /// Where the look is kept, and the look last kept there.
     kept: Option<std::path::PathBuf>,
     worn: (String, Scheme, Density),
+    /// The rail's width as last kept (a width its edge left).
+    rail_kept: Option<u16>,
     focus: Focus,
     hover: Option<Position>,
     /// The routes behind this one, and the one shown.
@@ -453,7 +455,10 @@ pub fn run_shell(app: impl ShellApp, look: Look) -> std::io::Result<()> {
         Some(path) if !asked => read_look(path, &look).unwrap_or(look),
         _ => look,
     };
+    let rail = kept.as_deref().and_then(read_rail_size);
     let mut host = Host::new(app, look, kept);
+    host.shell.rail_size = rail;
+    host.rail_kept = rail;
     run(&mut host)
 }
 
@@ -491,6 +496,7 @@ impl<A: ShellApp> Host<A> {
         let mut host = Host {
             kept,
             worn: (look.theme().to_string(), look.scheme(), look.density()),
+            rail_kept: None,
             app,
             look,
             shell: ShellState::default(),
@@ -1544,6 +1550,13 @@ impl<A: ShellApp> Program for Host<A> {
             }
             self.worn = worn;
         }
+        // A width the rail's edge left is kept too, once the drag lets go.
+        if self.shell.rail_size != self.rail_kept && !self.shell.dragging() {
+            if let Some(path) = &self.kept {
+                let _ = write_rail_size(path, self.shell.rail_size);
+            }
+            self.rail_kept = self.shell.rail_size;
+        }
         self.draw_frame(f);
         if let Some(pos) = self.shell.cursor_position() {
             f.set_cursor_position(pos);
@@ -1667,6 +1680,27 @@ pub fn read_look(path: &std::path::Path, base: &Look) -> Option<Look> {
             .with_depth(base.depth())
             .with_charset(base.charset()),
     )
+}
+
+/// Where the rail's kept width lives: `layout.json` beside the kept look.
+fn layout_path(look_path: &std::path::Path) -> std::path::PathBuf {
+    look_path.with_file_name("layout.json")
+}
+
+/// The rail's width its edge left in an earlier run, kept beside the look at `look_path`.
+pub fn read_rail_size(look_path: &std::path::Path) -> Option<u16> {
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(layout_path(look_path)).ok()?).ok()?;
+    v.get("railSize").and_then(|n| n.as_u64()).map(|n| n as u16)
+}
+
+/// Keep the rail's width (`None`: its own) beside the look at `look_path`.
+pub fn write_rail_size(look_path: &std::path::Path, size: Option<u16>) -> std::io::Result<()> {
+    let path = layout_path(look_path);
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let v = serde_json::json!({ "railSize": size });
+    std::fs::write(path, serde_json::to_string_pretty(&v)? + "\n")
 }
 
 /// Keep `look` at `path`, under the web's keys.

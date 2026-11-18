@@ -328,3 +328,42 @@ fn a_detail_pane_sets_its_terms_in_one_column_and_presses_its_verbs() {
     let (_, cancel) = l.actions[1];
     assert_eq!(pane.press(area, Position::new(cancel.x + 1, cancel.y)), Some(1));
 }
+
+#[test]
+fn a_rail_fits_its_longest_label_and_says_a_cut_one_whole() {
+    use sokkel_tui::{Shell, ShellState};
+    let look = look();
+    let long = "Chap Core master, climate-demo-niger";
+    let rail = || {
+        Rail::new(&look, "C", "chap-checker").groups([RailGroup::new(
+            Some("Instances"),
+            [RailEntry::new(long).icon("●"), RailEntry::new("local").icon("●")],
+        )])
+    };
+    let (min, own, max) = Rail::sizes();
+    assert_eq!(rail().width(), own, "its own width unless it fits");
+    let fitted = rail().fit().width();
+    assert!(fitted > own && fitted <= max, "{fitted}");
+    assert!(draw(fitted, 6, rail().fit()).iter().any(|l| l.contains(long)), "whole");
+    assert_eq!(rail().size(Some(min)).width(), min, "the app's own size");
+    // Cut short, the focused entry says the whole label in the status line.
+    let shell = Shell::new(&look, rail(), TopBar::new(&look), StatusLine::new(&look));
+    let mut state = ShellState::default();
+    state.rail_focus = Some((0, 0));
+    let window = Rect::new(0, 0, 120, 30);
+    let mut buf = Buffer::empty(window);
+    shell.render(window, &mut buf, &mut state);
+    assert!(lines(&buf)[29].contains(long), "{:?}", lines(&buf)[29]);
+}
+
+#[test]
+fn the_rails_width_is_kept_across_runs() {
+    use sokkel_tui::app::{read_rail_size, write_rail_size};
+    let dir = std::env::temp_dir().join(format!("sokkel-tui-rail-{}", std::process::id()));
+    let look_path = dir.join("tidevann").join("appearance.json");
+    assert_eq!(read_rail_size(&look_path), None);
+    write_rail_size(&look_path, Some(36)).unwrap();
+    assert_eq!(read_rail_size(&look_path), Some(36));
+    write_rail_size(&look_path, None).unwrap();
+    assert_eq!(read_rail_size(&look_path), None, "its own width again");
+}

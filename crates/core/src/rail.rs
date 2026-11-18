@@ -172,9 +172,10 @@ pub struct Rail<'a> {
     foot: Option<RailFoot>,
     focused: Option<(usize, usize)>,
     words: RailWords,
-    size: Option<u16>,
+    pub(crate) size: Option<u16>,
     edge_shown: bool,
     strip: bool,
+    fit: bool,
 }
 
 impl<'a> Rail<'a> {
@@ -192,6 +193,7 @@ impl<'a> Rail<'a> {
             size: None,
             edge_shown: false,
             strip: false,
+            fit: false,
         }
     }
 
@@ -281,8 +283,46 @@ impl<'a> Rail<'a> {
             cols(57.0)
         } else {
             let (min, default, max) = Rail::sizes();
-            self.size.unwrap_or(default).clamp(min, max)
+            let own = if self.fit { self.fitted().max(default) } else { default };
+            self.size.unwrap_or(own).clamp(min, max)
         }
+    }
+
+    /// Opened as wide as its longest entry needs, from `defaultSize` up to `maxSize`, so labels
+    /// that differ at their ends (an instance's name) are not cut short; a width the edge left
+    /// wins over it.
+    pub fn fit(mut self) -> Self {
+        self.fit = true;
+        self
+    }
+
+    /// The columns an entry's end takes: its count, else one for a dot or a chevron.
+    fn end_w(entry: &RailEntry) -> u16 {
+        entry.count.as_ref().map_or(
+            u16::from(entry.unread || entry.parent.is_some() || entry.status.is_some()),
+            |c| text::width(c) as u16,
+        )
+    }
+
+    /// Where an expanded entry's label starts, from the rail's start.
+    fn label_x(entry: &RailEntry) -> u16 {
+        1 + 2 * entry.depth as u16 + if entry.icon.is_some() { 2 } else { 0 }
+    }
+
+    /// The rail's width that shows every label whole: the longest one, its start and end.
+    fn fitted(&self) -> u16 {
+        self.groups
+            .iter()
+            .flat_map(|g| &g.entries)
+            .map(|e| Rail::label_x(e) + text::width(&e.label) as u16 + 1 + Rail::end_w(e) + 2)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// The room an expanded entry's label has at the rail's width.
+    fn label_room(&self, entry: &RailEntry) -> u16 {
+        let inner_w = self.width().saturating_sub(1);
+        inner_w.saturating_sub(1 + Rail::label_x(entry) + Rail::end_w(entry) + 1)
     }
 
     /// The expanded rail's narrowest, own and widest width in columns (`minSize`, `defaultSize`,
@@ -309,8 +349,14 @@ impl<'a> Rail<'a> {
         let (g, e) = self.focused?;
         let entry = self.groups.get(g)?.entries.get(e)?;
         if !self.collapsed {
-            // Expanded, the label is there; a status dot still says its word (principle 22).
-            return entry.status.as_ref().map(|(_, w)| format!("{}  {w}", entry.label));
+            // Expanded, the label is there, unless it is cut short: then the whole of it; a status
+            // dot still says its word (principle 22).
+            let cut = text::width(&entry.label) as u16 > self.label_room(entry);
+            return match (&entry.status, cut) {
+                (Some((_, w)), _) => Some(format!("{}  {w}", entry.label)),
+                (None, true) => Some(entry.label.clone()),
+                (None, false) => None,
+            };
         }
         let mut words = entry.label.clone();
         if let Some((_, word)) = &entry.status {

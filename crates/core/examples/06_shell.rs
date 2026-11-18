@@ -66,6 +66,7 @@ fn rail<'a>(look: &'a Look, collapsed: bool, hosts_open: bool, strip: bool) -> R
                 RailEntry::new("Hosts").icon("▣").parent(hosts_open),
                 RailEntry::new("api.example.org").child(),
                 RailEntry::new("harbor.example.org").child(),
+                RailEntry::new("juniper.example.org, read replica").child(),
             ],
         ),
         RailGroup::new(
@@ -77,6 +78,8 @@ fn rail<'a>(look: &'a Look, collapsed: bool, hosts_open: bool, strip: bool) -> R
             ],
         ),
     ])
+    // As wide as its longest label needs, up to maxSize.
+    .fit()
     .collapsed(collapsed, true)
     .foot(RailFoot {
         letter: "a".into(),

@@ -127,6 +127,7 @@ pub struct ShellState {
     /// The edge being dragged, and hovered.
     dragging: bool,
     edge_hover: bool,
+    rail_own: u16,
     edge: Option<Rect>,
     cursor: Option<Position>,
     window: Rect,
@@ -199,7 +200,7 @@ impl<'a> Shell<'a> {
             .clone()
             .collapsed(state.collapsed, true)
             .focused(state.rail_focus)
-            .size(state.rail_size)
+            .size(state.rail_size.or(self.rail.size))
             .edge(state.dragging || state.edge_hover || state.edge_focus);
         let shell = if state.kiosk {
             let foot_h = StatusLine::height(look).min(window.height);
@@ -227,6 +228,8 @@ impl<'a> Shell<'a> {
             .rail
             .filter(|_| !rail.is_collapsed() && shell.width != Width::Narrow)
             .map(|r| Rect::new(r.right() - 1, r.y, 1, r.height));
+        // The rail's own width (fitted, or the app's), which Enter on the edge puts back.
+        state.rail_own = self.rail.clone().collapsed(false, false).size(self.rail.size).width();
         if !state.narrow {
             state.drawer = false;
         }
@@ -333,6 +336,8 @@ impl<'a> Shell<'a> {
                 shell.content.height = 0;
             }
         }
+        // Else a focused rail entry's words: a collapsed one's label, a cut one's whole.
+        let tip = tip.or_else(|| rail.tip().map(|words| crate::button::Tip { words, shortcut: None }));
         match (&state.note, tip) {
             (Some(note), _) => (&self.foot.clone().note(note.clone(), NoteTone::Plain)).render(shell.foot, buf),
             (None, Some(tip)) => (&self.foot.clone().tip(Some(tip))).render(shell.foot, buf),
@@ -417,7 +422,7 @@ impl ShellState {
                     let (min, _, max) = Rail::sizes();
                     let x0 = edge
                         .right()
-                        .saturating_sub(self.rail_size.unwrap_or(Rail::sizes().1).clamp(min, max));
+                        .saturating_sub(self.rail_size.unwrap_or(self.rail_own).clamp(min, max));
                     let size = (p.at.x + 1).saturating_sub(x0).clamp(min, max);
                     self.rail_size = Some(size);
                 }
@@ -509,6 +514,11 @@ impl ShellState {
         self.panel
     }
 
+    /// Whether the rail's edge is being dragged.
+    pub fn dragging(&self) -> bool {
+        self.dragging
+    }
+
     /// Where the rail's edge stands, while it resizes the rail.
     pub fn edge_area(&self) -> Option<Rect> {
         self.edge
@@ -518,7 +528,8 @@ impl ShellState {
     /// the narrowest and the widest, Enter puts back its own width.
     pub fn edge_key(&mut self, key: crate::keys::KeyPress) -> bool {
         use crate::keys::Key;
-        let (min, own, max) = Rail::sizes();
+        let (min, _, max) = Rail::sizes();
+        let own = self.rail_own.clamp(min, max);
         let now = self.rail_size.unwrap_or(own).clamp(min, max);
         let to = match key.key {
             Key::Left => now.saturating_sub(2).max(min),
