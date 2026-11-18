@@ -523,3 +523,38 @@ fn a_focused_control_on_the_page_keeps_its_arrows() {
     };
     assert!(passing(&["b", "left"]).contains("at a"));
 }
+
+/// A page with one control that says whether it has focus; with or without a route.
+struct Says(bool);
+
+impl sokkel_tui::app::ShellApp for Says {
+    fn route(&self) -> String {
+        if self.0 { "overview".into() } else { String::new() }
+    }
+    fn chrome<'a>(&'a self, look: &'a Look) -> sokkel_tui::app::Chrome<'a> {
+        sokkel_tui::app::Chrome {
+            rail: Rail::new(look, "T", "Tidevann"),
+            top: TopBar::new(look),
+            foot: StatusLine::new(look),
+        }
+    }
+    fn page(&mut self, f: &mut ratatui::Frame, area: Rect, cx: &mut sokkel_tui::app::Cx) {
+        let id = sokkel_tui::FocusId::new("instances");
+        cx.focus.stop_passing(id, Rect { height: 1, ..area });
+        let words = if cx.focus.is(id) { "focused" } else { "unfocused" };
+        f.buffer_mut()
+            .set_string(area.x, area.y, words, ratatui::style::Style::new());
+    }
+}
+
+#[test]
+fn the_pages_first_stop_has_focus_from_the_start() {
+    for routed in [true, false] {
+        let keys: Vec<KeyPress> = ["home"].iter().filter_map(|k| KeyPress::named(k)).collect();
+        let text = sokkel_tui::snapshot::text(&sokkel_tui::app::shot(Says(routed), look(), (150, 40), |_| {}, &keys));
+        assert!(
+            text.contains("focused") && !text.contains("unfocused"),
+            "routed {routed}: {text}"
+        );
+    }
+}

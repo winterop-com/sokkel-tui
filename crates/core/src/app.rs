@@ -537,7 +537,8 @@ impl<A: ShellApp> Host<A> {
             forward: Vec::new(),
             going_forward: false,
             stay: false,
-            to_page: false,
+            // The first page takes focus as any page a route opens does, routed or not.
+            to_page: true,
             page_mark: 0,
             opened_from: None,
             was_open: false,
