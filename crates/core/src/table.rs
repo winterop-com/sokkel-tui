@@ -586,7 +586,8 @@ impl TableState {
                 self.cell += 1;
                 Some(TableEvent::Moved)
             }
-            Key::Left | Key::Right => Some(TableEvent::Ignored),
+            // At the first or the last cell the arrows stay the table's.
+            Key::Left | Key::Right => Some(TableEvent::Moved),
             Key::Enter | Key::Char(_) if table.columns.get(self.cell).is_some_and(|c| c.editable) => {
                 let row = self.active_row(table.rows)?;
                 // Enter opens it holding its value; a typed character starts it afresh.

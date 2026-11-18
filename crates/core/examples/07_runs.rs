@@ -408,7 +408,8 @@ impl ShellApp for Runs {
             ..page
         };
         self.table_at = area;
-        let focused = cx.focus.stop(at(TABLE), area) && cx.active;
+        // A table: the arrows it has no use for go back and forward along the routes.
+        let focused = cx.focus.stop_passing(at(TABLE), area) && cx.active;
         let hover = cx.hover.filter(|_| !self.menu.open);
         match self.page {
             Page::Runs => {

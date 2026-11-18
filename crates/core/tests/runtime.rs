@@ -470,8 +470,8 @@ fn left_and_right_go_back_and_forward_along_the_routes() {
     assert!(shot(&["b", "esc", "b", "left"]).contains("at a"));
 }
 
-/// Places whose page holds one control.
-struct Stopped(Places);
+/// Places whose page holds one control; passing, it lets the arrows it leaves go on.
+struct Stopped(Places, bool);
 
 impl sokkel_tui::app::ShellApp for Stopped {
     fn route(&self) -> String {
@@ -485,14 +485,16 @@ impl sokkel_tui::app::ShellApp for Stopped {
     }
     fn page(&mut self, f: &mut ratatui::Frame, area: Rect, cx: &mut sokkel_tui::app::Cx) {
         self.0.page(f, area, cx);
-        cx.focus.stop(
-            sokkel_tui::FocusId::new("control"),
-            Rect {
-                y: area.y + 1,
-                height: 1,
-                ..area
-            },
-        );
+        let at = Rect {
+            y: area.y + 1,
+            height: 1,
+            ..area
+        };
+        if self.1 {
+            cx.focus.stop_passing(sokkel_tui::FocusId::new("control"), at);
+        } else {
+            cx.focus.stop(sokkel_tui::FocusId::new("control"), at);
+        }
     }
     fn shortcuts(&self) -> Vec<sokkel_tui::Binding<String>> {
         self.0.shortcuts()
@@ -506,11 +508,18 @@ impl sokkel_tui::app::ShellApp for Stopped {
 fn a_focused_control_on_the_page_keeps_its_arrows() {
     let shot = |keys: &[&str]| {
         let keys: Vec<KeyPress> = keys.iter().filter_map(|k| KeyPress::named(k)).collect();
-        let app = Stopped(Places { at: "a".into() });
+        let app = Stopped(Places { at: "a".into() }, false);
         sokkel_tui::snapshot::text(&sokkel_tui::app::shot(app, look(), (120, 30), |_| {}, &keys))
     };
     // On b, focus moves to the page's control: Left is the control's, though it leaves it.
     assert!(shot(&["b", "left"]).contains("at b"));
     // Escape still goes back.
     assert!(shot(&["b", "esc"]).contains("at a"));
+    // A stop that passes the arrows it leaves (a table) lets Left go back.
+    let passing = |keys: &[&str]| {
+        let keys: Vec<KeyPress> = keys.iter().filter_map(|k| KeyPress::named(k)).collect();
+        let app = Stopped(Places { at: "a".into() }, true);
+        sokkel_tui::snapshot::text(&sokkel_tui::app::shot(app, look(), (120, 30), |_| {}, &keys))
+    };
+    assert!(passing(&["b", "left"]).contains("at a"));
 }

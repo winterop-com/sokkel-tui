@@ -622,12 +622,16 @@ impl<A: ShellApp> Host<A> {
         }
     }
 
-    /// Whether a control on the page has focus (not one of the frame's: the rail's entries and
-    /// edge, the search, the palette's button, the account).
+    /// Whether a control on the page keeps the arrows (not one of the frame's: the rail's entries
+    /// and edge, the search, the palette's button, the account; nor a stop that passes them).
     fn page_focused(&self) -> bool {
         let Some(id) = self.focus.current() else {
             return false;
         };
+        // A stop that lets the arrows it leaves go on (a table with no use for them).
+        if self.focus.passes_arrows() {
+            return false;
+        }
         let frame = [search_stop(), palette_stop(), account_stop(), edge_stop()];
         let entry = self.shell.entries().iter().any(|&((g, e), _)| entry_stop(g, e) == id);
         !frame.contains(&id) && !entry

@@ -45,6 +45,9 @@ pub enum InputKind {
 pub enum StopKind {
     Control,
     Text,
+    /// A control whose arrows it leaves go on to the frame: Left and Right then go back and
+    /// forward along the routes (a table with no use for them).
+    Passing,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -102,6 +105,18 @@ impl Focus {
     /// Name a stop that takes keys of its own, where it is drawn; true when it has focus.
     pub fn stop(&mut self, id: FocusId, area: Rect) -> bool {
         self.add(id, area, StopKind::Control)
+    }
+
+    /// Name a stop whose Left and Right, when it leaves them, go on along the routes (a table:
+    /// unless it edits, holds a tree or a detail, or has a head chosen); true when it has focus.
+    pub fn stop_passing(&mut self, id: FocusId, area: Rect) -> bool {
+        self.add(id, area, StopKind::Passing)
+    }
+
+    /// Whether the focused stop lets the arrows it leaves go on.
+    pub fn passes_arrows(&self) -> bool {
+        self.current
+            .is_some_and(|c| self.stops.iter().any(|s| s.id == c && s.kind == StopKind::Passing))
     }
 
     /// Name a stop that takes typed text.
