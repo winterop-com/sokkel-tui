@@ -337,6 +337,46 @@ impl<'a> CommandPalette<'a> {
         self
     }
 
+    /// The columns a command's row needs inside the box: its icon, label, hint (or code, or a
+    /// disabled one's reason), meta, kind and keys, each with its gap; or its second line.
+    fn row_need(&self, cmd: &Command) -> u16 {
+        let w = |s: &Option<String>| s.as_deref().map_or(0, |s| text::width(s) as u16);
+        let after = cmd.disabled.as_ref().or(cmd.hint.as_ref()).or(cmd.code.as_ref());
+        let icon = cmd.icon.as_ref().map_or(2, |i| text::width(i) as u16 + 1);
+        let mut need = 1 + icon + text::width(&cmd.label) as u16 + 1;
+        if let Some(a) = after {
+            need += text::width(a) as u16 + 1;
+        }
+        if cmd.meta.is_some() {
+            need += w(&cmd.meta) + 2;
+        }
+        if cmd.kind.is_some() {
+            need += w(&cmd.kind) + 1;
+        }
+        if let Some(k) = &cmd.keys {
+            need += text::width(&k.label(&self.words.keys)) as u16 + 3;
+        }
+        let second = cmd.detail.as_ref().map_or(0, |d| 1 + icon + text::width(d) as u16 + 1);
+        need.max(second)
+    }
+
+    /// Its width in a window `window` columns wide: as wide as its widest command's row (not the
+    /// app's search results, so it holds while they come and go, nor while the query filters),
+    /// from its own width (`sm` 384 px) to 60 percent of the window, at most 96 columns.
+    fn fitted(&self, window: u16) -> u16 {
+        let own = cols(self.width_px);
+        let widest = self
+            .groups
+            .iter()
+            .filter(|g| !g.results)
+            .flat_map(|g| &g.commands)
+            .map(|c| self.row_need(c) + 2)
+            .max()
+            .unwrap_or(0);
+        let cap = (window * 6 / 10).min(96).max(own);
+        widest.clamp(own, cap).min(window.saturating_sub(4))
+    }
+
     /// Whether the wait shows: it has run `wait-shown`.
     fn wait_shows(&self) -> bool {
         self.waiting.is_some_and(|ms| ms >= self.look.duration_ms("wait-shown"))
@@ -543,7 +583,7 @@ impl<'a> CommandPalette<'a> {
         let w = if self.sheet {
             window.width.saturating_sub(4)
         } else {
-            cols(self.width_px).min(window.width.saturating_sub(4))
+            self.fitted(window.width)
         };
         let list_max = (window.height as usize * 6 / 10).max(3);
         let lines = self.lines(state).len().max(1).min(list_max) as u16;
@@ -766,7 +806,20 @@ impl CommandPalette<'_> {
             let help = TextRole::Help.style(look).fg(t(fi));
             let kg = p("rest.keys", "ground").unwrap_or(ground);
             let cap = TextRole::Badge.style(look).fg(t(fi)).bg(t(kg));
-            let name = text::truncate(name, inner.width as usize / 3, glyphs.ellipsis);
+            // While the active row is cut short, its whole words stand where the app's name does.
+            let rows = self.rows(&state.query);
+            let cut = rows
+                .get(state.active)
+                .map(|&r| self.command(r))
+                .filter(|c| self.row_need(c) > inner.width)
+                .map(|c| match c.disabled.as_ref().or(c.hint.as_ref()) {
+                    Some(h) => format!("{}  {h}", c.label),
+                    None => c.label.clone(),
+                });
+            let name = match &cut {
+                Some(words) => text::truncate(words, inner.width.saturating_sub(2) as usize, glyphs.ellipsis),
+                None => text::truncate(name, inner.width as usize / 3, glyphs.ellipsis),
+            };
             buf.set_string(inner.x + 1, fy + 1, &name, help);
             let name_end = inner.x + 1 + text::width(&name) as u16 + 2;
             let mut pieces = vec![(self.words.enter.clone(), self.words.run.clone())];

@@ -286,3 +286,35 @@ fn the_apps_search_lists_its_results_holds_an_earlier_querys_and_says_its_wait()
     let said = shown.find("The search did not answer.").expect("said");
     assert!(said < shown.find("Retry").unwrap());
 }
+
+#[test]
+fn the_palette_fits_its_widest_row_and_its_foot_says_a_cut_one_whole() {
+    let look = look();
+    let long = "Open Chap Core master, climate-demo-niger";
+    let groups = || {
+        vec![CommandGroup::new(
+            "Instances",
+            [Command::new("open", long), Command::new("local", "Open local")],
+        )]
+    };
+    let state = PaletteState::default();
+    let pal = CommandPalette::new(&look, groups()).foot("chap-checker", Some(Keys::Mod('k')));
+    let own = sokkel_tui::cells::cols(384.0);
+    // Wide enough: as wide as the long row needs, more than its own width.
+    let wide = pal.area(Rect::new(0, 0, 160, 40), &state).width;
+    assert!(wide > own && wide <= 96, "{wide}");
+    // Filtering keeps the width: the commands set it, not the rows that match.
+    let mut filtered = PaletteState::default();
+    filtered.query = "local".into();
+    assert_eq!(pal.area(Rect::new(0, 0, 160, 40), &filtered).width, wide);
+    // At 60 percent of a narrow window the row is cut, and the foot says it whole while active.
+    let window = Rect::new(0, 0, 70, 30);
+    let area = pal.area(window, &state);
+    assert_eq!(area.width, own.max(42), "60 percent of 70, at least its own");
+    let mut buf = Buffer::empty(window);
+    let mut s = PaletteState::default();
+    pal.render(area, &mut buf, &mut s);
+    let text = snapshot::text(&buf);
+    let foot = text.lines().rev().find(|l| l.contains("Open Chap")).expect("the foot");
+    assert!(foot.contains("climate-demo-ni"), "{text}");
+}
