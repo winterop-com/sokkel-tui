@@ -443,3 +443,45 @@ fn a_select_opened_by_a_press_lays_its_list_over_the_trigger() {
     let top = Rect::new(4, 0, 20, 1);
     assert_eq!(sel.list_area_open(window, top, &s).y, top.bottom());
 }
+
+#[test]
+fn a_prompt_shuts_submit_while_empty_or_refused_and_holds_while_busy() {
+    use sokkel_tui::{Prompt, PromptEvent, PromptState};
+    let look = look();
+    let window = Rect::new(0, 0, 80, 24);
+    let enter = || press(Key::Enter);
+    let prompt = || Prompt::new(&look, "API token for api", "Token");
+    // Empty: Submit is shut, Enter does nothing.
+    let mut s = PromptState::default();
+    assert_eq!(prompt().handle(&mut s, enter()), PromptEvent::Changed);
+    assert_eq!(
+        prompt().allow_empty(true).handle(&mut s, enter()),
+        PromptEvent::Submit(String::new())
+    );
+    // Refused: the issue shows once tried, Submit shut.
+    let mut s = PromptState {
+        field: sokkel_tui::FieldState::new("abc"),
+        ..Default::default()
+    };
+    let refused = prompt().refuse(Some("A token is 40 characters."));
+    assert_eq!(refused.handle(&mut s, enter()), PromptEvent::Changed);
+    assert!(s.touched);
+    assert_eq!(prompt().handle(&mut s, enter()), PromptEvent::Submit("abc".into()));
+    // Busy: Submit says Submitting, Escape waits until busy-release, typing is held.
+    let busy = prompt().busy(Some(100));
+    let mut buf = Buffer::empty(window);
+    let area = busy.area(window, &s);
+    busy.render(area, &mut buf, &mut s);
+    assert!(sokkel_tui::snapshot::text(&buf).contains("Submitting"));
+    assert_eq!(busy.handle(&mut s, press(Key::Escape)), PromptEvent::Ignored);
+    busy.handle(&mut s, press(Key::Char('x')));
+    assert_eq!(s.field.value(), "abc", "held");
+    let released = prompt().busy(Some(look.duration_ms("busy-release")));
+    assert_eq!(released.handle(&mut s, press(Key::Escape)), PromptEvent::Cancel);
+    // Failed: the status row says why, the value kept.
+    let failed = prompt().failed(Some(None));
+    let mut buf = Buffer::empty(window);
+    failed.render(failed.area(window, &s), &mut buf, &mut s);
+    assert!(sokkel_tui::snapshot::text(&buf).contains("Could not submit. Try again."));
+    assert_eq!(s.field.value(), "abc");
+}

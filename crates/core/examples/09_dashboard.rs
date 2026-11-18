@@ -46,7 +46,9 @@ struct Overview {
     prompt_at: Rect,
     rejected: bool,
     /// A token being checked, since this time: the prompt's field busy meanwhile.
-    checking: Option<u64>,
+    checking: Option<(u64, String)>,
+    /// The last check refused the token: the prompt says so.
+    failed: bool,
     /// Runs per hour expanded over the page, and where it stands on the page.
     expanded: bool,
     runs_at: Rect,
@@ -134,22 +136,17 @@ impl Overview {
 
     /// How long the token has been checked, while it is.
     fn busy(&self) -> Option<u64> {
-        self.checking.map(|t| self.now.saturating_sub(t))
+        self.checking.as_ref().map(|(t, _)| self.now.saturating_sub(*t))
     }
 
-    /// What the token prompt's answer does: a token signs in, an empty one is turned down and the
-    /// banner says so; Cancel closes it. It never reopens by itself.
+    /// What the token prompt's answer does: a token is checked, the prompt busy meanwhile (an
+    /// empty one cannot be submitted: the prompt shuts Submit); Cancel closes it. It never
+    /// reopens by itself.
     fn prompted(&mut self, event: PromptEvent, state: PromptState) {
         match event {
-            // Held while a token is checked.
-            PromptEvent::Submit(_) if self.checking.is_some() => self.prompt = Some(state),
-            // An empty token is turned down at once; one with words is checked first.
-            PromptEvent::Submit(token) if token.is_empty() => {
-                self.rejected = true;
-                self.disconnected = false;
-            }
-            PromptEvent::Submit(_) => {
-                self.checking = Some(self.now);
+            PromptEvent::Submit(token) => {
+                self.checking = Some((self.now, token));
+                self.failed = false;
                 self.prompt = Some(state);
             }
             PromptEvent::Cancel => self.checking = None,
@@ -204,9 +201,9 @@ impl ShellApp for Overview {
             let r = DashboardPanel::expanded_area(cx.window);
             (&self.runs_panel(cx.look)).render(r, f.buffer_mut());
         }
-        let busy = self.busy();
+        let (busy, failed) = (self.busy(), self.failed);
         let Some(state) = self.prompt.as_mut() else { return };
-        let p = token_prompt(cx.look, cx.window, busy);
+        let p = token_prompt(cx.look, cx.window, busy, failed);
         let r = p.area(cx.window, state);
         p.render(r, f.buffer_mut(), state);
         if let Some(at) = state.field.cursor_position() {
@@ -216,9 +213,9 @@ impl ShellApp for Overview {
     }
 
     fn paste(&mut self, text: &str, cx: &mut Cx) {
-        let busy = self.busy();
+        let (busy, failed) = (self.busy(), self.failed);
         if let Some(state) = self.prompt.as_mut() {
-            token_prompt(cx.look, cx.window, busy).paste(state, text);
+            token_prompt(cx.look, cx.window, busy, failed).paste(state, text);
         }
     }
 
@@ -402,7 +399,7 @@ impl ShellApp for Overview {
             return Flow::Handled;
         }
         if let Some(mut state) = self.prompt.take() {
-            let event = token_prompt(cx.look, cx.window, self.busy()).handle(&mut state, key);
+            let event = token_prompt(cx.look, cx.window, self.busy(), self.failed).handle(&mut state, key);
             self.prompted(event, state);
             return Flow::Handled;
         }
@@ -446,7 +443,7 @@ impl ShellApp for Overview {
         }
         if let Some(mut state) = self.prompt.take() {
             let event = if p.kind == PointerKind::Press {
-                token_prompt(cx.look, cx.window, self.busy()).press(&mut state, self.prompt_at, p.at)
+                token_prompt(cx.look, cx.window, self.busy(), self.failed).press(&mut state, self.prompt_at, p.at)
             } else {
                 PromptEvent::Ignored
             };
@@ -461,26 +458,31 @@ impl ShellApp for Overview {
 
     fn tick(&mut self, now: u64) {
         self.now = now;
-        // The check answers after a moment: signed in, the prompt closes.
-        if self.checking.is_some_and(|t| now.saturating_sub(t) >= 1500) {
+        // The check answers after a moment: a token of eight characters or more signs in and the
+        // prompt closes; a shorter one fails, the prompt saying so, the token kept.
+        if let Some((t, token)) = self.checking.clone()
+            && now.saturating_sub(t) >= 1500
+        {
             self.checking = None;
-            self.prompt = None;
-            self.rejected = false;
-            self.disconnected = false;
+            if token.chars().count() >= 8 {
+                self.prompt = None;
+                self.rejected = false;
+                self.disconnected = false;
+            } else {
+                self.failed = true;
+            }
         }
     }
 }
 
 /// The token prompt: a masked field for a bearer token.
-fn token_prompt(look: &Look, window: Rect, busy: Option<u64>) -> Prompt<'_> {
+fn token_prompt(look: &Look, window: Rect, busy: Option<u64>, failed: bool) -> Prompt<'_> {
     Prompt::new(look, "Sign in to https://api.example.org", "Bearer token")
         .description("The daemon asks for a token.")
-        .field(|f| {
-            f.masked(true)
-                .help("Paste works; Enter signs in, Escape cancels.")
-                .busy(busy.is_some(), busy.unwrap_or(0))
-        })
+        .field(|f| f.masked(true).help("Paste works; Enter signs in, Escape cancels."))
         .submit("Sign in")
+        .busy(busy)
+        .failed(failed.then(|| Some("api.example.org refused the token.".to_string())))
         .window(sokkel_tui::cells::Width::of(window))
 }
 
@@ -500,6 +502,7 @@ fn overview() -> Overview {
         prompt_at: Rect::default(),
         rejected: false,
         checking: None,
+        failed: false,
         expanded: false,
         runs_at: Rect::default(),
     }

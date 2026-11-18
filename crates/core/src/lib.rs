@@ -80,7 +80,7 @@ pub use palette::{
     Command, CommandGroup, CommandPalette, CommandTone, PaletteEvent, PaletteHit, PaletteState, PaletteWords,
 };
 pub use popup::{Item, PopupRow};
-pub use prompt::{Prompt, PromptEvent, PromptFocus, PromptState};
+pub use prompt::{Prompt, PromptEvent, PromptFocus, PromptState, PromptWords};
 pub use rail::{Rail, RailEntry, RailFoot, RailGroup, RailLayout, RailWords};
 pub use section::{Section, SectionTone, SectionVariant};
 pub use select::{Select, SelectEvent, SelectOption, SelectState, SelectVariant};
