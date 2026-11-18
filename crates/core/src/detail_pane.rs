@@ -1,7 +1,7 @@
 //! Detail pane (parts/detail-pane): one thing's detail as a side panel holds it, such as the run
 //! chosen in the page beside it. Titled sections one under the other, each with an optional
 //! sentence, its facts as terms beside their values, and room for the app's own content after
-//! them; the thing's verbs on a line at the end. It stands on the side panel's `sidebar` ground.
+//! them; the thing's verbs on a line at the end. It stands on the side panel's ground.
 //!
 //! In cells: a section pads two columns across (16 px) and a row above and below at regular (12
 //! px; none at compact), its pieces with no row between (8 px is no row). Its heading is
@@ -185,7 +185,9 @@ impl Widget for &DetailPane<'_> {
         let look = self.look;
         let glyphs = look.glyphs();
         let t = |c| look.terminal(c);
-        let ground = look.color("sidebar");
+        let ground = look
+            .paint("side-panel.base.rest.panel", "ground")
+            .unwrap_or_else(|| look.color("sidebar"));
         let pad = self.pad_y();
         let (x, w) = (area.x + 2, area.width.saturating_sub(4));
         let put = |buf: &mut Buffer, y: u16, x: u16, words: &str, room: u16, style: Style| {

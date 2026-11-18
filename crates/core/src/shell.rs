@@ -302,9 +302,13 @@ impl<'a> Shell<'a> {
                 width: w,
                 ..shell.content
             };
-            let ground = look.color("sidebar");
+            let panel = |f: &str, or: &str| {
+                look.paint("side-panel.base.rest.panel", f)
+                    .unwrap_or_else(|| look.color(or))
+            };
+            let ground = panel("ground", "sidebar");
             buf.set_style(r, Style::new().bg(look.terminal(ground)));
-            let edge = look.color("sidebar-border");
+            let edge = panel("edge", "sidebar-border");
             let glyphs = look.glyphs();
             if !narrow {
                 for y in r.y..r.bottom() {

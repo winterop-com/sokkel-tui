@@ -859,7 +859,7 @@ impl StatefulWidget for &TextField<'_> {
                 // Keep the cursor in view: the window follows it. A masked value is drawn as one
                 // bullet a character.
                 let shown: String = if self.masked {
-                    glyphs.bullet.repeat(state.value.chars().count())
+                    glyphs.mask.repeat(state.value.chars().count())
                 } else {
                     state.value.clone()
                 };

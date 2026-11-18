@@ -2,10 +2,8 @@
 //! in a row across the top of the content, from sokkel-design's `patterns/shell` (its `banner`
 //! slot, between the top bar and the content, not scrolling) and sokkel-ui's `Banner`.
 //!
-//! The contract has no banner part yet, so its paints are sokkel-tui's reading (proposal c5): the
-//! web's tone at 12 percent is a mix a renderer may not make (principle 20), so a critical banner
-//! stands on page-state's failed frame and a warning one on its failed+warning frame, both resolved
-//! and opaque; info and good stand on `card`. The mark and the words take the tone's ink. One row:
+//! Its paints are the contract's `banner` (0.31, from proposal c5): each tone's container ground in
+//! its opaque form, the mark and the words in its ink. One row:
 //! the words cut short, [`Banner::cut`] saying so, so the whole of them can go to the status line.
 
 use crate::look::{Look, Rgba};
@@ -58,14 +56,20 @@ impl<'a> Banner<'a> {
 
     fn colors(&self) -> (Rgba, Rgba) {
         let look = self.look;
-        let frame = |state: &str| look.paint(&format!("page-state.base.{state}.frame"), "ground");
+        // The contract's banner container, its tone's ground in its opaque form, and its ink.
+        let tone = match self.tone {
+            BannerTone::Critical => "critical",
+            BannerTone::Warning => "warning",
+            BannerTone::Info => "info",
+            BannerTone::Good => "good",
+        };
+        let key = format!("banner.{tone}.rest.container");
         let card = look.color("card");
-        match self.tone {
-            BannerTone::Critical => (frame("failed").unwrap_or(card), look.color("critical-ink")),
-            BannerTone::Warning => (frame("failed+warning").unwrap_or(card), look.color("warning-ink")),
-            BannerTone::Info => (card, look.color("info-ink")),
-            BannerTone::Good => (card, look.color("good-ink")),
-        }
+        (
+            look.paint(&key, "ground").unwrap_or(card),
+            look.paint(&key, "ink")
+                .unwrap_or_else(|| look.color(&format!("{tone}-ink"))),
+        )
     }
 }
 

@@ -319,7 +319,7 @@ fn a_banner_takes_its_row_under_the_top_bar_and_its_words_go_to_the_status_line_
     assert!(lines[19].contains("disconnected from https://api.example.org") && !lines[19].contains("Live"));
     assert_eq!(
         buf[(3, 2)].bg,
-        look.terminal(look.paint("page-state.base.failed.frame", "ground").unwrap())
+        look.terminal(look.paint("banner.critical.rest.container", "ground").unwrap())
     );
 }
 
