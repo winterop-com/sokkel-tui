@@ -96,7 +96,7 @@ pub use table::{
     Align, Cell, CellValue, Column, ColumnWidth, Row, RowTone, SortDir, StatusTone, Table, TableBar, TableEvent,
     TableHit, TableState, TableVariant, TableWords,
 };
-pub use text::{Plural, TextRole};
+pub use text::{Cut, Plural, TextRole};
 pub use text_field::{FieldEvent, FieldFocus, FieldState, FieldWords, Issue, RequiredMark, TextField, Tone};
 pub use tokens::{Density, Scheme};
 pub use top_bar::{TopBar, TopBarFocus, TopBarLayout, TopBarWords};

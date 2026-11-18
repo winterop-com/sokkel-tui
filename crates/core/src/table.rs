@@ -56,6 +56,8 @@ pub struct Column {
     pub editable: bool,
     /// Its head's end edge resizes it (`resizable`).
     pub resizable: bool,
+    /// Where its cells' words are cut when too long: at the end, or in the middle.
+    pub cut: crate::text::Cut,
 }
 
 impl Column {
@@ -67,6 +69,7 @@ impl Column {
             sortable: false,
             editable: false,
             resizable: false,
+            cut: crate::text::Cut::End,
         }
     }
 
@@ -89,6 +92,13 @@ impl Column {
     /// the head row (`=` puts its width back).
     pub fn resizable(mut self) -> Self {
         self.resizable = true;
+        self
+    }
+
+    /// Its cells' words cut in the middle when too long, keeping start and end (identifiers that
+    /// differ at their ends: instance names, hosts, URLs); at the end by default.
+    pub fn cut(mut self, cut: crate::text::Cut) -> Self {
+        self.cut = cut;
         self
     }
 
@@ -1198,13 +1208,13 @@ impl<'a> Table<'a> {
     }
 
     /// The pieces of one cell, cut to `w` columns.
-    fn cell_spans(&self, cell: &Cell, w: u16, ground: Rgba, ink: Rgba) -> Vec<(String, Style)> {
+    fn cell_spans(&self, cell: &Cell, w: u16, ground: Rgba, ink: Rgba, cut: crate::text::Cut) -> Vec<(String, Style)> {
         let look = self.look;
         let t = |c: Rgba| look.terminal(c);
         let glyphs = look.glyphs();
         let body = TextRole::Body.style(look).bg(t(ground));
         match &cell.value {
-            CellValue::Text(s) => vec![(text::truncate(s, w as usize, glyphs.ellipsis), body.fg(t(ink)))],
+            CellValue::Text(s) => vec![(text::cut(s, w as usize, glyphs.ellipsis, cut), body.fg(t(ink)))],
             CellValue::Missing => vec![(glyphs.missing.to_string(), body.fg(look.token("faint")))],
             CellValue::Toned(state, tone) => {
                 let (dot, word) = tone.tokens();
@@ -1863,7 +1873,7 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
                 x += widths[i] + 2;
                 continue;
             }
-            let spans = table.cell_spans(&cell, sw, ground, ink);
+            let spans = table.cell_spans(&cell, sw, ground, ink, c.cut);
             let cw: u16 = spans.iter().map(|(s, _)| text::width(s) as u16).sum();
             let mut cx = if c.align == Align::End {
                 sx + sw.saturating_sub(cw)
@@ -2078,7 +2088,8 @@ fn draw_cards(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
         }
         let title = r.cells.first().cloned().unwrap_or_else(Cell::missing);
         let title_w = w.saturating_sub(tx - x);
-        for (s, style) in table.cell_spans(&title, title_w, ground, ink) {
+        let title_cut = table.columns.first().map_or(crate::text::Cut::End, |c| c.cut);
+        for (s, style) in table.cell_spans(&title, title_w, ground, ink, title_cut) {
             buf.set_stringn(
                 tx,
                 ly,
@@ -2094,7 +2105,7 @@ fn draw_cards(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
             buf.set_string(x, ly, &name, TextRole::Help.style(look).fg(t(quiet)).bg(t(ground)));
             let cell = r.cells.get(i).cloned().unwrap_or_else(Cell::missing);
             let mut vx = x + name_w + 2;
-            for (s, style) in table.cell_spans(&cell, w.saturating_sub(name_w + 2), ground, ink) {
+            for (s, style) in table.cell_spans(&cell, w.saturating_sub(name_w + 2), ground, ink, c.cut) {
                 buf.set_stringn(vx, ly, &s, (x + w).saturating_sub(vx) as usize, style);
                 vx += text::width(&s) as u16;
             }

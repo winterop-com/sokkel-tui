@@ -176,6 +176,7 @@ pub struct Rail<'a> {
     edge_shown: bool,
     strip: bool,
     fit: bool,
+    cut: crate::text::Cut,
 }
 
 impl<'a> Rail<'a> {
@@ -194,6 +195,7 @@ impl<'a> Rail<'a> {
             edge_shown: false,
             strip: false,
             fit: false,
+            cut: crate::text::Cut::End,
         }
     }
 
@@ -286,6 +288,13 @@ impl<'a> Rail<'a> {
             let own = if self.fit { self.fitted().max(default) } else { default };
             self.size.unwrap_or(own).clamp(min, max)
         }
+    }
+
+    /// Where a label too long for the rail is cut: at its end (the default), or in its middle,
+    /// keeping its start and its distinguishing end; the whole of it in the focused entry's tip.
+    pub fn cut(mut self, cut: crate::text::Cut) -> Self {
+        self.cut = cut;
+        self
     }
 
     /// Opened as wide as its longest entry needs, from `defaultSize` up to `maxSize`, so labels
@@ -575,7 +584,7 @@ impl Widget for &Rail<'_> {
                         y += 1;
                         buf.set_style(Rect::new(area.x, y, inner_w, 1), Style::new().bg(t(eg)));
                         let room = inner_w.saturating_sub(2) as usize;
-                        let label = text::truncate(&entry.label, room, glyphs.ellipsis);
+                        let label = text::cut(&entry.label, room, glyphs.ellipsis, self.cut);
                         let lx = area.x + 1 + (room as u16).saturating_sub(text::width(&label) as u16) / 2;
                         let quiet = if entry.active {
                             ei
@@ -609,7 +618,12 @@ impl Widget for &Rail<'_> {
                         |c| text::width(c) as u16,
                     );
                     let room = (area.x + inner_w - 1).saturating_sub(x + end_w + 1);
-                    buf.set_string(x, y, text::truncate(&entry.label, room as usize, glyphs.ellipsis), st);
+                    buf.set_string(
+                        x,
+                        y,
+                        text::cut(&entry.label, room as usize, glyphs.ellipsis, self.cut),
+                        st,
+                    );
                     let ex = area.x + inner_w - 1 - end_w;
                     if let Some((tone, _)) = entry.status.as_ref().filter(|_| entry.count.is_none()) {
                         let dot = look.color(tone.tokens().0);

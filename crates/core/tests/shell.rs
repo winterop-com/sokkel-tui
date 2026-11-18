@@ -465,3 +465,44 @@ fn a_status_reads_the_same_in_a_cell_a_header_and_a_pane() {
     assert!(lines(&buf).iter().any(|l| l.contains("warn")));
     assert_eq!(Cell::state(warn).words(), "warn");
 }
+
+#[test]
+fn a_long_name_cut_in_the_middle_keeps_its_end() {
+    use sokkel_tui::text::truncate_middle;
+    use sokkel_tui::{Cell, Column, Cut, Row, Table, TableState};
+    let look = look();
+    let e = look.glyphs().ellipsis;
+    let cut = truncate_middle("OpenClimateService-read-replica-03", 20, e);
+    assert!(
+        cut.starts_with("OpenClima") && cut.ends_with("replica-03") && cut.contains(e),
+        "{cut}"
+    );
+    assert_eq!(sokkel_tui::text::width(&cut), 20);
+    assert_eq!(truncate_middle("short", 20, e), "short", "uncut when it fits");
+    // In the rail, where it opts in; the default cuts the end.
+    let rail = |cut| {
+        Rail::new(&look, "C", "chap-checker")
+            .groups([RailGroup::new(
+                None,
+                [RailEntry::new("Chap Core master on the climate-demo Niamey region").icon("●")],
+            )])
+            .cut(cut)
+    };
+    assert!(draw(30, 4, rail(Cut::Middle)).iter().any(|l| l.contains("region")));
+    assert!(!draw(30, 4, rail(Cut::End)).iter().any(|l| l.contains("region")));
+    // In a column that opts in.
+    let c = vec![Column::new("Instance").cut(Cut::Middle), Column::new("State")];
+    let r = vec![Row::new([
+        Cell::text("OpenClimateService-read-replica-03-niger-large"),
+        Cell::status("ok"),
+    ])];
+    let table = Table::new(&look, &c, &r);
+    let mut buf = Buffer::empty(Rect::new(0, 0, 70, 6));
+    let mut s = TableState::default();
+    ratatui::widgets::StatefulWidget::render(&table, buf.area, &mut buf, &mut s);
+    assert!(
+        lines(&buf).iter().any(|l| l.contains("niger-large")),
+        "{:?}",
+        lines(&buf)
+    );
+}

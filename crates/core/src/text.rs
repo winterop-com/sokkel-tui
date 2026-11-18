@@ -86,6 +86,56 @@ pub fn char_width(c: char) -> usize {
     width(c.encode_utf8(&mut b))
 }
 
+/// Where words too long for their room are cut: at the end (the default), or in the middle,
+/// keeping the start and the end, where names differ at their ends (an instance's, a host's).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Cut {
+    #[default]
+    End,
+    Middle,
+}
+
+/// `s` cut to `max` cells as `cut` says, the `ellipsis` where it was cut.
+pub fn cut(s: &str, max: usize, ellipsis: &str, cut: Cut) -> String {
+    match cut {
+        Cut::End => truncate(s, max, ellipsis),
+        Cut::Middle => truncate_middle(s, max, ellipsis),
+    }
+}
+
+/// `s` cut to `max` cells in its middle: its start, the `ellipsis`, its end, the end given the
+/// odd cell (a name's distinguishing end).
+pub fn truncate_middle(s: &str, max: usize, ellipsis: &str) -> String {
+    if width(s) <= max {
+        return s.to_string();
+    }
+    let room = max.saturating_sub(width(ellipsis));
+    if max < width(ellipsis) + 2 {
+        return truncate(s, max, ellipsis);
+    }
+    let (head_room, tail_room) = (room / 2, room - room / 2);
+    let mut head = String::new();
+    let mut used = 0;
+    for c in s.chars() {
+        if used + char_width(c) > head_room {
+            break;
+        }
+        head.push(c);
+        used += char_width(c);
+    }
+    let mut tail: Vec<char> = Vec::new();
+    let mut used = 0;
+    for c in s.chars().rev() {
+        if used + char_width(c) > tail_room {
+            break;
+        }
+        tail.push(c);
+        used += char_width(c);
+    }
+    let tail: String = tail.into_iter().rev().collect();
+    format!("{}{ellipsis}{}", head.trim_end(), tail.trim_start())
+}
+
 /// `s` cut to `max` cells, ending in `ellipsis` when it was cut.
 pub fn truncate(s: &str, max: usize, ellipsis: &str) -> String {
     if width(s) <= max {
