@@ -548,3 +548,49 @@ fn a_resizable_columns_edge_follows_a_drag_and_the_keys() {
     s.handle(&table, KeyPress::new(Key::Char('=')));
     assert!(!s.sizes.contains_key(&0));
 }
+
+#[test]
+fn a_head_wider_than_its_column_wraps_between_its_words() {
+    use ratatui::layout::Position;
+    use sokkel_tui::TableHit;
+    let look = look();
+    let c = vec![
+        Column::new("Job"),
+        Column::new("Times started this week"),
+        Column::new("Runs failed this week"),
+        Column::new("Hosts used this week"),
+    ];
+    let r = vec![Row::new([
+        Cell::text("nightly-export"),
+        Cell::text("4"),
+        Cell::text("1"),
+        Cell::text("2"),
+    ])];
+    let table = Table::new(&look, &c, &r);
+    // With room, each head stands whole on one row.
+    let mut s = TableState::default();
+    let (_, lines) = draw(&table, 100, 8, &mut s);
+    let head = lines.iter().position(|l| l.contains("Job")).unwrap();
+    assert!(lines[head].contains("Times started this week"), "{lines:?}");
+    // Short of room, the long heads give way, never past their longest word, and wrap onto two
+    // lines; the rows move a row lower.
+    let w = table.widths(70);
+    assert!(w[1] < 23 && w[1] >= "started".len() as u16, "{w:?}");
+    let (_, lines) = draw(&table, 72, 8, &mut s);
+    let head = lines.iter().position(|l| l.contains("Job")).unwrap();
+    assert!(
+        lines[head].contains("Times") && lines[head + 1].contains("this"),
+        "{lines:?}"
+    );
+    assert!(
+        lines[head + 3].contains("nightly-export"),
+        "the rule under both lines, then the rows"
+    );
+    // A press on either line is the head's.
+    let x = lines[head + 1].find("this").unwrap() as u16;
+    let area = Rect::new(0, 0, 72, 8);
+    assert!(matches!(
+        table.hit(area, Position::new(x, head as u16 + 1), &s),
+        Some(TableHit::Head(_))
+    ));
+}

@@ -113,7 +113,9 @@ the contract say so that it does?
   the active cell in the ring's edges, Left and Right across the columns, Enter or a typed
   character opening it in place, Enter saving and moving down, Tab on, Escape dropping it;
   `TableEvent::Edited` with the value in `TableState::saved`; text only, no F2 yet: `Key` has no
-  function keys). Column resize (`Column::resizable`: the gap after its head
+  function keys). Heads wrap (`headLines` 2, contract 0.32: a content column
+  starts at its whole head and gives way no further than its longest word, its head then wrapping
+  between words onto a second row, cut past that). Column resize (`Column::resizable`: the gap after its head
   is its edge, a drag through `Table::drag`, `<` `>` `=` on a chosen head; `TableState::sizes`).
   Not yet: date and select editors, resizing, reordering, the grid.
 - `rail`, `top_bar`, `status_line`, `shell` (step 5): the rail's head, groups, entries (icon,

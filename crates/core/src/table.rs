@@ -433,6 +433,8 @@ pub struct TableState {
     stacked: bool,
     /// The last frame's room for the columns.
     room: u16,
+    /// The head's rows in the last frame: two where a head wrapped.
+    head_rows: u16,
 }
 
 impl TableState {
@@ -966,7 +968,7 @@ impl<'a> Table<'a> {
         }
     }
 
-    fn geom(&self, area: Rect) -> Geom {
+    fn geom(&self, area: Rect, head_rows: u16) -> Geom {
         let inner = if self.framed {
             Rect::new(
                 area.x + 1,
@@ -979,19 +981,52 @@ impl<'a> Table<'a> {
         };
         let bar_y = self.bar.as_ref().map(|_| inner.y);
         let head_y = inner.y + u16::from(bar_y.is_some());
-        let body_y = head_y + 2;
+        let head_rows = head_rows.max(1);
+        let body_y = head_y + head_rows + 1;
         Geom {
             inner,
             pad: self.pad(),
             bar_y,
             head_y,
-            rule_y: head_y + 1,
+            rule_y: head_y + head_rows,
             body: Rect {
                 y: body_y,
                 height: inner.bottom().saturating_sub(body_y),
                 ..inner
             },
         }
+    }
+
+    /// A head's name as drawn in a column `w` wide: one line where it fits beside its sort
+    /// glyph, else wrapped between its words onto two, the second cut with an ellipsis past that;
+    /// a word wider than the column is cut too.
+    fn head_lines(&self, name: &str, w: u16, sortable: bool) -> Vec<String> {
+        let glyphs = self.look.glyphs();
+        let room = w.saturating_sub(if sortable { 2 } else { 0 }) as usize;
+        if text::width(name) <= room {
+            return vec![name.to_string()];
+        }
+        let mut lines = text::wrap(name, room);
+        if lines.len() > 2 {
+            let rest = lines[1..].join(" ");
+            lines.truncate(1);
+            lines.push(rest);
+        }
+        lines
+            .into_iter()
+            .map(|l| text::truncate(&l, room, glyphs.ellipsis))
+            .collect()
+    }
+
+    /// The head's rows at these widths: two where any head wraps, else one.
+    fn head_rows(&self, widths: &[u16]) -> u16 {
+        let name = |c: &Column| TextRole::ColumnHead.transform(self.look, &c.header);
+        let wraps = self
+            .columns
+            .iter()
+            .zip(widths)
+            .any(|(c, &w)| self.head_lines(&name(c), w, c.sortable).len() > 1);
+        if wraps { 2 } else { 1 }
     }
 
     /// Whether it draws its rows as cards in a box `width` columns wide: a table below 69 columns
@@ -1062,6 +1097,11 @@ impl<'a> Table<'a> {
         let n = self.columns.len() as u16;
         let room = room.saturating_sub(2 * self.pad() + self.select_w() + self.actions_w() + gap * n.saturating_sub(1));
         let head_w = |c: &Column| text::width(&c.header) as u16 + if c.sortable { 2 } else { 0 };
+        // A column is never narrower than its head's longest word (and its sort glyph): its head
+        // wraps between words onto two lines before it is cut (`headLines`).
+        let word_w = |c: &Column| {
+            c.header.split_whitespace().map(text::width).max().unwrap_or(0) as u16 + if c.sortable { 2 } else { 0 }
+        };
         let mut w: Vec<u16> = self
             .columns
             .iter()
@@ -1076,7 +1116,8 @@ impl<'a> Table<'a> {
                         .map(|cell| cell.width(look) as u16)
                         .max()
                         .unwrap_or(0);
-                    widest.max(head_w(c)).min(cols(320.0))
+                    // Its whole head where there is room; the head wraps as the table runs short.
+                    widest.max(head_w(c)).min(cols(320.0)).max(word_w(c))
                 }
                 ColumnWidth::Fill(_) => head_w(c),
             })
@@ -1116,7 +1157,7 @@ impl<'a> Table<'a> {
             let mut over = used - room;
             while over > 0 {
                 let Some(i) = (0..w.len())
-                    .filter(|&i| !sizes.contains_key(&i) && w[i] > head_w(&self.columns[i]).max(4))
+                    .filter(|&i| !sizes.contains_key(&i) && w[i] > word_w(&self.columns[i]).max(4))
                     .max_by_key(|&i| w[i])
                 else {
                     break;
@@ -1254,7 +1295,7 @@ impl Table<'_> {
         if on(more) {
             return Some(TableHit::LoadMore);
         }
-        let g = self.geom(area);
+        let g = self.geom(area, state.head_rows);
         let inner = g.inner;
         if !inner.contains(at) {
             return None;
@@ -1268,7 +1309,7 @@ impl Table<'_> {
             return (at.x < inner.x + g.pad + search_w).then_some(TableHit::Search);
         }
         let in_box = self.selectable && (inner.x + g.pad..inner.x + g.pad + 4).contains(&at.x);
-        if at.y == g.head_y {
+        if (g.head_y..g.rule_y).contains(&at.y) {
             if in_box {
                 return Some(TableHit::HeadBox);
             }
@@ -1327,7 +1368,7 @@ impl Table<'_> {
         };
         match p.kind {
             PointerKind::Drag => {
-                let g = self.geom(area);
+                let g = self.geom(area, state.head_rows);
                 let widths = self.widths_sized(g.inner.width, &state.sizes);
                 let x0 = g.inner.x + g.pad + self.select_w() + widths[..c].iter().map(|w| w + 2).sum::<u16>();
                 let min = (text::width(&self.columns[c].header) as u16 + 2).max(4);
@@ -1349,7 +1390,7 @@ impl Table<'_> {
         if !self.row_actions || state.stacked {
             return None;
         }
-        let g = self.geom(area);
+        let g = self.geom(area, state.head_rows);
         let line = state.lines(self.rows).iter().position(|l| *l == BodyLine::Row(place))?;
         let y = g.body.y + line.checked_sub(state.offset)? as u16;
         (y < g.body.bottom()).then(|| Rect::new(g.inner.right().saturating_sub(g.pad + 3), y, 3, 1))
@@ -1477,7 +1518,7 @@ impl ratatui::widgets::StatefulWidget for &Table<'_> {
             return;
         }
         state.stacked = self.stacked(area.width);
-        state.room = self.geom(area).inner.width;
+        state.room = self.geom(area, 1).inner.width;
         if state.stacked {
             draw_cards(self, area, buf, state);
         } else {
@@ -1506,8 +1547,11 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
     let look = table.look;
     let glyphs = look.glyphs();
     let t = |c: Rgba| look.terminal(c);
-    let geo = table.geom(area);
-    let inner = geo.inner;
+    // The head's rows: two where a head wraps between its words (`headLines`), else one.
+    let inner = table.geom(area, 1).inner;
+    let widths = table.widths_sized(inner.width, &state.sizes);
+    state.head_rows = table.head_rows(&widths);
+    let geo = table.geom(area, state.head_rows);
     if table.framed {
         frame(table, area, buf);
     } else {
@@ -1526,7 +1570,7 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
     if let Some(y) = geo.bar_y {
         draw_bar(table, Rect::new(inner.x, y, inner.width, 1), geo.pad, buf, state);
     }
-    let head_row = Rect::new(inner.x, geo.head_y, inner.width, 1);
+    let head_row = Rect::new(inner.x, geo.head_y, inner.width, state.head_rows.max(1));
     buf.set_style(head_row, Style::new().bg(t(head_ground)));
     if table.selectable {
         // The head's box: none, some or every row selected.
@@ -1564,18 +1608,29 @@ fn draw_table(table: &Table, area: Rect, buf: &mut Buffer, state: &mut TableStat
             None if state.head == Some(i) => Some(glyphs.sortable),
             None => None,
         };
-        let room = w.saturating_sub(if glyph.is_some() { 2 } else { 0 }) as usize;
-        let name = text::truncate(&name, room, glyphs.ellipsis);
-        let name_w = text::width(&name) as u16;
-        let nx = if c.align == Align::End {
-            x + w.saturating_sub(name_w + if glyph.is_some() { 2 } else { 0 })
-        } else {
-            x
-        };
-        buf.set_stringn(nx, geo.head_y, &name, w as usize, style);
-        if let Some(g) = glyph {
-            buf.set_string(nx + name_w + 1, geo.head_y, g, style);
+        // Wrapped between its words onto at most two lines; the glyph after the last.
+        let lines = table.head_lines(&name, w, c.sortable);
+        let last = lines.len().saturating_sub(1);
+        let mut name_w = 0;
+        let mut nx = x;
+        for (k, line) in lines.iter().enumerate() {
+            let lw = text::width(line) as u16;
+            let lx = if c.align == Align::End {
+                x + w.saturating_sub(lw + if glyph.is_some() && k == last { 2 } else { 0 })
+            } else {
+                x
+            };
+            buf.set_stringn(lx, geo.head_y + k as u16, line, w as usize, style);
+            if k == 0 {
+                (nx, name_w) = (lx, lw);
+            }
+            if k == last
+                && let Some(g) = glyph
+            {
+                buf.set_string(lx + lw + 1, geo.head_y + k as u16, g, style);
+            }
         }
+        let glyph = glyph.filter(|_| last == 0);
         // The head the keys chose: a ring beside its name, as a focused button.
         if table.focused && state.head == Some(i) {
             let ring = look.color("ring");
