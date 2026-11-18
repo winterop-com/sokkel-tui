@@ -678,9 +678,13 @@ impl<A: ShellApp> Host<A> {
             .page_rows(look, page.width)
             .unwrap_or(page.height)
             .max(page.height);
+        // A page with no room (below md the side panel covers it) is not drawn, nor its scroller.
+        let rows = if page.height == 0 || page.width == 0 { 0 } else { rows };
         self.rows = rows;
         self.view = page;
-        if rows > page.height {
+        if rows == 0 {
+            self.scroll = 0;
+        } else if rows > page.height {
             self.scroll = self.scroll.min(rows - page.height);
             cx.hover = cx
                 .hover

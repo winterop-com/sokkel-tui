@@ -406,3 +406,44 @@ fn a_collapsed_parent_opens_its_children_in_a_flyout() {
         "harbor, by its place"
     );
 }
+
+/// A tall page beside a side panel.
+struct Paneled;
+
+impl sokkel_tui::app::ShellApp for Paneled {
+    fn chrome<'a>(&'a self, look: &'a Look) -> sokkel_tui::app::Chrome<'a> {
+        sokkel_tui::app::Chrome {
+            rail: Rail::new(look, "T", "Tidevann"),
+            top: TopBar::new(look),
+            foot: StatusLine::new(look),
+        }
+    }
+
+    fn page(&mut self, f: &mut ratatui::Frame, area: Rect, _cx: &mut sokkel_tui::app::Cx) {
+        f.buffer_mut()
+            .set_string(area.x, area.y, "the page", ratatui::style::Style::new());
+    }
+
+    fn page_rows(&self, _look: &Look, _width: u16) -> Option<u16> {
+        Some(200)
+    }
+
+    fn panel_width(&self) -> Option<u16> {
+        Some(44)
+    }
+
+    fn panel(&mut self, f: &mut ratatui::Frame, area: Rect, _cx: &mut sokkel_tui::app::Cx) {
+        f.buffer_mut()
+            .set_string(area.x, area.y, "the panel", ratatui::style::Style::new());
+    }
+}
+
+#[test]
+fn a_panel_over_a_tall_page_below_md_covers_it_whole() {
+    // Below md the panel covers the page: no page, no scroller, and no panic.
+    let text = sokkel_tui::snapshot::text(&sokkel_tui::app::shot(Paneled, look(), (80, 30), |_| {}, &[]));
+    assert!(text.contains("the panel") && !text.contains("the page"), "{text}");
+    // Wide, the tall page scrolls beside it.
+    let text = sokkel_tui::snapshot::text(&sokkel_tui::app::shot(Paneled, look(), (160, 45), |_| {}, &[]));
+    assert!(text.contains("the panel") && text.contains("the page"), "{text}");
+}
