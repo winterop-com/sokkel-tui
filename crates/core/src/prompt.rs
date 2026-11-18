@@ -176,6 +176,8 @@ impl<'a> Prompt<'a> {
         self
     }
 
+    /// Kept so callers still compile: a prompt is a box at every width (the pattern's phone fit,
+    /// as a confirm dialog), so the window's width no longer changes its form.
     pub fn window(mut self, width: Width) -> Self {
         self.window = width;
         self
@@ -200,8 +202,9 @@ impl<'a> Prompt<'a> {
             .confirm(confirm)
             .focus(focus)
             .words(words)
-            .busy_for(self.busy.unwrap_or(0))
-            .window(self.window);
+            .busy_for(self.busy.unwrap_or(0));
+        // A box sized to its content at every width (the pattern's phone fit), never a sheet.
+        let _ = self.window;
         if let Some(why) = &self.failed {
             d = d.status(why.clone().unwrap_or_else(|| self.words.failed.clone()), true);
         }
