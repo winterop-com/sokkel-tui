@@ -358,6 +358,7 @@ const WORDS_SEARCH: &str = "Search";
 const WORDS_SETTINGS: &str = "Settings";
 const WORDS_TAB: &str = "Move focus";
 const WORDS_BACK: &str = "Back";
+const WORDS_FORWARD: &str = "Forward";
 const WORDS_QUIT: &str = "Quit";
 
 /// What a row of the account menu does.
@@ -373,6 +374,8 @@ enum AccountAct {
 
 /// The runtime's own commands and settings, by id.
 const SETTINGS: &str = "sokkel.settings";
+const GO_BACK: &str = "sokkel.back";
+const GO_FORWARD: &str = "sokkel.forward";
 const SCHEME: &str = "sokkel.scheme";
 const DENSITY: &str = "sokkel.density";
 const RAIL: &str = "sokkel.rail";
@@ -434,6 +437,9 @@ struct Host<A> {
     history: Vec<String>,
     route: String,
     going_back: bool,
+    /// The routes Back left, to go forward to again; a new route clears them, as a browser does.
+    forward: Vec<String>,
+    going_forward: bool,
     /// The page's first stop gets focus after this frame (a route change).
     to_page: bool,
     page_mark: usize,
@@ -520,6 +526,8 @@ impl<A: ShellApp> Host<A> {
             history: Vec::new(),
             route: String::new(),
             going_back: false,
+            forward: Vec::new(),
+            going_forward: false,
             to_page: false,
             page_mark: 0,
             opened_from: None,
@@ -586,9 +594,27 @@ impl<A: ShellApp> Host<A> {
             self.layer = Layer::None;
             return true;
         }
+        self.go_back()
+    }
+
+    /// Back along the routes, the one left kept for Forward.
+    fn go_back(&mut self) -> bool {
         match self.history.pop() {
             Some(route) => {
                 self.going_back = true;
+                self.forward.push(self.route.clone());
+                self.app.go(&route);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Forward to a route Back left.
+    fn go_forward(&mut self) -> bool {
+        match self.forward.pop() {
+            Some(route) => {
+                self.going_forward = true;
                 self.app.go(&route);
                 true
             }
@@ -607,9 +633,14 @@ impl<A: ShellApp> Host<A> {
             if !self.going_back && !left.is_empty() {
                 self.history.push(left);
             }
+            // A route reached neither by Back nor by Forward clears what Forward had.
+            if !self.going_back && !self.going_forward {
+                self.forward.clear();
+            }
             self.to_page = true;
         }
         self.going_back = false;
+        self.going_forward = false;
         // A layer opening keeps what had focus; closing gives it back.
         let open = self.layer != Layer::None || self.app.layer_open();
         if open && !self.was_open {
@@ -881,6 +912,8 @@ impl<A: ShellApp> Host<A> {
             .chain([
                 ("Tab".to_string(), WORDS_TAB.to_string()),
                 ("Esc".to_string(), WORDS_BACK.to_string()),
+                ("←".to_string(), WORDS_BACK.to_string()),
+                ("→".to_string(), WORDS_FORWARD.to_string()),
                 (Keys::Mod('q').label(&words), WORDS_QUIT.to_string()),
             ])
             .collect()
@@ -939,6 +972,22 @@ impl<A: ShellApp> Host<A> {
         });
         let mut general = vec![
             Command::new(SETTINGS, "Settings").icon("⚙").hint(","),
+            {
+                let c = Command::new(GO_BACK, WORDS_BACK).icon("←").hint("←");
+                if self.history.is_empty() {
+                    c.disabled("Nothing to go back to")
+                } else {
+                    c
+                }
+            },
+            {
+                let c = Command::new(GO_FORWARD, WORDS_FORWARD).icon("→").hint("→");
+                if self.forward.is_empty() {
+                    c.disabled("Nothing to go forward to")
+                } else {
+                    c
+                }
+            },
             Command::new(SCHEME, "Switch light and dark").icon("◐"),
             Command::new(
                 DENSITY,
@@ -1129,6 +1178,12 @@ impl<A: ShellApp> Host<A> {
         self.layer = Layer::None;
         match id {
             SETTINGS => self.open(Layer::Settings),
+            GO_BACK => {
+                self.go_back();
+            }
+            GO_FORWARD => {
+                self.go_forward();
+            }
             SCHEME => self.relook(
                 if scheme == Scheme::Dark {
                     Scheme::Light
@@ -1422,6 +1477,15 @@ impl<A: ShellApp> Program for Host<A> {
             Flow::Quit => true,
             Flow::Ignored if key.is(Key::Escape) => {
                 self.back();
+                false
+            }
+            // Left and Right the page leaves go back and forward along the routes.
+            Flow::Ignored if key.is(Key::Left) && !self.app.typing() => {
+                self.go_back();
+                false
+            }
+            Flow::Ignored if key.is(Key::Right) && !self.app.typing() => {
+                self.go_forward();
                 false
             }
             _ => false,

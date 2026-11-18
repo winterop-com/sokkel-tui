@@ -447,3 +447,25 @@ fn a_panel_over_a_tall_page_below_md_covers_it_whole() {
     let text = sokkel_tui::snapshot::text(&sokkel_tui::app::shot(Paneled, look(), (160, 45), |_| {}, &[]));
     assert!(text.contains("the panel") && text.contains("the page"), "{text}");
 }
+
+#[test]
+fn left_and_right_go_back_and_forward_along_the_routes() {
+    let shot = |keys: &[&str]| {
+        let keys: Vec<KeyPress> = keys.iter().filter_map(|k| KeyPress::named(k)).collect();
+        let app = Places { at: "a".into() };
+        sokkel_tui::snapshot::text(&sokkel_tui::app::shot(app, look(), (120, 30), |_| {}, &keys))
+    };
+    assert!(shot(&["b", "left"]).contains("at a"), "Left the page leaves goes back");
+    assert!(
+        shot(&["b", "left", "right"]).contains("at b"),
+        "Right goes forward again"
+    );
+    assert!(
+        shot(&["b", "left", "right", "right"]).contains("at b"),
+        "nothing further forward"
+    );
+    // A new route clears what Forward had: back to a, then b again by its shortcut, then Right
+    // has nowhere to go.
+    assert!(shot(&["b", "esc", "b", "right"]).contains("at b"));
+    assert!(shot(&["b", "esc", "b", "left"]).contains("at a"));
+}
