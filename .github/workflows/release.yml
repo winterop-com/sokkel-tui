@@ -1,0 +1,36 @@
+name: release
+
+# A release is a tag vX.Y.Z on a commit main holds, made by `make release`. It is checked here and
+# given a GitHub Release with its CHANGELOG section; nothing is published to a registry (the
+# crates are publish = false). Consumers take it by its tag.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: The tag is the workspace's version, on main
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          grep -q "^version = \"$version\"$" Cargo.toml || { echo "Cargo.toml is not $version"; exit 1; }
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "$GITHUB_REF_NAME is not on main"; exit 1; }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: make all
+      - name: The GitHub Release, its notes the version's CHANGELOG section
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '$0 ~ "^## " { on = ($2 == v) ; next } on' CHANGELOG.md > notes.md
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md

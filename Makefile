@@ -8,7 +8,7 @@ PIN := $(shell python3 -c "import json;print(json.load(open('sokkel-design.json'
 REF ?= $(PIN)
 FETCH = gh api -H "Accept: application/vnd.github.raw" "repos/winterop-com/sokkel-design/contents/$(1)?ref=$(2)"
 
-.PHONY: help tokens tokens-check fmt fmt-check check test specimens all clean
+.PHONY: help tokens tokens-check fmt fmt-check check test specimens release all clean
 
 help:
 	@echo "make tokens        fetch sokkel-design's tokens, index and glyphs at the pin (REF=<commit> moves it)"
@@ -17,6 +17,7 @@ help:
 	@echo "make check         clippy with warnings denied"
 	@echo "make test          every test"
 	@echo "make specimens     draw the spike and the parts sheet into specimens/ as SVG, PNG and text"
+	@echo "make release       cut release VERSION=X.Y.Z: version, changelog, gates, signed commit and tag (pushes nothing)"
 	@echo "make all           fmt-check, check and test"
 	@echo "make clean         remove the build and the specimens"
 
@@ -89,6 +90,9 @@ specimens:
 		target/debug/examples/09_dashboard $$1 --frame $$2 $$3 $$out t a b c || exit 1; \
 		if command -v rsvg-convert >/dev/null; then rsvg-convert -z 2 $$out.svg -o $$out.png; fi; \
 	done
+
+release:
+	scripts/release.sh "$(VERSION)"
 
 all: fmt-check check test
 
