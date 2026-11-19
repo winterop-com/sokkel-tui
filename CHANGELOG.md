@@ -10,6 +10,8 @@ sokkel-tui = { git = "https://github.com/winterop-com/sokkel-tui", tag = "v0.2.0
 
 ## Unreleased
 
+## 0.2.0 (2026-11-19)
+
 The first release. It draws sokkel-design contract 0.32.2 (8f0cc81).
 
 ### The contract
