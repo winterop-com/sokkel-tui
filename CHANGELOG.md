@@ -10,6 +10,15 @@ sokkel-tui = { git = "https://github.com/winterop-com/sokkel-tui", tag = "v0.2.0
 
 ## Unreleased
 
+### Fixed
+
+- The top bar's trail takes the room left before the palette's button and the actions: it was laid
+  out without them, so the button was drawn over its current crumb. Crumbs that do not fit give way
+  together and are cut with an ellipsis, as sokkel-ui's do.
+- The palette's button follows parts/top-bar: beside the search field it shows its keys alone
+  (`Ctrl K`), and with no field it is 224 px wide with the magnifier, Search and the keys. It
+  showed "Open the command palette" with the keys in both cases, which took the trail's room.
+
 ## 0.3.0 (2026-11-20)
 
 ### Breaking
