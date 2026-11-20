@@ -558,3 +558,211 @@ fn the_pages_first_stop_has_focus_from_the_start() {
         );
     }
 }
+
+/// An app that hands the terminal over: `g` launches (a command answering Suspend), `x` asks the
+/// runtime for the palette as a press on its own dialog's button would, `q` quits by a command.
+struct Launches {
+    at: String,
+    ran: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+    asked: Option<String>,
+}
+
+impl sokkel_tui::app::ShellApp for Launches {
+    fn route(&self) -> String {
+        self.at.clone()
+    }
+
+    fn go(&mut self, route: &str) {
+        self.at = route.into();
+    }
+
+    fn chrome<'a>(&'a self, look: &'a Look) -> sokkel_tui::app::Chrome<'a> {
+        sokkel_tui::app::Chrome {
+            rail: Rail::new(look, "T", "Tidevann")
+                .groups([RailGroup::new(None, [RailEntry::new("Runs"), RailEntry::new("Jobs")])]),
+            top: TopBar::new(look),
+            foot: StatusLine::new(look),
+        }
+    }
+
+    fn page(&mut self, f: &mut ratatui::Frame, area: Rect, _cx: &mut sokkel_tui::app::Cx) {
+        f.buffer_mut()
+            .set_string(area.x, area.y, format!("at {}", self.at), ratatui::style::Style::new());
+    }
+
+    fn shortcuts(&self) -> Vec<sokkel_tui::Binding<String>> {
+        vec![
+            sokkel_tui::Binding::new(sokkel_tui::Keys::Char('b'), "b".into(), "Go to b"),
+            sokkel_tui::Binding::new(sokkel_tui::Keys::Char('g'), "launch".into(), "Launch"),
+            sokkel_tui::Binding::new(
+                sokkel_tui::Keys::Mod('p'),
+                sokkel_tui::app::OPEN_PALETTE.into(),
+                "Open the command palette",
+            ),
+        ]
+    }
+
+    fn command(&mut self, id: &str) -> sokkel_tui::app::Ran {
+        match id {
+            "launch" => sokkel_tui::app::Ran::Suspend,
+            _ => {
+                self.at = id.into();
+                sokkel_tui::app::Ran::Done
+            }
+        }
+    }
+
+    fn commands(&self) -> Vec<sokkel_tui::CommandGroup> {
+        vec![sokkel_tui::CommandGroup::new(
+            "Jobs",
+            [sokkel_tui::Command::new("launch", "Launch nightly-export")],
+        )]
+    }
+
+    fn suspended(&mut self, id: &str) {
+        self.ran.borrow_mut().push(id.into());
+    }
+
+    fn key(&mut self, key: KeyPress, _cx: &mut sokkel_tui::app::Cx) -> sokkel_tui::app::Flow {
+        if key.is(Key::Char('x')) {
+            self.asked = Some(sokkel_tui::app::OPEN_PALETTE.into());
+            return sokkel_tui::app::Flow::Handled;
+        }
+        if key.is(Key::Char('l')) {
+            self.asked = Some("launch".into());
+            return sokkel_tui::app::Flow::Handled;
+        }
+        sokkel_tui::app::Flow::Ignored
+    }
+
+    fn take_command(&mut self) -> Option<String> {
+        self.asked.take()
+    }
+}
+
+fn launches(keys: &[&str], collapsed: bool) -> (String, Vec<String>) {
+    let ran = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let app = Launches {
+        at: "a".into(),
+        ran: ran.clone(),
+        asked: None,
+    };
+    let keys: Vec<KeyPress> = keys.iter().filter_map(|k| KeyPress::named(k)).collect();
+    let buf = sokkel_tui::app::shot(app, look(), (120, 30), |s| s.collapsed = collapsed, &keys);
+    let ran = ran.borrow().clone();
+    (sokkel_tui::snapshot::text(&buf), ran)
+}
+
+#[test]
+fn a_command_that_suspends_hands_the_terminal_over_and_the_frame_stays_as_it_was() {
+    let (open, _) = launches(&["b"], true);
+    let (text, ran) = launches(&["b", "g"], true);
+    assert_eq!(ran, ["launch"], "the app ran with the terminal given back");
+    assert!(text.contains("at b"), "the route kept: {text}");
+    assert_eq!(text, open, "the frame as it was, the rail still collapsed");
+    // From the palette too: it closes, and the app runs outside.
+    let (text, ran) = launches(&["ctrl-k", "l", "a", "u", "n", "c", "h", "enter"], false);
+    assert!(!text.contains("Search or run a command"), "the palette closed");
+    assert_eq!(ran, ["launch"]);
+}
+
+#[test]
+fn the_app_asks_for_a_command_from_its_own_keys_and_presses() {
+    // A key of the app's (a dialog's button pressed, say) asks for a command the runtime runs.
+    let (_, ran) = launches(&["l", "b"], false);
+    assert_eq!(ran, ["launch"]);
+    let (text, _) = launches(&["x", "b"], false);
+    assert!(text.contains("⌕ b"), "the palette, asked for, takes the typing: {text}");
+}
+
+#[test]
+fn an_app_binds_a_key_of_its_own_to_the_palette() {
+    let (text, _) = launches(&["ctrl-p"], false);
+    assert!(text.contains("Search or run a command"), "{text}");
+    // Mod+K stays the palette's own.
+    let (text, _) = launches(&["ctrl-k"], false);
+    assert!(text.contains("Search or run a command"));
+}
+
+#[test]
+fn an_app_says_where_its_look_is_kept() {
+    use sokkel_tui::app::ShellApp;
+    struct Named;
+    impl ShellApp for Named {
+        fn id(&self) -> Option<&str> {
+            Some("tidevann")
+        }
+        fn chrome<'a>(&'a self, look: &'a Look) -> sokkel_tui::app::Chrome<'a> {
+            sokkel_tui::app::Chrome {
+                rail: Rail::new(look, "T", "Tidevann"),
+                top: TopBar::new(look),
+                foot: StatusLine::new(look),
+            }
+        }
+        fn page(&mut self, _f: &mut ratatui::Frame, _area: Rect, _cx: &mut sokkel_tui::app::Cx) {}
+    }
+    struct Elsewhere;
+    impl ShellApp for Elsewhere {
+        fn kept_path(&self) -> Option<std::path::PathBuf> {
+            Some("/Volumes/harbor/tidevann/appearance.json".into())
+        }
+        fn chrome<'a>(&'a self, look: &'a Look) -> sokkel_tui::app::Chrome<'a> {
+            Named.chrome(look)
+        }
+        fn page(&mut self, _f: &mut ratatui::Frame, _area: Rect, _cx: &mut sokkel_tui::app::Cx) {}
+    }
+    assert_eq!(
+        Named.kept_path(),
+        sokkel_tui::app::kept_path("tidevann"),
+        "under its id by default"
+    );
+    assert_eq!(
+        Elsewhere.kept_path(),
+        Some("/Volumes/harbor/tidevann/appearance.json".into()),
+        "where the app says"
+    );
+}
+
+/// An app with a side panel taller than the window: forty rows of detail.
+struct Tall;
+
+impl sokkel_tui::app::ShellApp for Tall {
+    fn chrome<'a>(&'a self, look: &'a Look) -> sokkel_tui::app::Chrome<'a> {
+        sokkel_tui::app::Chrome {
+            rail: Rail::new(look, "T", "Tidevann"),
+            top: TopBar::new(look),
+            foot: StatusLine::new(look),
+        }
+    }
+
+    fn page(&mut self, _f: &mut ratatui::Frame, _area: Rect, _cx: &mut sokkel_tui::app::Cx) {}
+
+    fn panel_width(&self) -> Option<u16> {
+        Some(40)
+    }
+
+    fn panel_rows(&self, _look: &Look, _width: u16) -> Option<u16> {
+        Some(40)
+    }
+
+    fn panel(&mut self, f: &mut ratatui::Frame, area: Rect, _cx: &mut sokkel_tui::app::Cx) {
+        assert_eq!(area.height, 40, "drawn whole");
+        for k in 0..area.height {
+            f.buffer_mut()
+                .set_string(area.x, area.y + k, format!("row {k}"), ratatui::style::Style::new());
+        }
+    }
+}
+
+#[test]
+fn a_side_panel_taller_than_the_window_scrolls() {
+    let look = look();
+    let buf = sokkel_tui::app::shot(Tall, look.clone(), (160, 20), |_| {}, &[]);
+    let text = sokkel_tui::snapshot::text(&buf);
+    assert!(text.contains("row 0") && !text.contains("row 39"), "{text}");
+    let thumb = look.glyphs().scroll_thumb;
+    assert!(
+        sokkel_tui::snapshot::text(&buf).lines().any(|l| l.ends_with(thumb)),
+        "a scroller at its end: {text}"
+    );
+}

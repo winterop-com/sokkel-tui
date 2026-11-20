@@ -187,6 +187,31 @@ good, warning, critical, info, quiet), its dot and word in the tone's tokens, an
 such a dot (`RailEntry::status`), its word in the status line on focus. Asked for: health states in
 the vocabulary (`status-ok`, `-warn`, `-fail`, `-error`), or a tone a status may name.
 
+## (c8) The terminal handed over, a pane in a dialog
+
+Asked by an app on sokkel-tui 0.2.0; read against contract 0.32.2 and sokkel-ui.
+
+1. **The terminal handed over.** A terminal app runs a child process (a game, an editor, a pager)
+   that needs the terminal while it runs. No other renderer has this: a web page and an egui window
+   never give up their screen. sokkel-tui takes it as runtime, not look: a command answers
+   `Ran::Suspend`, the runtime leaves raw mode and the alternate screen, the app runs the child in
+   `ShellApp::suspended`, and the runtime takes the terminal back with the frame as it was (the
+   rail, the route and its history, focus, the open layer). Nothing is drawn meanwhile, so the
+   contract need not say anything; it could note, under patterns/shell's renderer-specific notes,
+   that a terminal renderer hands the terminal over this way and keeps the frame's state.
+2. **A command the app asks for.** sokkel-ui's `useShell().openPalette` and an app's own handlers
+   run anything from a press. sokkel-tui's app asks with `ShellApp::take_command` (a dialog's button
+   pressed), and the runtime runs it as a shortcut runs it; `OPEN_PALETTE` is the palette's own id
+   for that and for a key of the app's (the palette part keeps Mod+K and turns the list's Ctrl+P
+   off, as written). Nothing for the contract.
+3. **A detail pane in a dialog.** parts/detail-pane says the pane stands on the side panel's
+   `sidebar` ground; sokkel-ui's `DetailPane` paints no ground at all, so in a dialog it stands on
+   `popover`. sokkel-tui follows sokkel-ui: the pane has no ground of its own, and it scrolls in its
+   room as the side panel's content and the dialog's body do. Below `breakpoint-lg` patterns/shell
+   makes the panel a sheet rather than a dialog, which is the contract's own answer to a narrow
+   window. Asked for: whether a detail pane may stand in a dialog's body, and if so whether its
+   sections keep their 16 of padding inside the body's own 16, or drop it.
+
 ## (d) Where it lives
 
 The proposals land in sokkel-design, as egui's did. sokkel-tui embeds the resolved file at a pinned

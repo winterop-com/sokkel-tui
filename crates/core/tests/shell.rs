@@ -506,3 +506,48 @@ fn a_long_name_cut_in_the_middle_keeps_its_end() {
         lines(&buf)
     );
 }
+
+#[test]
+fn a_detail_pane_has_no_ground_of_its_own_and_scrolls_in_a_room_too_short() {
+    use ratatui::layout::Position;
+    use ratatui::style::{Color, Style};
+    use sokkel_tui::{Button, DetailPane, Key, KeyPress, PaneSection, Pointer, PointerKind, Scroll};
+    let look = look();
+    let pane = DetailPane::new(&look)
+        .sections((0..6).map(|k| PaneSection::new(format!("Step {k}")).facts([("State", Some("ok"))])))
+        .actions([Button::new(&look, "Retry")]);
+    let area = Rect::new(0, 0, 40, 8);
+    let mut buf = Buffer::empty(area);
+    // The ground it is drawn on, a dialog's say, stays under it, rules included.
+    buf.set_style(area, Style::new().bg(Color::Rgb(1, 2, 3)));
+    let mut scroll = Scroll::default();
+    let rows = pane.height(Scroll::content_area(area, pane.height(40)).width);
+    assert!(rows > area.height);
+    scroll.render(&look, &mut buf, area, rows, |b, room| (&pane).render(room, b));
+    for y in 0..area.height {
+        for x in 0..area.width - 1 {
+            assert_eq!(buf[(x, y)].bg, Color::Rgb(1, 2, 3), "the ground under it at {x},{y}");
+        }
+    }
+    let text = lines(&buf).join("\n");
+    assert!(text.contains("STEP 0") && !text.contains("Retry"), "{text}");
+    // The wheel and End move it; a press on a verb lands where it was drawn.
+    let wheel = Pointer {
+        kind: PointerKind::ScrollDown,
+        at: Position::new(2, 2),
+    };
+    assert!(scroll.pointer(wheel));
+    assert_eq!(scroll.top, 3);
+    assert!(scroll.key(KeyPress::new(Key::End)));
+    let mut buf = Buffer::empty(area);
+    scroll.render(&look, &mut buf, area, rows, |b, room| (&pane).render(room, b));
+    let text = lines(&buf);
+    let y = text
+        .iter()
+        .position(|l| l.contains("Retry"))
+        .expect("the verbs in view") as u16;
+    let x = text[y as usize].find("Retry").unwrap() as u16;
+    let at = scroll.at(Position::new(x, y)).unwrap();
+    let room = Scroll::content_area(area, rows);
+    assert_eq!(pane.press(Rect { height: rows, ..room }, at), Some(0));
+}

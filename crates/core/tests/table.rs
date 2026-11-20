@@ -594,3 +594,23 @@ fn a_head_wider_than_its_column_wraps_between_its_words() {
         Some(TableHit::Head(_))
     ));
 }
+
+#[test]
+fn a_table_stacks_by_its_own_stack_below_and_its_columns_least_width() {
+    let look = look();
+    let columns = [Column::new("Job"), Column::new("State"), Column::new("Host")];
+    let rows: Vec<Row> = Vec::new();
+    let table = || Table::new(&look, &columns, &rows);
+    // At its defaults (576 px and 48rem) it stacks below 69 columns, as sokkel-ui's does.
+    assert!(table().stacked(55));
+    assert!(!table().stacked(69));
+    // Its columns' own width as its least: it stays a table while they fit.
+    let least = table().least_width();
+    assert!(least < 55, "{least}");
+    assert!(!table().min_width(0).stacked(55));
+    assert!(table().min_width(0).stacked(least - 1));
+    // Its own stackBelow, and none at all.
+    assert!(!table().stack_below(Some(48)).stacked(55));
+    assert!(table().stack_below(Some(48)).stacked(47));
+    assert!(!table().stack_below(None).stacked(10));
+}

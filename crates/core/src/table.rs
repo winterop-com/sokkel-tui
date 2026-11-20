@@ -2,7 +2,9 @@
 //!
 //! Every listing is this table: a frame, a head row that sorts by keys, rows drawn only while in
 //! view, selection, tones, the quiet dash for a missing value (principle 10), and the range in its
-//! foot. Below 69 columns of its own box (576 px) its rows stack as cards.
+//! foot. Its rows stack as cards below `stackBelow` of its own box (576 px, 69 columns) once the box
+//! is narrower than its columns' least width too, as sokkel-ui's `stacksAt` decides; a table sets
+//! its own `stackBelow` and `minWidth`.
 //!
 //! In cells (the part's `cells` note) every row, the head and the foot are one row at both
 //! densities; cells are two columns apart with a column of padding at each end; the rule under the
@@ -825,7 +827,15 @@ pub struct Table<'a> {
     /// How many rows come before these in the whole (a page's start), for the range.
     before: usize,
     bar: Option<TableBar>,
+    /// Below this many columns of its own box the rows stack (`stackBelow`); None never stacks.
+    stack_below: Option<u16>,
+    /// The narrowest its columns go (`minWidth`), in columns; never less than their least width.
+    min_width: u16,
 }
+
+/// A table's `stackBelow` (576 px) and `minWidth` (768 px, 48rem), in columns.
+const STACK_BELOW_PX: f64 = 576.0;
+const MIN_WIDTH_PX: f64 = 768.0;
 
 impl<'a> Table<'a> {
     pub fn new(look: &'a Look, columns: &'a [Column], rows: &'a [Row]) -> Table<'a> {
@@ -848,7 +858,47 @@ impl<'a> Table<'a> {
             load_more: false,
             before: 0,
             bar: None,
+            stack_below: Some(cols(STACK_BELOW_PX)),
+            min_width: cols(MIN_WIDTH_PX),
         }
+    }
+
+    /// Below how many columns of its own box its rows stack as cards (`stackBelow`, 69 by
+    /// default); None keeps the rows at every width. A table whose columns still fit stays a table
+    /// (see [`Table::min_width`]).
+    pub fn stack_below(mut self, cols: Option<u16>) -> Self {
+        self.stack_below = cols;
+        self
+    }
+
+    /// The narrowest its columns go, in columns (`minWidth`, 92 by default, 768 px): the rows stack
+    /// below the smaller of [`Table::stack_below`] and this (never less than the columns' least
+    /// width). A small one keeps a table whose columns fit a narrow box, a panel or a split, in
+    /// rows; 0 is the columns' least width alone.
+    pub fn min_width(mut self, cols: u16) -> Self {
+        self.min_width = cols;
+        self
+    }
+
+    /// The least width its rows take, frame included: each column at its head's longest word (and
+    /// its sort glyph), at least four, as the columns give way; the gaps, padding, select and
+    /// actions columns.
+    pub fn least_width(&self) -> u16 {
+        let n = self.columns.len() as u16;
+        let floor: u16 = self
+            .columns
+            .iter()
+            .map(|c| {
+                let word = c.header.split_whitespace().map(text::width).max().unwrap_or(0) as u16;
+                (word + if c.sortable { 2 } else { 0 }).max(4)
+            })
+            .sum();
+        floor
+            + 2 * n.saturating_sub(1)
+            + 2 * self.pad()
+            + self.select_w()
+            + self.actions_w()
+            + if self.framed { 2 } else { 0 }
     }
 
     /// Rows select with a box.
@@ -1049,11 +1099,16 @@ impl<'a> Table<'a> {
         if wraps { 2 } else { 1 }
     }
 
-    /// Whether it draws its rows as cards in a box `width` columns wide: a table below 69 columns
-    /// (576 px); a list as soon as its columns' heads no longer fit.
+    /// Whether it draws its rows as cards in a box `width` columns wide: a table below the smaller
+    /// of its `stackBelow` (69 columns, 576 px) and its columns' width (its `minWidth`, never less
+    /// than their least), as sokkel-ui's `stacksAt`; a list as soon as its columns' heads no longer
+    /// fit. Never with no `stackBelow`.
     pub fn stacked(&self, width: u16) -> bool {
+        let Some(below) = self.stack_below else {
+            return false;
+        };
         match self.variant {
-            TableVariant::Table => Table::stacks(width),
+            TableVariant::Table => width < below.min(self.min_width.max(self.least_width())),
             TableVariant::List => {
                 let inner = width.saturating_sub(if self.framed { 2 } else { 0 });
                 let need: u16 = self
@@ -1069,7 +1124,8 @@ impl<'a> Table<'a> {
         }
     }
 
-    /// Whether a box of `width` columns stacks the rows as cards: below 576 px (69 columns).
+    /// Whether a box of `width` columns stacks a table's rows at its defaults: below 576 px (69
+    /// columns).
     pub fn stacks(width: u16) -> bool {
         (width as f64) * PX_PER_COL < 576.0
     }

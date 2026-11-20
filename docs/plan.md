@@ -132,7 +132,13 @@ the contract say so that it does?
   columns, each entry its icon over its short label, a parent's children in a flyout; it neither
   collapses nor resizes). A side panel (`ShellApp::panel_width`/`panel`, `Shell::panel`: at the content's end on the
   `sidebar` ground behind an edge, covering the page below md) and the detail pane for it
-  (`DetailPane`, `PaneSection`). Not yet: the rail's body and reordering; what lies under the drawer (T2).
+  (`DetailPane`, `PaneSection`; no ground of its own, so it stands on the panel's or a dialog's).
+  A panel taller than the window scrolls (`ShellApp::panel_rows`), and `Scroll` scrolls any part
+  taller than its room, a dialog's body say. The runtime hands the terminal over to a child
+  process (`Ran::Suspend`, `ShellApp::suspended`) and takes it back with the frame as it was; the
+  app asks for commands from its own presses (`ShellApp::take_command`, `OPEN_PALETTE`) and says
+  where its look is kept (`ShellApp::kept_path`). Not yet: the rail's body and reordering; what
+  lies under the drawer (T2).
 - `dialog`, `menu`, `select`, `popup` (step 6, first half): the dialog (header, body, the footer's
   verbs with the confirm last, a shut confirm's reason as its tip, `busy-release` and Stop
   waiting, the corner close, Escape held while busy, a sheet below md); the dropdown menu (items
