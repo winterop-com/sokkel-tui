@@ -10,6 +10,8 @@ sokkel-tui = { git = "https://github.com/winterop-com/sokkel-tui", tag = "v0.2.0
 
 ## Unreleased
 
+## 0.3.0 (2026-11-20)
+
 ### Breaking
 
 - `Ran` has two more answers, `Suspend` and `Quit`: a `match` on it needs arms for them.
