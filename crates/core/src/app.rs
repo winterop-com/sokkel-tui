@@ -57,6 +57,14 @@ pub trait Program {
     fn mouse(&self) -> bool {
         true
     }
+    /// Whether it wants the terminal given back for a while (a child process that needs it): the
+    /// runtime leaves the alternate screen and raw mode, calls [`Program::outside`], then takes
+    /// the terminal again and draws the next frame whole.
+    fn wants_outside(&self) -> bool {
+        false
+    }
+    /// Its time with the terminal given back: run the child process here and return when it ends.
+    fn outside(&mut self) {}
 }
 
 /// The look a program starts in: `theme`, dark unless `light` is among the arguments, the
@@ -88,6 +96,10 @@ pub fn run(program: &mut impl Program) -> std::io::Result<()> {
             program.tick(start.elapsed().as_millis() as u64);
             if program.done() {
                 return Ok(());
+            }
+            if program.wants_outside() {
+                hand_over(&mut terminal, mouse, || program.outside())?;
+                continue;
             }
             terminal.draw(|f| {
                 program.draw(f);
@@ -130,7 +142,27 @@ pub fn run(program: &mut impl Program) -> std::io::Result<()> {
     result
 }
 
-/// The frame's parts an app gives each frame.
+/// The terminal given back for `outside` and taken again: raw mode and the alternate screen left,
+/// the mouse and bracketed paste off, the cursor shown; after, all as they were and the screen
+/// cleared, so the next frame is drawn whole.
+fn hand_over(terminal: &mut ratatui::DefaultTerminal, mouse: bool, outside: impl FnOnce()) -> std::io::Result<()> {
+    use ratatui::crossterm::cursor::Show;
+    use ratatui::crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
+    let mut out = std::io::stdout();
+    if mouse {
+        execute!(out, DisableMouseCapture)?;
+    }
+    execute!(out, DisableBracketedPaste, LeaveAlternateScreen, Show)?;
+    disable_raw_mode()?;
+    outside();
+    enable_raw_mode()?;
+    execute!(out, EnterAlternateScreen, EnableBracketedPaste)?;
+    if mouse {
+        execute!(out, EnableMouseCapture)?;
+    }
+    terminal.clear()
+}
+
 /// The app's search's answer to one query: its results as groups (a group a kind), or failed.
 #[derive(Debug, Clone, Default)]
 pub struct SearchAnswer {
@@ -199,7 +231,18 @@ pub enum Ran {
     /// Still going: the palette shows it running (Stop waiting after `busy-release`) until
     /// [`ShellApp::finished`] says it is done.
     Running,
+    /// It needs the terminal (a child process, an editor): the palette closes, the runtime gives
+    /// the terminal back and calls [`ShellApp::suspended`], then takes it again with the frame as
+    /// it was (the rail, the route and its history, focus, the open layer).
+    Suspend,
+    /// The app is done: the runtime gives the terminal back and [`run_shell`] returns.
+    Quit,
 }
+
+/// The runtime's command that opens the command palette, for an app to bind to a key of its own
+/// ([`ShellApp::shortcuts`]) or to ask for ([`ShellApp::take_command`]), as sokkel-ui's
+/// `openPalette`. Mod+K stays the palette's own key.
+pub const OPEN_PALETTE: &str = "sokkel.palette";
 
 /// What an app's key did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -221,6 +264,13 @@ pub trait ShellApp {
     /// nothing.
     fn id(&self) -> Option<&str> {
         None
+    }
+    /// The file the app's look is kept in (the rail's width beside it, in `layout.json`): by
+    /// default [`kept_path`] of its [`ShellApp::id`]; an app that keeps its settings elsewhere (on
+    /// a drive of its own) names the file, as sokkel-ui's `setAppearanceStorage` lets it. None
+    /// keeps nothing.
+    fn kept_path(&self) -> Option<std::path::PathBuf> {
+        self.id().and_then(crate::app::kept_path)
     }
     /// Where the app is, as a route it can go back to (`runs`, `jobs/nightly-export`). The runtime
     /// keeps the history: Escape with nothing open goes back (the settings close first, as
@@ -255,6 +305,14 @@ pub trait ShellApp {
     /// Draw the side panel's content in `area` (a [`crate::DetailPane`], say), after the page,
     /// naming its stops in `cx.focus`.
     fn panel(&mut self, _f: &mut Frame, _area: Rect, _cx: &mut Cx) {}
+    /// The rows the side panel's content needs at `width` columns (a [`crate::DetailPane`]'s
+    /// [`crate::DetailPane::height`]): taller than the panel, the runtime scrolls it as the side
+    /// panel's content scrolls (the wheel over it, focus kept in view) with a scroller in its last
+    /// column, and [`ShellApp::panel`] draws in a room as tall as this, its presses moved to match.
+    /// None: the content fits the panel.
+    fn panel_rows(&self, _look: &Look, _width: u16) -> Option<u16> {
+        None
+    }
     /// The rows the page needs at `width` columns, when it is taller than the window can be: the
     /// runtime then scrolls it (the wheel, PageUp and PageDown, focus kept in view) and draws a
     /// scroller at its end. None: the page fits whatever it is given.
@@ -287,6 +345,16 @@ pub trait ShellApp {
     }
     /// The reader stopped waiting for a running command: the app lets it go on, or stops it.
     fn stop_waiting(&mut self, _id: &str) {}
+    /// The terminal is the app's while this runs, for a command that answered [`Ran::Suspend`]:
+    /// run the child process here and return when it ends. The runtime then takes the terminal
+    /// back and draws the frame as it was.
+    fn suspended(&mut self, _id: &str) {}
+    /// A command the app asks the runtime to run, from its own keys or presses (a dialog's button
+    /// pressed): taken after each key, press and tick, and run as a shortcut runs it, its
+    /// [`Ran`] answered the same way. The runtime's own ids ([`OPEN_PALETTE`]) run too.
+    fn take_command(&mut self) -> Option<String> {
+        None
+    }
     /// The palette's query, for the app's own search (`search`), asked once typing has paused
     /// (`debounce`, 150 ms) and the query is not empty. The app answers through
     /// [`ShellApp::palette_answer`], now or on a later tick.
@@ -458,12 +526,18 @@ struct Host<A> {
     scroll: u16,
     view: Rect,
     rows: u16,
+    /// A command that asked for the terminal ([`Ran::Suspend`]), waiting for the runtime to give
+    /// it back; and whether the app is done ([`Ran::Quit`]).
+    outside: Option<String>,
+    quit: bool,
+    /// The side panel's scroll, where its content is taller than the panel.
+    panel_scroll: crate::scroll::Scroll,
 }
 
 /// Run `app` in sokkel's frame, starting in `look`, or in the look it kept when it has an
 /// [`ShellApp::id`] and no `light` or `dark` among the arguments.
 pub fn run_shell(app: impl ShellApp, look: Look) -> std::io::Result<()> {
-    let kept = app.id().and_then(kept_path);
+    let kept = app.kept_path();
     let asked = std::env::args().any(|a| a == "light" || a == "dark");
     let look = match &kept {
         Some(path) if !asked => read_look(path, &look).unwrap_or(look),
@@ -499,7 +573,14 @@ pub fn shot(
     frame(&mut term, &mut host);
     for (n, key) in keys.iter().enumerate() {
         host.tick(n as u64 * 100);
+        if host.wants_outside() {
+            host.outside();
+        }
         host.key(*key);
+        host.tick(n as u64 * 100 + 50);
+        if host.wants_outside() {
+            host.outside();
+        }
         frame(&mut term, &mut host);
     }
     term.backend().buffer().clone()
@@ -545,6 +626,9 @@ impl<A: ShellApp> Host<A> {
             scroll: 0,
             view: Rect::default(),
             rows: 0,
+            outside: None,
+            quit: false,
+            panel_scroll: crate::scroll::Scroll::default(),
         };
         host.route = host.app.route();
         host.shell.kiosk = host.app.kiosk();
@@ -793,9 +877,56 @@ impl<A: ShellApp> Host<A> {
             self.scroll = 0;
             self.app.page(f, page, &mut cx);
         }
-        // The side panel, after the page: its stops follow the page's.
+        // The side panel, after the page: its stops follow the page's. Taller than the panel, its
+        // content is drawn whole off screen and shown from its scroll, as the page is.
         if let Some(r) = self.shell.panel_area() {
-            self.app.panel(f, r, &mut cx);
+            let rows = self
+                .app
+                .panel_rows(look, r.width)
+                .filter(|&n| n > r.height)
+                .and_then(|_| self.app.panel_rows(look, r.width.saturating_sub(1)))
+                .filter(|&n| n > r.height);
+            match rows {
+                Some(rows) => {
+                    let mut scroll = self.panel_scroll;
+                    let room = crate::scroll::Scroll::content_area(r, rows);
+                    let top = scroll.top.min(rows - r.height);
+                    let shown = Rect::new(room.x, r.y, room.width, r.height);
+                    cx.hover = self
+                        .hover
+                        .filter(|p| active && shown.contains(*p))
+                        .map(|p| Position::new(p.x, p.y + top));
+                    let app = &mut self.app;
+                    scroll.render(look, f.buffer_mut(), r, rows, |buf, room| {
+                        let whole = Rect::new(0, 0, room.right(), room.bottom());
+                        let mut off =
+                            ratatui::Terminal::new(ratatui::backend::TestBackend::new(whole.width, whole.height))
+                                .expect("an off-screen panel");
+                        off.draw(|g| {
+                            for y in room.top()..room.bottom() {
+                                for x in room.left()..room.right() {
+                                    g.buffer_mut()[(x, y)] = buf[(x, y)].clone();
+                                }
+                            }
+                            app.panel(g, room, &mut cx);
+                        })
+                        .expect("the panel");
+                        let src = off.backend().buffer();
+                        for y in room.top()..room.bottom() {
+                            for x in room.left()..room.right() {
+                                buf[(x, y)] = src[(x, y)].clone();
+                            }
+                        }
+                    });
+                    self.panel_scroll = scroll;
+                }
+                None => {
+                    self.panel_scroll = crate::scroll::Scroll::default();
+                    self.app.panel(f, r, &mut cx);
+                }
+            }
+        } else {
+            self.panel_scroll = crate::scroll::Scroll::default();
         }
         if let Some(r) = self.shell.account() {
             self.focus.stop(account_stop(), r);
@@ -833,6 +964,17 @@ impl<A: ShellApp> Host<A> {
             } else if r.bottom() > top + self.view.height {
                 self.scroll += r.bottom() - (top + self.view.height);
             }
+        }
+        // Keyboard focus on a panel stop out of view: the panel scrolls to it.
+        let panel = self.panel_scroll.view();
+        if self.panel_scroll.overflows()
+            && self.focus.input_kind() == crate::focus::InputKind::Keyboard
+            && let Some(r) = self.focus.current().and_then(|id| self.focus.area_of(id))
+            && r.x >= panel.x
+            && r.x < panel.right()
+            && r.y >= panel.y
+        {
+            self.panel_scroll.reveal(r.y, r.height);
         }
         if self.to_page {
             self.to_page = false;
@@ -927,9 +1069,7 @@ impl<A: ShellApp> Host<A> {
                     self.open(Layer::Palette);
                 }
             }
-            Act::App(id) => {
-                self.app.command(&id);
-            }
+            Act::App(id) => self.invoke(&id),
         }
     }
 
@@ -1168,9 +1308,7 @@ impl<A: ShellApp> Host<A> {
                         self.relook(s, density, &theme);
                         self.layer = Layer::Account;
                     }
-                    AccountAct::App(id) => {
-                        self.app.command(&id);
-                    }
+                    AccountAct::App(id) => self.invoke(&id),
                     AccountAct::None => {}
                 }
             }
@@ -1209,6 +1347,7 @@ impl<A: ShellApp> Host<A> {
         self.layer = Layer::None;
         match id {
             SETTINGS => self.open(Layer::Settings),
+            OPEN_PALETTE => self.open(Layer::Palette),
             GO_BACK => {
                 self.go_back();
             }
@@ -1248,7 +1387,29 @@ impl<A: ShellApp> Host<A> {
                     self.palette.running(id, 0);
                     self.running = Some((id.to_string(), self.now));
                 }
+                Ran::Suspend => {
+                    self.palette.done();
+                    self.outside = Some(id.to_string());
+                }
+                Ran::Quit => {
+                    self.palette.done();
+                    self.quit = true;
+                }
             },
+        }
+    }
+
+    /// Run a command from a shortcut, an account row or the app's own asking: the runtime's own
+    /// as the palette runs it; the app's, its answer taken without the palette.
+    fn invoke(&mut self, id: &str) {
+        if id.starts_with("sokkel.") {
+            self.command(id);
+            return;
+        }
+        match self.app.command(id) {
+            Ran::Suspend => self.outside = Some(id.to_string()),
+            Ran::Quit => self.quit = true,
+            Ran::Done | Ran::Refused(_) | Ran::Running => {}
         }
     }
 
@@ -1353,9 +1514,32 @@ impl<A: ShellApp> Program for Host<A> {
         self.mouse
     }
 
+    fn done(&self) -> bool {
+        self.quit
+    }
+
+    fn wants_outside(&self) -> bool {
+        self.outside.is_some()
+    }
+
+    fn outside(&mut self) {
+        if let Some(id) = self.outside.take() {
+            self.app.suspended(&id);
+        }
+    }
+
     fn tick(&mut self, now: u64) {
         self.now = now;
         self.app.tick(now);
+        // The commands the app asked for since the last tick, a few at most, so one that asks again
+        // each time cannot hold the frame.
+        for _ in 0..8 {
+            if self.quit || self.outside.is_some() {
+                break;
+            }
+            let Some(id) = self.app.take_command() else { break };
+            self.invoke(&id);
+        }
         // The palette's query, to the app's search once typing has paused.
         if self.layer == Layer::Palette {
             let query = self.palette.query.clone();
@@ -1604,6 +1788,19 @@ impl<A: ShellApp> Program for Host<A> {
                     }
                     ShellEvent::Changed => {}
                     ShellEvent::Ignored if self.shell.covers(p.at) => {}
+                    ShellEvent::Ignored if self.panel_scroll.view().contains(p.at) && self.panel_scroll.overflows() => {
+                        // A side panel that scrolls: the wheel scrolls it; a press lands where its
+                        // content drew, moved by the scroll.
+                        if self.panel_scroll.pointer(p) {
+                            return;
+                        }
+                        let Some(at) = self.panel_scroll.at(p.at) else { return };
+                        let p = Pointer { at, ..p };
+                        if p.kind == PointerKind::Press {
+                            cx.focus.press(p.at);
+                        }
+                        self.app.pointer(p, &mut cx);
+                    }
                     ShellEvent::Ignored => {
                         // A page that scrolls: the wheel scrolls it; a press lands where the page
                         // drew, moved by the scroll.

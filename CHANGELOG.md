@@ -10,6 +10,35 @@ sokkel-tui = { git = "https://github.com/winterop-com/sokkel-tui", tag = "v0.2.0
 
 ## Unreleased
 
+### Breaking
+
+- `Ran` has two more answers, `Suspend` and `Quit`: a `match` on it needs arms for them.
+- `DetailPane` paints no ground of its own (sokkel-ui's paints none): it stands on what it is drawn
+  on, the side panel's ground or a dialog's. An app that drew it on a bare buffer gives it a ground.
+
+### Added
+
+- `ShellApp::kept_path`: where the app's look is kept, in place of `kept_path(id)` (sokkel-ui's
+  `setAppearanceStorage`).
+- `Ran::Suspend` and `ShellApp::suspended`: a command hands the terminal over (a child process) and
+  the runtime takes it back with the frame as it was. `Program::wants_outside` and
+  `Program::outside` do the same for a bare `run`.
+- `Ran::Quit`: a command ends `run_shell`.
+- `ShellApp::take_command`: the app asks the runtime to run a command from its own keys or presses
+  (a dialog's button), answered as a shortcut's is.
+- `app::OPEN_PALETTE`: the palette's command id, to bind to a key of the app's or to ask for.
+- `ShellApp::panel_rows`: a side panel taller than the window scrolls (the wheel, focus kept in
+  view, a scroller), as the side panel's content does.
+- `Scroll`: a scroll view an app keeps, for content taller than its room (a detail pane in a
+  dialog's body), with the wheel, PageUp, PageDown, Home, End and presses moved to match.
+- `Table::stack_below`, `Table::min_width` and `Table::least_width`: a table stacks below the
+  smaller of its `stackBelow` (69) and its columns' width, as sokkel-ui's `stacksAt`; a table whose
+  columns fit a narrow box stays a table with a small `min_width`.
+
+### Changed
+
+- A shortcut's or an account row's command now honors its `Ran` answer (`Suspend`, `Quit`).
+
 ## 0.2.0 (2026-11-19)
 
 The first release. It draws sokkel-design contract 0.32.2 (8f0cc81).

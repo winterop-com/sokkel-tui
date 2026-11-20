@@ -510,6 +510,12 @@ impl ShellApp for Runs {
         (self.page == Page::Runs && self.table.opened.is_some()).then_some(40)
     }
 
+    /// The detail's rows: taller than the panel, the runtime scrolls it.
+    fn panel_rows(&self, look: &Look, width: u16) -> Option<u16> {
+        let run = self.table.opened.and_then(|r| self.shown().get(r).copied())?;
+        Some(run_pane(look, run).height(width))
+    }
+
     fn panel(&mut self, f: &mut Frame, area: Rect, cx: &mut Cx) {
         let Some(run) = self.table.opened.and_then(|r| self.shown().get(r).copied()) else {
             return;

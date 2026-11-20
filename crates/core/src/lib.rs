@@ -47,6 +47,7 @@ pub mod palette;
 pub mod popup;
 pub mod prompt;
 pub mod rail;
+pub mod scroll;
 pub mod section;
 pub mod select;
 pub mod settings;
@@ -82,6 +83,7 @@ pub use palette::{
 pub use popup::{Item, PopupRow};
 pub use prompt::{Prompt, PromptEvent, PromptFocus, PromptState, PromptWords};
 pub use rail::{Rail, RailEntry, RailFoot, RailGroup, RailLayout, RailWords};
+pub use scroll::Scroll;
 pub use section::{Section, SectionTone, SectionVariant};
 pub use select::{Select, SelectEvent, SelectOption, SelectState, SelectVariant};
 pub use settings::{
