@@ -127,12 +127,43 @@ fn the_top_bar_holds_search_trail_palette_and_actions() {
     let l = draw(100, 2, &bar);
     assert!(l[0].contains("⌕ Search"), "{l:?}");
     assert!(l[0].contains("Tidevann › Runs"));
-    assert!(l[0].contains("Open the command palette Ctrl K"));
+    assert!(l[0].contains("▏Ctrl K▕"), "beside the field, its keys alone: {l:?}");
+    assert!(!l[0].contains("Open the command palette"));
+    // With no field it is field-like, 224 px: the magnifier, Search and the keys.
+    let bare = TopBar::new(&look).trail(["Tidevann", "Runs"]).window(Width::Wide);
+    let l2 = draw(100, 1, &bare);
+    assert!(l2[0].contains("⌕ Search"), "{l2:?}");
+    assert_eq!(bare.layout(Rect::new(0, 0, 100, 1)).palette.unwrap().width, 27);
     assert!(l[0].trim_end().ends_with("New"));
     assert!(l[1].chars().all(|c| c == '─'), "the rule under the bar at regular");
     let layout = bar.layout(Rect::new(0, 0, 100, 1));
     assert_eq!(layout.search.unwrap().width, 30, "256 px from lg");
     assert_eq!(layout.crumbs.len(), 2);
+}
+
+#[test]
+fn a_trail_longer_than_its_room_gives_way_before_the_palettes_button() {
+    let look = look();
+    let bar = TopBar::new(&look)
+        .trail(["Tidevann", "harbor", "nightly-export run 412 of the inventory sync"])
+        .window(Width::Wide)
+        .search("");
+    let area = Rect::new(0, 0, 100, 1);
+    let layout = bar.layout(area);
+    let palette = layout.palette.unwrap();
+    let last = *layout.crumbs.last().unwrap();
+    assert_eq!(layout.crumbs.len(), 3, "every crumb kept");
+    assert!(
+        last.right() + 2 <= palette.x,
+        "clear of the button: {last:?} {palette:?}"
+    );
+    let l = draw(100, 1, &bar);
+    assert!(l[0].contains("Ctrl K"), "{l:?}");
+    assert!(l[0].contains("nightly-export"), "the current crumb shows, cut: {l:?}");
+    assert!(l[0].contains('…'), "{l:?}");
+    // Where it fits, nothing is cut.
+    let l = draw(160, 1, &bar);
+    assert!(l[0].contains("nightly-export run 412 of the inventory sync"), "{l:?}");
 }
 
 #[test]

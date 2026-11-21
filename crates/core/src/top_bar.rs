@@ -148,11 +148,21 @@ impl<'a> TopBar<'a> {
         if self.wide { cols(256.0) } else { cols(224.0) }
     }
 
+    /// The palette's button: below md an icon; beside the search field its keys alone (or the
+    /// magnifier where it has none); with no field, field-like and 224 px wide, the magnifier, the
+    /// word Search and the keys.
     fn palette_w(&self) -> u16 {
         if self.narrow {
             3
+        } else if self.search.is_some() {
+            if self.shortcut.is_empty() {
+                3
+            } else {
+                text::width(&self.shortcut) as u16 + 2
+            }
         } else {
-            (text::width(&self.words.palette) + text::width(&self.shortcut) + 4) as u16
+            let own = text::width(&self.words.search) + text::width(&self.shortcut) + 7;
+            crate::cells::cols(224.0).max(own as u16)
         }
     }
 
@@ -169,27 +179,6 @@ impl<'a> TopBar<'a> {
             out.search = Some(Rect::new(x, y, w, 1));
             x += w + 2;
         }
-        // The trail, or below md its last crumb alone.
-        let shown: Vec<(usize, &String)> = if self.narrow {
-            self.trail
-                .iter()
-                .enumerate()
-                .skip(self.trail.len().saturating_sub(1))
-                .collect()
-        } else {
-            self.trail.iter().enumerate().collect()
-        };
-        if self.narrow && self.trail.len() > 1 {
-            x += 2;
-        }
-        for (k, (_, c)) in shown.iter().enumerate() {
-            let w = text::width(c) as u16;
-            out.crumbs.push(Rect::new(x, y, w, 1));
-            x += w;
-            if k + 1 < shown.len() {
-                x += 3;
-            }
-        }
         // At the end: the palette's button, then the actions a column apart.
         let mut end = area.right().saturating_sub(1);
         let mut acts: Vec<Rect> = Vec::new();
@@ -203,6 +192,50 @@ impl<'a> TopBar<'a> {
         if self.palette {
             let w = self.palette_w();
             out.palette = Some(Rect::new(end.saturating_sub(w), y, w, 1));
+        }
+        // The trail, or below md its last crumb alone, in the room left before the palette's button
+        // or the actions (two columns kept, 12 px): where its crumbs do not fit, each gives way by
+        // its share and is cut with an ellipsis, as sokkel-ui's crumbs shrink and truncate.
+        let shown: Vec<(usize, &String)> = if self.narrow {
+            self.trail
+                .iter()
+                .enumerate()
+                .skip(self.trail.len().saturating_sub(1))
+                .collect()
+        } else {
+            self.trail.iter().enumerate().collect()
+        };
+        if self.narrow && self.trail.len() > 1 {
+            x += 2;
+        }
+        let limit = out
+            .palette
+            .or(out.actions.first().copied())
+            .map_or(area.right(), |r| r.x.saturating_sub(2));
+        let gaps = 3 * shown.len().saturating_sub(1) as u16;
+        let room = limit.saturating_sub(x).saturating_sub(gaps);
+        let mut widths: Vec<u16> = shown.iter().map(|(_, c)| text::width(c) as u16).collect();
+        let total: u16 = widths.iter().sum();
+        if total > room {
+            let over = total - room;
+            let mut given = 0u16;
+            for w in widths.iter_mut() {
+                let cut = ((over as u32 * *w as u32).div_ceil(total.max(1) as u32) as u16).min(over - given);
+                let keep = (*w).saturating_sub(cut).max(2.min(*w));
+                given += *w - keep;
+                *w = keep;
+            }
+        }
+        for (k, w) in widths.iter().enumerate() {
+            if x >= limit {
+                break;
+            }
+            let w = (*w).min(limit - x);
+            out.crumbs.push(Rect::new(x, y, w, 1));
+            x += w;
+            if k + 1 < shown.len() {
+                x += 3;
+            }
         }
         out
     }
@@ -299,7 +332,8 @@ impl Widget for &TopBar<'_> {
             let current = i + 1 == self.trail.len();
             let key = if current { "current.crumb" } else { "rest.crumb" };
             let st = TextRole::Body.style(look).fg(t(ink(key).unwrap_or(ground)));
-            buf.set_string(r.x, r.y, &self.trail[i], st);
+            let words = text::truncate(&self.trail[i], r.width as usize, glyphs.ellipsis);
+            buf.set_string(r.x, r.y, words, st);
             if k + 1 < layout.crumbs.len() {
                 buf.set_string(r.right() + 1, r.y, glyphs.chevron, chevron);
             }
@@ -312,19 +346,22 @@ impl Widget for &TopBar<'_> {
             let key = format!("top-bar.base.{state}.palette");
             let pg = look.paint(&key, "ground").unwrap_or(ground);
             let pink = look.paint(&key, "ink").unwrap_or(ground);
-            if self.narrow {
+            if self.narrow || (self.search.is_some() && self.shortcut.is_empty()) {
                 buf.set_string(r.x + 1, r.y, glyphs.search, Style::new().fg(t(pink)));
+            } else if self.search.is_some() {
+                // Beside the field: the keys alone, small code text, on the button's ground.
+                let edge = look.paint(&key, "edge").unwrap_or(pg);
+                buf.set_style(r, Style::new().bg(t(pg)));
+                buf[(r.x, r.y)].set_symbol(glyphs.edge_start).set_fg(t(edge));
+                buf[(r.right() - 1, r.y)].set_symbol(glyphs.edge_end).set_fg(t(edge));
+                buf.set_string(r.x + 1, r.y, &self.shortcut, TextRole::Help.style(look).fg(t(pink)));
             } else {
                 let edge = look.paint(&key, "edge").unwrap_or(pg);
                 buf.set_style(r, Style::new().bg(t(pg)));
                 buf[(r.x, r.y)].set_symbol(glyphs.edge_start).set_fg(t(edge));
                 buf[(r.right() - 1, r.y)].set_symbol(glyphs.edge_end).set_fg(t(edge));
-                buf.set_string(
-                    r.x + 1,
-                    r.y,
-                    &self.words.palette,
-                    TextRole::Help.style(look).fg(t(pink)),
-                );
+                buf.set_string(r.x + 1, r.y, glyphs.search, Style::new().fg(t(pink)));
+                buf.set_string(r.x + 3, r.y, &self.words.search, TextRole::Help.style(look).fg(t(pink)));
                 let kx = r.right() - 2 - text::width(&self.shortcut) as u16;
                 let kg = look.paint("top-bar.base.rest.keys", "ground").unwrap_or(pg);
                 let ki = look.paint("top-bar.base.rest.keys", "ink").unwrap_or(pink);
