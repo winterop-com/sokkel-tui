@@ -10,6 +10,8 @@ sokkel-tui = { git = "https://github.com/winterop-com/sokkel-tui", tag = "v0.2.0
 
 ## Unreleased
 
+## 0.3.1 (2026-11-21)
+
 ### Fixed
 
 - The top bar's trail takes the room left before the palette's button and the actions: it was laid
