@@ -10,7 +10,7 @@ use sokkel_tui::{Depth, Look, Scheme, TextRole, snapshot, tokens};
 #[test]
 fn every_theme_in_both_schemes_has_a_look() {
     let themes = tokens::themes();
-    assert_eq!(themes.len(), 16, "with phosphor, phosphor-bright and tray");
+    assert_eq!(themes.len(), 17, "with phosphor, phosphor-bright, tray and darkroom");
     for theme in themes {
         for scheme in [Scheme::Light, Scheme::Dark] {
             let look = Look::new(theme, scheme).expect("a look");

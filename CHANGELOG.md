@@ -10,6 +10,20 @@ sokkel-tui = { git = "https://github.com/winterop-com/sokkel-tui", tag = "v0.2.0
 
 ## Unreleased
 
+### Changed
+
+- Draws sokkel-design contract 0.35.0 (627e6bc), from 0.32.2. The settings and the palette offer
+  its new theme, `darkroom`. Its lighter type weights change no cell: a cell is bold or not by
+  `cells.textRoles`, which did not move. Its text sizes (0.34.0) have nothing to draw in a terminal,
+  which has one type size. The parts new since 0.32.2 (chip, markdown-view, call-tile, the map and
+  tracking parts, status-wall, alert-ticker and the kiosk pattern) are not built yet.
+
+### Fixed
+
+- The status line keeps each fact whole but the last, whose value alone gives way, cut short with
+  an ellipsis (parts/status-line, contract 0.33.6). It dropped whole facts from the start when they
+  did not fit, so a long last fact took every fact with it.
+
 ## 0.3.1 (2026-11-21)
 
 ### Fixed
