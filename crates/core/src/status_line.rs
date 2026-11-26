@@ -6,7 +6,7 @@
 //!
 //! In cells (the part's `cells` note) the strip is one row, a column of padding at each end, its
 //! items two columns apart; the facts take at most 70 percent of the width from the end and the note
-//! the rest, cut short. The rule over the strip is a row of the rule glyph at regular; at compact the
+//! the rest, cut short. Each fact keeps its whole width but the last, whose value alone gives way. The rule over the strip is a row of the rule glyph at regular; at compact the
 //! strip's ground alone sets it apart.
 
 use crate::button::Tip;
@@ -152,20 +152,31 @@ impl Widget for &StatusLine<'_> {
         };
         let help = TextRole::Help.style(look).bg(t(ground));
 
-        // The facts from the end, at most 70 percent of the width, two columns apart.
+        // The facts at the end, at most 70 percent of the width, two columns apart. Each keeps its
+        // whole width but the last, whose value alone gives way, cut short in its own box; when even
+        // that leaves the last no room for its label and an ellipsis, the first facts go.
         let inner_w = area.width.saturating_sub(2);
         let room = (inner_w as usize) * 7 / 10;
-        let mut shown = Vec::new();
-        let mut used = 0;
-        for f in self.facts.iter().rev() {
-            let w = f.width() + if shown.is_empty() { 0 } else { 2 };
-            if used + w > room {
-                break;
+        let ellipsis_w = text::width(glyphs.ellipsis);
+        let label_w = |f: &Fact| f.label.as_ref().map_or(0, |l| text::width(l) + 1);
+        let mut first = 0;
+        let (used, last_value) = loop {
+            let shown = &self.facts[first..];
+            let Some((last, rest)) = shown.split_last() else {
+                break (0, String::new());
+            };
+            let before: usize = rest.iter().map(|f| f.width() + 2).sum();
+            let value_room = room.saturating_sub(before + label_w(last));
+            if text::width(&last.value) <= value_room || value_room > ellipsis_w {
+                let value = text::truncate(&last.value, value_room, glyphs.ellipsis);
+                break (before + label_w(last) + text::width(&value), value);
             }
-            used += w;
-            shown.push(f);
-        }
-        shown.reverse();
+            if rest.is_empty() {
+                break (0, String::new());
+            }
+            first += 1;
+        };
+        let shown = if used == 0 { &[][..] } else { &self.facts[first..] };
         let mut x = area.right() - 1 - used as u16;
         for (i, f) in shown.iter().enumerate() {
             if i > 0 {
@@ -176,8 +187,9 @@ impl Widget for &StatusLine<'_> {
                 x += text::width(l) as u16 + 1;
             }
             let value_ink = if f.code { ink("code.item") } else { ink("rest.item") };
-            buf.set_string(x, y, &f.value, help.fg(t(value_ink)));
-            x += text::width(&f.value) as u16;
+            let value = if i + 1 == shown.len() { &last_value } else { &f.value };
+            buf.set_string(x, y, value, help.fg(t(value_ink)));
+            x += text::width(value) as u16;
         }
 
         // The note in the rest, or a focused control's tip in its place.

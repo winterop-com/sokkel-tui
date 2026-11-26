@@ -2,6 +2,7 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
+use ratatui::widgets::Widget;
 use sokkel_tui::settings::{look_chose, look_section};
 use sokkel_tui::{
     Density, Fact, Key, KeyPress, Look, NoteTone, Pointer, PointerKind, Rail, RailEntry, RailGroup, Scheme, Setting,
@@ -765,4 +766,20 @@ fn a_side_panel_taller_than_the_window_scrolls() {
         sokkel_tui::snapshot::text(&buf).lines().any(|l| l.ends_with(thumb)),
         "a scroller at its end: {text}"
     );
+}
+
+#[test]
+fn the_status_line_keeps_each_fact_whole_but_the_last_which_gives_way() {
+    let look = look();
+    let line = StatusLine::new(&look).facts([
+        Fact::new("12s ago"),
+        Fact::labeled("Host", "nightly-export.example.org").code(),
+    ]);
+    // One row: 38 columns inside the padding, 26 of them for the facts.
+    let area = Rect::new(0, 0, 40, 1);
+    let mut buf = Buffer::empty(area);
+    (&line).render(area, &mut buf);
+    let row = sokkel_tui::snapshot::text(&buf);
+    let row = row.lines().next().unwrap();
+    assert!(row.ends_with("12s ago  Host nightly-exp… "), "{row:?}");
 }
